@@ -6,6 +6,10 @@
 `X-MC-Timestamp` / `X-MC-Nonce` / `X-MC-Signature` 三个请求头；标 **会话** 的端点
 需要 Flarum 登录 Cookie。
 
+所有响应中的 `error` 文本都由语言包渲染（默认简体中文），可用
+`php flarum mc-bridge:config --locale=en` 切换为英文。错误**结构**不变，只有文案
+随语言变化。
+
 ## CSRF 行为（重要）
 
 Flarum 对整个 `api` 中间件栈强制校验 CSRF，而服务器没有 session，因此扩展注册了
@@ -378,7 +382,8 @@ php flarum mc-bridge:selftest --url=...    # 全链路自检
 | `php flarum mc-bridge:secret` | 生成并保存新的共享密钥 |
 | `php flarum mc-bridge:secret --show` | 打印当前密钥 |
 | `php flarum mc-bridge:secret <值>` | 写入指定密钥（至少 32 字符） |
-| `php flarum mc-bridge:config --show` | 查看公告标签过滤、回复同步、保留天数 |
+| `php flarum mc-bridge:config --show` | 查看公告标签过滤、回复同步、保留天数、输出语言 |
+| `php flarum mc-bridge:config --locale=en` | 切换输出语言（默认 `zh-Hans`，可选 `en`） |
 | `php flarum mc-bridge:config --tags=1,3` | 只把标签 1、3 的新讨论推送到游戏（空值 = 全部） |
 | `php flarum mc-bridge:config --sync-replies=1` | 连回复也推送 |
 | `php flarum mc-bridge:selftest` | 离线自检：密钥、HMAC、表结构、查询、绑定码格式 |

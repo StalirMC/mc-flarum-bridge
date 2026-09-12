@@ -54,7 +54,7 @@ public final class OutboxTask implements Runnable {
                     try {
                         plugin.handleOutboxMessage(message);
                     } catch (Throwable throwable) {
-                        plugin.getLogger().log(Level.WARNING, "Failed to handle an outbox message", throwable);
+                        plugin.getLogger().log(Level.WARNING, plugin.logText("log.outbox-handle-failed"), throwable);
                     }
                 });
             }
@@ -62,7 +62,9 @@ public final class OutboxTask implements Runnable {
             long failures = consecutiveFailures.incrementAndGet();
 
             if (failures == 1 || failures % 10 == 0) {
-                plugin.getLogger().warning("Outbox poll failed (" + failures + " in a row): " + exception.getMessage());
+                plugin.getLogger().warning(plugin.logText("log.outbox-failed",
+                        "count", String.valueOf(failures),
+                        "reason", exception.getMessage()));
             }
         }
     }

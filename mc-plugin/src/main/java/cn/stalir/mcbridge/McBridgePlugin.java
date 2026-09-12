@@ -29,11 +29,11 @@ import java.util.concurrent.atomic.AtomicLong;
  * asynchronous task. Everything else that runs off-thread ({@link EventQueue},
  * Gson serialisation, the HTTP client) is thread-safe by construction.
  *
- * Responsibilities:
- *  - report server status to Flarum on a fixed interval (heartbeat);
- *  - buffer and forward gameplay events (join/quit/death/...);
- *  - poll the forum outbox and relay announcements into the game;
- *  - expose /bind so a player can link their game account to the forum.
+ * Localisation
+ * ------------
+ * All player-facing text and log lines come from lang/&lt;language&gt;.yml, with
+ * Simplified Chinese ({@link Messages#DEFAULT_LANGUAGE}) as the default. Switch
+ * with the {@code language} key in config.yml.
  */
 public final class McBridgePlugin extends JavaPlugin {
 
@@ -65,9 +65,11 @@ public final class McBridgePlugin extends JavaPlugin {
         if (bridgeConfig.isUsable()) {
             enqueueServerEvent("start", "Server started (" + getServer().getVersion() + ")");
             flushEventsAsync();
-            getLogger().info("McBridge enabled as server '" + bridgeConfig.serverKey() + "' -> " + bridgeConfig.endpoint("/heartbeat"));
+            getLogger().info(logText("log.enabled",
+                    "key", bridgeConfig.serverKey(),
+                    "url", bridgeConfig.endpoint("/heartbeat")));
         } else {
-            getLogger().severe("McBridge is idle until the configuration problems listed above are fixed.");
+            getLogger().severe(logText("log.idle"));
         }
     }
 
@@ -92,7 +94,7 @@ public final class McBridgePlugin extends JavaPlugin {
             client.close();
         }
 
-        getLogger().info("McBridge disabled.");
+        getLogger().info(logText("log.disabled"));
     }
 
     // ------------------------------------------------------------------
@@ -103,8 +105,15 @@ public final class McBridgePlugin extends JavaPlugin {
         HttpBridgeClient previousClient = this.client;
         EventQueue previousQueue = this.eventQueue;
 
-        this.bridgeConfig = BridgeConfig.from(getConfig(), getLogger());
-        this.messages = new Messages(bridgeConfig);
+        // Messages are loaded first: the language decides how the configuration
+        // validation messages and every log line below are rendered.
+        this.messages = Messages.load(
+                this,
+                getConfig().getString("language", Messages.DEFAULT_LANGUAGE),
+                getLogger()
+        );
+
+        this.bridgeConfig = BridgeConfig.from(getConfig(), getLogger(), this.messages);
         this.client = new HttpBridgeClient(bridgeConfig, getLogger());
 
         EventQueue replacement = new EventQueue(bridgeConfig.maxQueuedEvents());
@@ -130,6 +139,16 @@ public final class McBridgePlugin extends JavaPlugin {
         reloadConfig();
         loadBridgeConfig();
         scheduleTasks();
+    }
+
+    /**
+     * Render a message in the configured language. Safe before {@link #messages}
+     * is initialised (returns the key), which matters during shutdown.
+     */
+    public String logText(String key, String... placeholders) {
+        Messages current = this.messages;
+
+        return current == null ? key : current.plain(key, placeholders);
     }
 
     private void registerCommands() {
@@ -206,7 +225,9 @@ public final class McBridgePlugin extends JavaPlugin {
 
             // Log the first failure and then only every tenth one, to avoid spam.
             if (failures == 1 || failures % 10 == 0) {
-                getLogger().warning("Heartbeat failed (" + failures + " in a row): " + exception.getMessage());
+                getLogger().warning(logText("log.heartbeat-failed",
+                        "count", String.valueOf(failures),
+                        "reason", exception.getMessage()));
             }
         }
     }
@@ -351,7 +372,9 @@ public final class McBridgePlugin extends JavaPlugin {
             deliveredEvents.addAndGet(batch.size());
         } catch (BridgeException exception) {
             queue.requeue(batch);
-            getLogger().warning("Could not deliver " + batch.size() + " event(s): " + exception.getMessage());
+            getLogger().warning(logText("log.events-failed",
+                    "count", String.valueOf(batch.size()),
+                    "reason", exception.getMessage()));
         }
     }
 
@@ -403,7 +426,7 @@ public final class McBridgePlugin extends JavaPlugin {
         broadcast(component);
 
         if (receivedMessages.get() <= OUTBOX_BATCH_LOG_LIMIT) {
-            getLogger().info("Relayed " + type + " from the forum: " + title);
+            getLogger().info(logText("log.relayed", "type", type, "title", title));
         }
     }
 
@@ -415,11 +438,11 @@ public final class McBridgePlugin extends JavaPlugin {
         String command = optString(payload, "command", fallbackCommand);
 
         if (!bridgeConfig.isRemoteCommandAllowed(command)) {
-            getLogger().warning("Rejected remote command from the forum (not whitelisted): " + command);
+            getLogger().warning(logText("log.remote-rejected", "command", command));
             return;
         }
 
-        getLogger().info("Executing remote command from the forum: " + command);
+        getLogger().info(logText("log.remote-executing", "command", command));
         getServer().dispatchCommand(getServer().getConsoleSender(), command);
     }
 

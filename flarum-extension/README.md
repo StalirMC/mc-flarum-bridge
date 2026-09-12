@@ -34,6 +34,8 @@ php flarum mc-bridge:selftest --url=https://forum.kxkl2024.cn
 extend.php                      路由 / 事件 / 控制台命令注册
 migrations/                     5 张表的建表迁移
 src/Service/BridgeCrypto.php    HMAC 签名与路径规范化
+src/Service/BridgeMessages.php  语言解析与翻译包装（默认中文）
+locale/                         语言文件：zh-Hans（默认）、en
 src/Api/Controller/             8 个控制器（1 个抽象基类 + 7 个端点控制器，共 10 条路由）
 src/Http/Middleware/            CSRF 放行中间件（HMAC 请求免 session CSRF）
 src/Model/                      Eloquent 模型
@@ -50,11 +52,41 @@ src/Console/SelfTestCommand.php php flarum mc-bridge:selftest
 
 字段与时序见 [`../docs/API.md`](../docs/API.md)。
 
+## 多语言
+
+语言文件在 `locale/`，随扩展附带：
+
+| 文件 | 语言 |
+|------|------|
+| `locale/zh-Hans.yml` | 简体中文（默认，110 个键） |
+| `locale/en.yml` | English |
+
+**必须在 `extend.php` 里显式注册**，Flarum 不会自动扫描扩展的 locale 目录：
+
+```php
+new Extend\Locales(__DIR__.'/locale'),
+```
+
+切换语言（控制台命令与接口错误的语言）：
+
+```bash
+php flarum mc-bridge:config --locale=en      # 或 --locale=zh-Hans
+php flarum mc-bridge:config --show           # 查看当前语言
+```
+
+`mc-bridge.locale` 的默认值是 `zh-Hans`，与论坛自身的 `default_locale`
+**无关** —— 所以即使论坛默认是英文，扩展的输出默认仍是中文。
+
+新增语言：把 `locale/zh-Hans.yml` 复制为 `locale/ja.yml` 并翻译，然后用
+`--locale=ja` 切换。缺键会回退到 Flarum 的 fallback（`en`），因此建议保持
+各语言键集一致（校验脚本会检查这一点）。
+
 ## 设置项
 
 | 键 | 默认 | 说明 |
 |----|------|------|
 | `mc-bridge.secret` | 空 | 共享密钥，由控制台命令写入 |
+| `mc-bridge.locale` | `zh-Hans` | 输出语言，见上文「多语言」 |
 | `mc-bridge.announcement_tag_ids` | 空 | 逗号分隔的标签 ID；空表示同步所有新讨论 |
 | `mc-bridge.sync_replies` | `0` | 设为 `1` 时连回复也推送到游戏 |
 | `mc-bridge.max_announcement_age_days` | `30` | 预留：outbox 清理窗口 |

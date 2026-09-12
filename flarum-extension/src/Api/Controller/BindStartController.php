@@ -26,13 +26,13 @@ class BindStartController extends AbstractBridgeController
         $serverKey = $this->resolveServerKey($request, $body);
 
         if ($serverKey === null) {
-            return $this->error('A valid server_key is required.', 422);
+            return $this->fail('server_key_required', 422);
         }
 
         $uuid = $this->sanitizeUuid($body['player_uuid'] ?? $body['uuid'] ?? null);
 
         if ($uuid === null) {
-            return $this->error('A valid player_uuid is required.', 422);
+            return $this->fail('player_uuid_invalid', 422);
         }
 
         $username = isset($body['player_name']) || isset($body['username'])

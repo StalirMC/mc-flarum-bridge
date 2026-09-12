@@ -3,8 +3,6 @@
 namespace Stalir\McBridge\Api\Controller;
 
 use Flarum\Http\RequestUtil;
-use Flarum\Settings\SettingsRepositoryInterface;
-use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Stalir\McBridge\Model\McOutboxMessage;
@@ -48,28 +46,25 @@ class BroadcastController extends AbstractBridgeController
             $actor = RequestUtil::getActor($request);
 
             if ($actor->isGuest()) {
-                return $this->error(
-                    'Authentication required: sign the request with the bridge secret or log in as an administrator.',
-                    401
-                );
+                return $this->fail('broadcast_auth_required', 401);
             }
 
             if (! $actor->isAdmin()) {
-                return $this->error('Administrator privileges are required to broadcast.', 403);
+                return $this->fail('broadcast_admin_required', 403);
             }
         }
 
         $type = $body['type'] ?? McOutboxMessage::TYPE_BROADCAST;
 
         if (! is_string($type) || ! in_array($type, self::ALLOWED_TYPES, true)) {
-            return $this->error('Unsupported message type.', 422);
+            return $this->fail('message_type_unsupported', 422);
         }
 
         $title = isset($body['title']) ? mb_substr(trim((string) $body['title']), 0, 255) : null;
         $text = isset($body['body']) ? mb_substr(trim((string) $body['body']), 0, 4000) : null;
 
         if (($title === null || $title === '') && ($text === null || $text === '')) {
-            return $this->error('A title or body is required.', 422);
+            return $this->fail('message_content_required', 422);
         }
 
         $serverKey = $body['server_key'] ?? null;
@@ -78,7 +73,7 @@ class BroadcastController extends AbstractBridgeController
             $serverKey = $this->resolveServerKey($request, $body);
 
             if ($serverKey === null) {
-                return $this->error('server_key must match [A-Za-z0-9._-] when supplied.', 422);
+                return $this->fail('server_key_invalid', 422);
             }
         }
 

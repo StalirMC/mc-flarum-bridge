@@ -37,6 +37,8 @@ gradle build
 4. `/mcbridge reload`。
 
 ```yaml
+language: zh_CN                            # 输出语言，默认简体中文
+
 forum:
   url: "https://forum.kxkl2024.cn"
   api-prefix: "/api/mc-bridge"
@@ -46,6 +48,29 @@ server:
 security:
   secret: "<至少 32 字符的共享密钥>"
 ```
+
+## 语言
+
+玩家可见的消息与插件日志**不在 config.yml 里**，而在
+`plugins/McBridge/lang/<语言>.yml`。随 jar 附带：
+
+| 文件 | 语言 |
+|------|------|
+| `lang/zh_CN.yml` | 简体中文（默认） |
+| `lang/en.yml` | English |
+
+首次启动会把它们解压到插件目录，可直接编辑（已有文件不会被覆盖）。
+
+```yaml
+# config.yml
+language: zh_CN     # 改成 en 即切换为英文
+```
+
+**新增语言**：把 `lang/zh_CN.yml` 复制为 `lang/ja_JP.yml` 并翻译，
+再把 `language` 设为 `ja_JP`。某个键若在新语言里缺失，会**自动回退到中文**，
+不会显示成原始键名。
+
+占位符用花括号，例如 `{code}`、`{reason}`；颜色代码用 `&`。
 
 ## 命令
 

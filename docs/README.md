@@ -83,6 +83,37 @@ php flarum mc-bridge:config --show         # 查看当前设置
 `sync-replies` 为 `1` 时，符合条件讨论的**每条回复**也会推送到游戏；默认 `0`，
 只在开新帖时推送，避免刷屏。
 
+### 1.5 语言（可选）
+
+两边都支持多语言，**默认都是简体中文**，互不影响：
+
+```bash
+# 论坛侧：控制台命令输出 + 接口错误消息
+php flarum mc-bridge:config --locale=en        # 切换为英文
+php flarum mc-bridge:config --locale=zh-Hans   # 切回中文（默认）
+php flarum mc-bridge:config --show             # 查看当前语言
+```
+
+游戏侧改 `plugins/McBridge/config.yml`：
+
+```yaml
+language: zh_CN     # 或 en
+```
+
+然后 `/mcbridge reload`。
+
+**新增语言**：
+
+| 位置 | 做法 |
+|------|------|
+| 论坛侧 | 复制 `locale/zh-Hans.yml` 为 `locale/<新语言>.yml` 并翻译，`extend.php` 里的 `Extend\Locales` 会自动注册整个目录 |
+| 游戏侧 | 复制 `lang/zh_CN.yml` 为 `lang/<新语言>.yml` 并翻译，把 `language` 指向它 |
+
+两边都会在缺键时**回退到中文**，不会把原始键名显示给玩家。校验脚本会检查各
+语言的键集是否一致。
+
+> ⚠️ 改语言后论坛侧需要清一次缓存：`php flarum cache:clear`
+
 ## 2. Minecraft 侧：构建并安装插件
 
 ### 2.1 构建

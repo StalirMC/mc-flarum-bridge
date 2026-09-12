@@ -4,6 +4,7 @@ namespace Stalir\McBridge\Console;
 
 use Flarum\Console\AbstractCommand;
 use Flarum\Settings\SettingsRepositoryInterface;
+use Stalir\McBridge\Service\BridgeMessages;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputOption;
 
@@ -11,11 +12,15 @@ use Symfony\Component\Console\Input\InputOption;
  * php flarum mc-bridge:secret            # generate and store a new secret
  * php flarum mc-bridge:secret --show     # print the current secret
  * php flarum mc-bridge:secret <value>    # store a specific secret
+ *
+ * Output language follows the mc-bridge.locale setting (Simplified Chinese by
+ * default) and can be changed with: php flarum mc-bridge:config --locale=en
  */
 class SecretCommand extends AbstractCommand
 {
     public function __construct(
-        protected SettingsRepositoryInterface $settings
+        protected SettingsRepositoryInterface $settings,
+        protected BridgeMessages $messages
     ) {
         parent::__construct();
     }
@@ -37,7 +42,7 @@ class SecretCommand extends AbstractCommand
 
         if ($this->option('show')) {
             if ($current === '') {
-                $this->comment('No secret is configured yet.');
+                $this->comment($this->messages->get('console.secret.missing'));
 
                 return self::SUCCESS;
             }
@@ -56,22 +61,22 @@ class SecretCommand extends AbstractCommand
         }
 
         if (strlen($secret) < 32) {
-            $this->error('The secret must be at least 32 characters long.');
+            $this->error($this->messages->get('console.secret.too_short'));
 
             return self::FAILURE;
         }
 
         $this->settings->set('mc-bridge.secret', $secret);
 
-        $this->info('MC Bridge secret stored.');
+        $this->info($this->messages->get('console.secret.stored'));
         $this->line('');
-        $this->line('Put this value in the plugin config.yml as security.secret:');
+        $this->line($this->messages->get('console.secret.paste_intro'));
         $this->line('');
-        $this->line('  ' . $secret);
+        $this->line($this->messages->get('console.secret.paste_line', ['%secret%' => $secret]));
         $this->line('');
 
         if ($current !== '' && ! hash_equals($current, $secret)) {
-            $this->comment('Note: the previous secret was replaced. Update your servers.');
+            $this->comment($this->messages->get('console.secret.replaced'));
         }
 
         return self::SUCCESS;

@@ -26,7 +26,7 @@ class HeartbeatController extends AbstractBridgeController
         $serverKey = $this->resolveServerKey($request, $body);
 
         if ($serverKey === null) {
-            return $this->error('A valid server_key is required.', 422);
+            return $this->fail('server_key_required', 422);
         }
 
         $playerNames = $this->sanitizePlayerNames($body['player_names'] ?? []);

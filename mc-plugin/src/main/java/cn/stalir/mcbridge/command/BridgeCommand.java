@@ -11,12 +11,16 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
 /**
  * {@code /mcbridge <status|outbox|broadcast|stats|reload>} - administration and
  * diagnostics.
+ *
+ * Every line is rendered from lang/&lt;language&gt;.yml, so the whole command
+ * follows the configured language.
  */
 public final class BridgeCommand implements CommandExecutor, TabCompleter {
 
@@ -36,14 +40,7 @@ public final class BridgeCommand implements CommandExecutor, TabCompleter {
         }
 
         if (args.length == 0) {
-            sender.sendMessage(plugin.messages().legacy(
-                    "&8&m--------&r &2McBridge &8&m--------\n"
-                            + "&7/mcbridge status &8- &f查看论坛记录的服务器状态\n"
-                            + "&7/mcbridge outbox &8- &f查看待投递消息\n"
-                            + "&7/mcbridge broadcast <内容> &8- &f向所有服务器推送一条消息\n"
-                            + "&7/mcbridge stats &8- &f本地统计\n"
-                            + "&7/mcbridge reload &8- &f重新加载配置"
-            ));
+            sendHelp(sender);
             return true;
         }
 
@@ -53,7 +50,10 @@ public final class BridgeCommand implements CommandExecutor, TabCompleter {
                 sender.sendMessage(plugin.messages().prefixed("reloaded"));
 
                 if (!plugin.config().isUsable()) {
-                    sender.sendMessage(plugin.messages().legacy("&c配置仍有问题：&7" + String.join("; ", plugin.config().problems())));
+                    sender.sendMessage(plugin.messages().prefixed(
+                            "reload-problems",
+                            "problems", String.join("; ", plugin.config().problems())
+                    ));
                 }
             }
 
@@ -63,29 +63,55 @@ public final class BridgeCommand implements CommandExecutor, TabCompleter {
 
             case "broadcast" -> {
                 if (args.length < 2) {
-                    sender.sendMessage(plugin.messages().legacy("&c用法: /mcbridge broadcast <内容>"));
+                    sender.sendMessage(plugin.messages().prefixed("broadcast-usage"));
                     return true;
                 }
 
-                String text = String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length));
+                String text = String.join(" ", Arrays.copyOfRange(args, 1, args.length));
                 sendBroadcast(sender, text);
             }
 
-            case "stats" -> sender.sendMessage(plugin.messages().legacy(
-                    "&8&m--------&r &2McBridge &8&m--------\n"
-                            + "&7服务器标识: &f" + plugin.config().serverKey() + "\n"
-                            + "&7论坛地址: &f" + plugin.config().forumUrl() + "\n"
-                            + "&7待发送事件: &f" + plugin.eventQueue().size()
-                            + " &8(丢弃 " + plugin.eventQueue().droppedCount() + ")\n"
-                            + "&7已投递事件: &f" + plugin.deliveredEvents() + "\n"
-                            + "&7已接收消息: &f" + plugin.receivedMessages() + "\n"
-                            + "&7配置状态: " + (plugin.config().isUsable() ? "&a正常" : "&c有问题")
-            ));
+            case "stats" -> sendStats(sender);
 
-            default -> sender.sendMessage(plugin.messages().legacy("&c未知子命令。可用: &f" + String.join(", ", SUBCOMMANDS)));
+            default -> sender.sendMessage(plugin.messages().prefixed(
+                    "unknown-subcommand",
+                    "available", String.join(", ", SUBCOMMANDS)
+            ));
         }
 
         return true;
+    }
+
+    private void sendHelp(CommandSender sender) {
+        String help = String.join("\n",
+                plugin.messages().string("help-header"),
+                plugin.messages().string("help-status"),
+                plugin.messages().string("help-outbox"),
+                plugin.messages().string("help-broadcast"),
+                plugin.messages().string("help-stats"),
+                plugin.messages().string("help-reload"));
+
+        sender.sendMessage(plugin.messages().legacy(help));
+    }
+
+    private void sendStats(CommandSender sender) {
+        String state = plugin.config().isUsable()
+                ? plugin.messages().string("stats-config-ok")
+                : plugin.messages().string("stats-config-bad");
+
+        String stats = String.join("\n",
+                plugin.messages().string("stats-header"),
+                plugin.messages().string("stats-server-key", "key", plugin.config().serverKey()),
+                plugin.messages().string("stats-forum-url", "url", plugin.config().forumUrl()),
+                plugin.messages().string("stats-locale", "locale", plugin.messages().language()),
+                plugin.messages().string("stats-queue",
+                        "queued", String.valueOf(plugin.eventQueue().size()),
+                        "dropped", String.valueOf(plugin.eventQueue().droppedCount())),
+                plugin.messages().string("stats-delivered", "delivered", String.valueOf(plugin.deliveredEvents())),
+                plugin.messages().string("stats-received", "received", String.valueOf(plugin.receivedMessages())),
+                plugin.messages().string("stats-config", "state", state));
+
+        sender.sendMessage(plugin.messages().legacy(stats));
     }
 
     private void fetchStatus(CommandSender sender) {
@@ -132,7 +158,10 @@ public final class BridgeCommand implements CommandExecutor, TabCompleter {
                         return;
                     }
 
-                    sender.sendMessage(plugin.messages().prefixed("outbox-header", "count", String.valueOf(messages.size())));
+                    sender.sendMessage(plugin.messages().prefixed(
+                            "outbox-header",
+                            "count", String.valueOf(messages.size())
+                    ));
 
                     for (JsonElement element : messages) {
                         if (!element.isJsonObject()) {
@@ -144,7 +173,7 @@ public final class BridgeCommand implements CommandExecutor, TabCompleter {
                         sender.sendMessage(plugin.messages().render(
                                 "outbox-line",
                                 "type", readString(message, "type", "?"),
-                                "title", readString(message, "title", "(无标题)")
+                                "title", readString(message, "title", plugin.messages().raw("outbox-untitled"))
                         ));
                     }
                 });

@@ -24,13 +24,13 @@ class BindStatusController extends AbstractBridgeController
         $serverKey = $this->resolveServerKey($request, $query);
 
         if ($serverKey === null) {
-            return $this->error('A valid server_key is required.', 422);
+            return $this->fail('server_key_required', 422);
         }
 
         $uuid = $this->sanitizeUuid($query['uuid'] ?? $query['player_uuid'] ?? null);
 
         if ($uuid === null) {
-            return $this->error('A valid uuid query parameter is required.', 422);
+            return $this->fail('uuid_required', 422);
         }
 
         $binding = McBinding::with('user')->where('player_uuid', $uuid)->first();

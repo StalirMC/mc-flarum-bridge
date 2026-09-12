@@ -9,18 +9,23 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Stalir\McBridge\Service\BridgeCrypto;
+use Stalir\McBridge\Service\BridgeMessages;
 
 /**
  * Base class for every bridge controller.
  *
  * Machine endpoints call {@see self::assertMachine()} first; a non-null return
  * value is an error response that must be passed straight back to the client.
+ *
+ * Every error message is translated through {@see BridgeMessages}, which
+ * defaults to Simplified Chinese.
  */
 abstract class AbstractBridgeController implements RequestHandlerInterface
 {
     public function __construct(
         protected SettingsRepositoryInterface $settings,
-        protected CacheRepository $cache
+        protected CacheRepository $cache,
+        protected BridgeMessages $messages
     ) {
     }
 
@@ -34,9 +39,23 @@ abstract class AbstractBridgeController implements RequestHandlerInterface
         return new JsonResponse($data, $status);
     }
 
+    /**
+     * Respond with a raw, untranslated message.
+     */
     protected function error(string $message, int $status = 400, array $extra = []): ResponseInterface
     {
         return new JsonResponse(array_merge(['error' => $message], $extra), $status);
+    }
+
+    /**
+     * Respond with a translated message.
+     *
+     * @param  string  $key  Suffix below `api.error.`, e.g. "server_key_required".
+     * @param  array<string, string>  $replace  %placeholder% pairs.
+     */
+    protected function fail(string $key, int $status, array $replace = [], array $extra = []): ResponseInterface
+    {
+        return $this->error($this->messages->get('api.error.'.$key, $replace), $status, $extra);
     }
 
     /**
@@ -80,10 +99,7 @@ abstract class AbstractBridgeController implements RequestHandlerInterface
         $secret = $this->secret();
 
         if ($secret === '') {
-            return $this->error(
-                'The MC Bridge secret is not configured on this forum. Run "php flarum mc-bridge:secret" first.',
-                503
-            );
+            return $this->fail('secret_missing', 503);
         }
 
         $timestamp = $request->getHeaderLine(BridgeCrypto::HEADER_TIMESTAMP);
@@ -91,25 +107,23 @@ abstract class AbstractBridgeController implements RequestHandlerInterface
         $signature = $request->getHeaderLine(BridgeCrypto::HEADER_SIGNATURE);
 
         if ($timestamp === '' || $nonce === '' || $signature === '') {
-            return $this->error('Missing bridge authentication headers.', 401);
+            return $this->fail('auth_headers_missing', 401);
         }
 
         if (! ctype_digit($timestamp)) {
-            return $this->error('Malformed timestamp header.', 401);
+            return $this->fail('timestamp_malformed', 401);
         }
 
         $skew = abs(time() - (int) $timestamp);
 
         if ($skew > BridgeCrypto::MAX_SKEW) {
-            return $this->error('Request timestamp is outside the allowed window.', 401, [
-                'skew_seconds' => $skew,
-            ]);
+            return $this->fail('timestamp_skew', 401, [], ['skew_seconds' => $skew]);
         }
 
         $nonceLength = strlen($nonce);
 
         if ($nonceLength < 8 || $nonceLength > 128) {
-            return $this->error('Malformed nonce header.', 401);
+            return $this->fail('nonce_malformed', 401);
         }
 
         $valid = BridgeCrypto::verify(
@@ -123,14 +137,14 @@ abstract class AbstractBridgeController implements RequestHandlerInterface
         );
 
         if (! $valid) {
-            return $this->error('Signature verification failed.', 401);
+            return $this->fail('signature_invalid', 401);
         }
 
         // A nonce may only be used once; keep it for twice the allowed skew.
         $cacheKey = 'mc-bridge:nonce:' . hash('sha256', $nonce);
 
         if (! $this->cache->add($cacheKey, 1, BridgeCrypto::MAX_SKEW * 2)) {
-            return $this->error('Duplicate nonce detected (possible replay).', 401);
+            return $this->fail('nonce_reused', 401);
         }
 
         return null;

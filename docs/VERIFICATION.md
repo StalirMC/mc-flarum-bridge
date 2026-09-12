@@ -21,14 +21,14 @@
 
 ## 2. 已完成的验证
 
-### 2.1 静态一致性校验 —— 185 项全部通过
+### 2.1 静态一致性校验 —— 194 项全部通过
 
 ```bash
 cd mc-flarum-bridge
 node tools/verify.mjs
 ```
 
-实测输出：`checks run: 185 / errors: 0 / warnings: 0 / ALL CHECKS PASSED`
+实测输出：`checks run: 194 / errors: 0 / warnings: 0 / ALL CHECKS PASSED`
 
 覆盖的 15 类不变量：
 
@@ -42,11 +42,11 @@ node tools/verify.mjs
 | 6 | Java 源码中每个项目内 import 都能解析 | 捕获跨包引用错误 |
 | 7 | `plugin.yml` 主类、命令、权限与代码一致 | 主类写错插件直接不加载 |
 | 8 | `BridgeConfig` 读取的 **19 个** 配置路径都在 `config.yml` 中定义 | 配置读取返回 null 导致的静默失效 |
-| 9 | 代码引用的 **12 个** 消息键都在 `messages` 中定义 | 玩家看到字面量 `bind-failed` 而不是提示 |
+| 9 | **插件多语言**：`config.yml` 的 `language` 指向存在的 `lang/*.yml`、`config.yml` 不再承载消息、`Messages.DEFAULT_LANGUAGE`/`FALLBACK_LANGUAGE` 与随包语言一致、代码用到的 **53 个**键在默认语言中全部存在、各语言键集完全相同、没有声明却未被引用的死键 | 玩家不会看到字面量 `bind-failed`，也不会因翻译缺键而显示原始键名 |
 | 10 | **PHP 与 Java 的 HMAC 规范化字符串顺序一致**（`timestamp→nonce→method→path→body`） | 两端算法不一致 = 所有请求 401 |
 | 11 | 迁移创建的 5 张表与 5 个模型的 `$table` 一一对应 | 查询不存在的表 |
 | 12 | 10 条注册路由全部在 `docs/API.md` 中有文档 | 文档与实现漂移 |
-| 13 | **Flarum 2.x 框架契约**：迁移必须返回 `['up'=>fn(Builder $schema), ...]`、模型必须显式开启 `$timestamps`、CSRF 放行中间件必须 `insertBefore(CheckCsrfToken)`、控制台命令必须继承 `AbstractCommand` 并实现 `fire()` | 这些是审查中实际查出的 blocker，已固化为自动回归防护 |
+| 13 | **Flarum 2.x 框架契约**：迁移必须返回 `['up'=>fn(Builder $schema), ...]`、模型必须显式开启 `$timestamps`、CSRF 放行中间件必须 `insertBefore(CheckCsrfToken)`、控制台命令必须继承 `AbstractCommand` 并实现 `fire()`、**必须用 `Extend\Locales` 注册语言目录**、`BridgeMessages.DEFAULT_LOCALE` 与随包语言一致、各语言键集一致 | 这些是审查与实测中查出的真实缺陷，已固化为自动回归防护 |
 | 14 | **CI 工作流自检**：`working-directory` 路径存在、引用的 `tools/*.mjs` 存在、三个 job 已声明、产物路径与 Gradle 默认输出一致 | 避免首次推送就因路径拼错而红 |
 | 15 | **Java 编译隐患**：用到的 JDK/第三方简单名必须已 import（先剥离注释）、调度器调用不得直接传未加 `(Runnable)` 强转的方法引用 | 这两类正是首次 CI 编译失败的真实原因，现无需编译器即可拦截 |
 

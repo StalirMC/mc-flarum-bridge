@@ -8,6 +8,7 @@ use Illuminate\Database\ConnectionInterface;
 use Stalir\McBridge\Model\McBindCode;
 use Stalir\McBridge\Model\McOutboxMessage;
 use Stalir\McBridge\Service\BridgeCrypto;
+use Stalir\McBridge\Service\BridgeMessages;
 use Symfony\Component\Console\Input\InputOption;
 
 /**
@@ -18,6 +19,9 @@ use Symfony\Component\Console\Input\InputOption;
  * perform a real signed loopback request through the web server, which is the
  * only way to prove the whole HTTP stack (routing, CSRF gate, signature,
  * persistence) works end to end.
+ *
+ * Output language follows the mc-bridge.locale setting (Simplified Chinese by
+ * default) and can be changed with: php flarum mc-bridge:config --locale=en
  */
 class SelfTestCommand extends AbstractCommand
 {
@@ -34,7 +38,8 @@ class SelfTestCommand extends AbstractCommand
 
     public function __construct(
         protected SettingsRepositoryInterface $settings,
-        protected ConnectionInterface $db
+        protected ConnectionInterface $db,
+        protected BridgeMessages $messages
     ) {
         parent::__construct();
     }
@@ -81,6 +86,12 @@ class SelfTestCommand extends AbstractCommand
         return $this->failures === 0 ? self::SUCCESS : self::FAILURE;
     }
 
+    /** Translate a key below `console.selftest.`. */
+    private function t(string $key, array $replace = []): string
+    {
+        return $this->messages->get('console.selftest.'.$key, $replace);
+    }
+
     // ------------------------------------------------------------------
     // Checks
     // ------------------------------------------------------------------
@@ -88,24 +99,27 @@ class SelfTestCommand extends AbstractCommand
     private function checkSecret(string $secret): void
     {
         if ($secret === '') {
-            $this->fail('Shared secret', 'not configured - run: php flarum mc-bridge:secret');
+            $this->fail($this->t('check.secret_title'), $this->t('check.secret_missing'));
 
             return;
         }
 
         if (strlen($secret) < 32) {
-            $this->fail('Shared secret', 'shorter than 32 characters; rotate it with mc-bridge:secret');
+            $this->fail($this->t('check.secret_title'), $this->t('check.secret_short'));
 
             return;
         }
 
-        $this->pass('Shared secret', 'configured (' . strlen($secret) . ' characters)');
+        $this->pass(
+            $this->t('check.secret_title'),
+            $this->t('check.secret_ok', ['%length%' => (string) strlen($secret)])
+        );
     }
 
     private function checkCrypto(string $secret): void
     {
         if ($secret === '') {
-            $this->fail('HMAC round trip', 'skipped because no secret is configured');
+            $this->fail($this->t('check.crypto_title'), $this->t('check.crypto_skipped'));
 
             return;
         }
@@ -118,24 +132,24 @@ class SelfTestCommand extends AbstractCommand
         $signature = BridgeCrypto::sign($secret, $timestamp, $nonce, 'POST', $path, $body);
 
         if (! BridgeCrypto::verify($secret, $timestamp, $nonce, 'POST', $path, $body, $signature)) {
-            $this->fail('HMAC round trip', 'a signature produced by BridgeCrypto did not verify');
+            $this->fail($this->t('check.crypto_title'), $this->t('check.crypto_verify_failed'));
 
             return;
         }
 
         if (BridgeCrypto::verify($secret, $timestamp, $nonce, 'POST', $path, $body . 'x', $signature)) {
-            $this->fail('HMAC tamper detection', 'a modified body still verified - do not use this build');
+            $this->fail($this->t('check.crypto_title'), $this->t('check.crypto_tamper_failed'));
 
             return;
         }
 
         if (BridgeCrypto::verify('wrong-secret-wrong-secret-wrong', $timestamp, $nonce, 'POST', $path, $body, $signature)) {
-            $this->fail('HMAC key separation', 'a different secret also verified the signature');
+            $this->fail($this->t('check.crypto_title'), $this->t('check.crypto_separation_failed'));
 
             return;
         }
 
-        $this->pass('HMAC round trip', 'sign/verify ok, tampering rejected');
+        $this->pass($this->t('check.crypto_title'), $this->t('check.crypto_ok'));
     }
 
     private function checkCanonicalShape(): void
@@ -144,12 +158,12 @@ class SelfTestCommand extends AbstractCommand
         $expected = "1700000000\nnonce1234\nPOST\n/api/mc-bridge/events\n{\"a\":1}";
 
         if ($canonical !== $expected || substr_count($canonical, "\n") !== 4) {
-            $this->fail('Canonical string', 'unexpected format; the plugin will not be able to authenticate');
+            $this->fail($this->t('check.canonical_title'), $this->t('check.canonical_bad'));
 
             return;
         }
 
-        $this->pass('Canonical string', 'timestamp\\nnonce\\nMETHOD\\npath\\nbody');
+        $this->pass($this->t('check.canonical_title'), $this->t('check.canonical_ok'));
     }
 
     private function checkPathNormalisation(): void
@@ -164,16 +178,17 @@ class SelfTestCommand extends AbstractCommand
             $actual = BridgeCrypto::normalizePath($input);
 
             if ($actual !== $expected) {
-                $this->fail(
-                    'Path normalisation',
-                    sprintf('normalizePath(%s) returned %s, expected %s', $input, $actual, $expected)
-                );
+                $this->fail($this->t('check.path_title'), $this->t('check.path_bad', [
+                    '%input%' => $input,
+                    '%actual%' => $actual,
+                    '%expected%' => $expected,
+                ]));
 
                 return;
             }
         }
 
-        $this->pass('Path normalisation', 'sub-directory installs and query strings handled');
+        $this->pass($this->t('check.path_title'), $this->t('check.path_ok'));
     }
 
     private function checkTables(): void
@@ -188,12 +203,16 @@ class SelfTestCommand extends AbstractCommand
         }
 
         if ($missing !== []) {
-            $this->fail('Database tables', 'missing: ' . implode(', ', $missing) . ' - run: php flarum migrate');
+            $this->fail($this->t('check.tables_title'), $this->t('check.tables_missing', [
+                '%tables%' => implode(', ', $missing),
+            ]));
 
             return;
         }
 
-        $this->pass('Database tables', count(self::REQUIRED_TABLES) . ' tables present');
+        $this->pass($this->t('check.tables_title'), $this->t('check.tables_ok', [
+            '%count%' => (string) count(self::REQUIRED_TABLES),
+        ]));
     }
 
     private function checkQueues(): void
@@ -202,12 +221,17 @@ class SelfTestCommand extends AbstractCommand
             $pending = McOutboxMessage::query()->whereNull('delivered_at')->count();
             $servers = $this->db->table('mc_servers')->count();
         } catch (\Throwable $exception) {
-            $this->fail('Query paths', $exception->getMessage());
+            $this->fail($this->t('check.queries_title'), $this->t('check.queries_failed', [
+                '%message%' => $exception->getMessage(),
+            ]));
 
             return;
         }
 
-        $this->pass('Query paths', sprintf('%d pending outbox message(s), %d known server(s)', $pending, $servers));
+        $this->pass($this->t('check.queries_title'), $this->t('check.queries_ok', [
+            '%pending%' => (string) $pending,
+            '%servers%' => (string) $servers,
+        ]));
     }
 
     private function checkBindCodeAlphabet(): void
@@ -216,13 +240,13 @@ class SelfTestCommand extends AbstractCommand
             $code = McBindCode::generateCode();
 
             if (strlen($code) !== 8 || ! preg_match('/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/', $code)) {
-                $this->fail('Binding code format', 'generated code "' . $code . '" is not 8 unambiguous characters');
+                $this->fail($this->t('check.bind_title'), $this->t('check.bind_bad', ['%code%' => $code]));
 
                 return;
             }
         }
 
-        $this->pass('Binding code format', '200 samples, 8 chars, no 0/O/1/I');
+        $this->pass($this->t('check.bind_title'), $this->t('check.bind_ok'));
     }
 
     /**
@@ -232,13 +256,13 @@ class SelfTestCommand extends AbstractCommand
     private function checkLiveLoopback(string $url, string $secret): void
     {
         if ($secret === '') {
-            $this->fail('Live loopback', 'skipped because no secret is configured');
+            $this->fail($this->t('check.live_title'), $this->t('check.live_skipped_no_secret'));
 
             return;
         }
 
         if (! class_exists(\GuzzleHttp\Client::class)) {
-            $this->fail('Live loopback', 'Guzzle is not available in this installation');
+            $this->fail($this->t('check.live_title'), $this->t('check.live_no_guzzle'));
 
             return;
         }
@@ -281,10 +305,11 @@ class SelfTestCommand extends AbstractCommand
             $payload = (string) $response->getBody();
 
             if ($status < 200 || $status >= 300) {
-                $this->fail(
-                    'Live loopback',
-                    sprintf('POST %s returned HTTP %d: %s', $path, $status, mb_substr($payload, 0, 200))
-                );
+                $this->fail($this->t('check.live_title'), $this->t('check.live_http_error', [
+                    '%path%' => $path,
+                    '%status%' => (string) $status,
+                    '%body%' => mb_substr($payload, 0, 200),
+                ]));
 
                 return;
             }
@@ -292,22 +317,24 @@ class SelfTestCommand extends AbstractCommand
             $decoded = json_decode($payload, true);
 
             if (! is_array($decoded) || ($decoded['ok'] ?? false) !== true) {
-                $this->fail('Live loopback', 'the endpoint answered but did not report ok=true');
+                $this->fail($this->t('check.live_title'), $this->t('check.live_not_ok'));
 
                 return;
             }
 
-            $this->pass('Live loopback', 'signed heartbeat accepted by the web server');
+            $this->pass($this->t('check.live_title'), $this->t('check.live_ok'));
 
             // Clean up the probe row so it does not show up as a real server.
             try {
                 $this->db->table('mc_servers')->where('server_key', $serverKey)->delete();
-                $this->pass('Probe cleanup', 'temporary selftest server row removed');
+                $this->pass($this->t('check.probe_cleanup'), $this->t('check.probe_cleanup_ok'));
             } catch (\Throwable $exception) {
-                $this->note('Probe cleanup', 'could not remove the selftest row: ' . $exception->getMessage());
+                $this->note($this->t('check.probe_cleanup'), $this->t('check.probe_cleanup_failed', [
+                    '%message%' => $exception->getMessage(),
+                ]));
             }
         } catch (\Throwable $exception) {
-            $this->fail('Live loopback', $exception->getMessage());
+            $this->fail($this->t('check.live_title'), $exception->getMessage());
         }
     }
 
@@ -334,14 +361,14 @@ class SelfTestCommand extends AbstractCommand
     private function render(bool $liveRequested): void
     {
         $this->line('');
-        $this->info('MC Bridge self test');
+        $this->info($this->t('title'));
         $this->line('');
 
         foreach ($this->results as $result) {
             $mark = match ($result['ok']) {
-                true => '  OK  ',
-                false => ' FAIL ',
-                default => ' NOTE ',
+                true => $this->t('mark_ok'),
+                false => $this->t('mark_fail'),
+                default => $this->t('mark_note'),
             };
 
             $this->line(sprintf('%s %-22s %s', $mark, $result['label'], $result['detail']));
@@ -350,17 +377,17 @@ class SelfTestCommand extends AbstractCommand
         $this->line('');
 
         if (! $liveRequested) {
-            $this->comment('Live HTTP check skipped. Re-run with:');
-            $this->line('  php flarum mc-bridge:selftest --url=https://your.forum');
+            $this->comment($this->t('live_skipped'));
+            $this->line($this->t('live_hint'));
             $this->line('');
         }
 
         if ($this->failures === 0) {
-            $this->info('All bridge checks passed.');
-            $this->line('Next: start the Minecraft server and watch for a successful heartbeat.');
+            $this->info($this->t('all_passed'));
+            $this->line($this->t('next_step'));
         } else {
-            $this->error(sprintf('%d check(s) failed.', $this->failures));
-            $this->line('See docs/README.md section 6 (troubleshooting).');
+            $this->error($this->t('failed', ['%count%' => (string) $this->failures]));
+            $this->line($this->t('troubleshoot'));
         }
 
         $this->line('');

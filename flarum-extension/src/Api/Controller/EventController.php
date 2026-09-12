@@ -27,7 +27,7 @@ class EventController extends AbstractBridgeController
         $serverKey = $this->resolveServerKey($request, $body);
 
         if ($serverKey === null) {
-            return $this->error('A valid server_key is required.', 422);
+            return $this->fail('server_key_required', 422);
         }
 
         $events = $body['events'] ?? null;
@@ -37,7 +37,7 @@ class EventController extends AbstractBridgeController
         }
 
         if (! is_array($events) || $events === []) {
-            return $this->error('No events supplied.', 422);
+            return $this->fail('events_empty', 422);
         }
 
         $events = array_slice(array_values($events), 0, self::MAX_BATCH);
@@ -46,14 +46,14 @@ class EventController extends AbstractBridgeController
 
         foreach ($events as $index => $event) {
             if (! is_array($event)) {
-                $rejected[] = ['index' => $index, 'reason' => 'Event must be an object.'];
+                $rejected[] = ['index' => $index, 'reason' => $this->messages->get('api.error.event_not_object')];
                 continue;
             }
 
             $type = $event['type'] ?? null;
 
             if (! is_string($type) || ! in_array($type, McEvent::ALLOWED_TYPES, true)) {
-                $rejected[] = ['index' => $index, 'reason' => 'Unsupported event type.'];
+                $rejected[] = ['index' => $index, 'reason' => $this->messages->get('api.error.event_type_unsupported')];
                 continue;
             }
 

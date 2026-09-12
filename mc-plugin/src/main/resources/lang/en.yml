@@ -1,0 +1,74 @@
+# English
+#
+# Player-facing messages and plugin log lines. Placeholders use braces, e.g. {code}.
+# Edit this file to customise the wording, or add another language file under
+# lang/ and select it with `language` in config.yml.
+
+prefix: "&8[&2MCBridge&8] &r"
+
+# ---- permissions and usage ----
+no-permission: "&cYou do not have permission to run this command."
+players-only: "&cThis command can only be run by a player."
+unknown-subcommand: "&cUnknown subcommand. Available: &f{available}"
+help-header: "&8&m--------&r &2McBridge &8&m--------"
+help-status: "&7/mcbridge status &8- &fShow the server status recorded on the forum"
+help-outbox: "&7/mcbridge outbox &8- &fList messages waiting to be delivered"
+help-broadcast: "&7/mcbridge broadcast <text> &8- &fPush a message to every server"
+help-stats: "&7/mcbridge stats &8- &fLocal counters"
+help-reload: "&7/mcbridge reload &8- &fReload the configuration"
+
+# ---- account binding ----
+bind-requesting: "&7Requesting a binding code from the forum..."
+bind-code: "&aBinding code &e{code} &a- valid for &e{minutes} &aminutes."
+bind-hint: "&7Open the forum, go to your settings and enter the code to finish linking."
+bind-already: "&aYour account is already linked to the forum user &e{user}&a."
+bind-failed: "&cCould not obtain a binding code: {reason}"
+bind-failed-no-code: "&cThe forum did not return a binding code."
+
+# ---- status and announcements ----
+status-online: "&aServers online &e{servers_online}&a/&e{servers}&a, players &e{players}&a."
+status-unreachable: "&cCannot reach the forum: {reason}"
+outbox-empty: "&7There are no messages waiting on the forum."
+outbox-header: "&7Waiting messages: &e{count}"
+outbox-line: "&8- &f{type} &7{title}"
+outbox-untitled: "(untitled)"
+broadcast-usage: "&cUsage: /mcbridge broadcast <text>"
+broadcast-sent: "&aMessage queued on the forum; it will appear after the next poll."
+
+# ---- reload and statistics ----
+reloaded: "&aConfiguration reloaded."
+reload-problems: "&cThe configuration still has problems: &7{problems}"
+stats-header: "&8&m--------&r &2McBridge &8&m--------"
+stats-server-key: "&7Server key: &f{key}"
+stats-forum-url: "&7Forum URL: &f{url}"
+stats-locale: "&7Language: &f{locale}"
+stats-queue: "&7Queued events: &f{queued} &8(dropped {dropped})"
+stats-delivered: "&7Delivered events: &f{delivered}"
+stats-received: "&7Received messages: &f{received}"
+stats-config: "&7Configuration: {state}"
+stats-config-ok: "&aok"
+stats-config-bad: "&cproblems"
+
+# ---- console log ----
+log:
+  enabled: "McBridge enabled as server '{key}' -> {url}"
+  disabled: "McBridge disabled."
+  idle: "The configuration has problems, so McBridge stays idle until they are fixed."
+  heartbeat-failed: "Heartbeat failed ({count} in a row): {reason}"
+  outbox-failed: "Outbox poll failed ({count} in a row): {reason}"
+  events-failed: "Could not deliver {count} event(s): {reason}"
+  relayed: "Relayed {type} from the forum: {title}"
+  remote-rejected: "Rejected remote command from the forum (not whitelisted): {command}"
+  remote-executing: "Executing remote command from the forum: {command}"
+  outbox-handle-failed: "Failed to handle an outbox message"
+
+# ---- configuration validation ----
+config:
+  problem:
+    url-empty: "forum.url is empty"
+    url-scheme: "forum.url must start with http:// or https://"
+    server-key: "server.key must match [A-Za-z0-9._-] and be 1-100 characters long"
+    secret-empty: "security.secret is empty - run \"php flarum mc-bridge:secret\" and paste the value"
+    secret-short: "security.secret must be at least 32 characters long"
+    whitelist: "Invalid regex in game.remote-command-whitelist: {pattern} ({reason})"
+    summary: "Configuration problem: {message}"

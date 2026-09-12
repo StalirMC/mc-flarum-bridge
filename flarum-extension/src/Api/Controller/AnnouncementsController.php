@@ -9,6 +9,7 @@ use Illuminate\Database\ConnectionInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Stalir\McBridge\Model\McOutboxMessage;
+use Stalir\McBridge\Service\BridgeMessages;
 
 /**
  * GET /api/mc-bridge/outbox?server_key=survival&limit=20
@@ -24,9 +25,10 @@ class AnnouncementsController extends AbstractBridgeController
     public function __construct(
         SettingsRepositoryInterface $settings,
         CacheRepository $cache,
+        BridgeMessages $messages,
         protected ConnectionInterface $db
     ) {
-        parent::__construct($settings, $cache);
+        parent::__construct($settings, $cache, $messages);
     }
 
     public function handle(ServerRequestInterface $request): ResponseInterface
@@ -39,7 +41,7 @@ class AnnouncementsController extends AbstractBridgeController
         $serverKey = $this->resolveServerKey($request, $query);
 
         if ($serverKey === null) {
-            return $this->error('A valid server_key is required.', 422);
+            return $this->fail('server_key_required', 422);
         }
 
         $limit = (int) ($query['limit'] ?? self::DEFAULT_LIMIT);

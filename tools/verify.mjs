@@ -147,6 +147,28 @@ function lookupPath(object, path) {
   return node;
 }
 
+/** Flatten a parsed YAML tree into the set of leaf key paths. */
+function flattenKeys(node, prefix = '') {
+  const keys = new Set();
+
+  if (node === null || typeof node !== 'object' || Array.isArray(node)) {
+    if (prefix) keys.add(prefix);
+    return keys;
+  }
+
+  for (const [key, value] of Object.entries(node)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      for (const child of flattenKeys(value, path)) keys.add(child);
+    } else {
+      keys.add(path);
+    }
+  }
+
+  return keys;
+}
+
 // ---------------------------------------------------------------------------
 // 1. JSON files
 // ---------------------------------------------------------------------------
@@ -375,29 +397,142 @@ for (const key of new Set(readKeys)) {
 }
 
 // ---------------------------------------------------------------------------
-// 9. message keys used by the plugin
+// 9. plugin localisation (lang/*.yml)
 // ---------------------------------------------------------------------------
 
-section('9. message keys');
+section('9. plugin language files');
 
-const messageKeys = new Set();
+const langDir = join(PLUGIN, 'src/main/resources/lang');
+const langFileList = existsSync(langDir) ? walk(langDir, (file) => file.endsWith('.yml')) : [];
+const pluginLangs = new Map();
 
-for (const file of javaFiles) {
-  const source = read(file);
-  for (const match of source.matchAll(/\.(?:prefixed|render|rawMessage)\("([A-Za-z0-9_-]+)"/g)) {
-    messageKeys.add(match[1]);
+for (const file of langFileList) {
+  pluginLangs.set(basename(file, '.yml'), parseYaml(read(file)));
+}
+
+if (pluginLangs.size === 0) {
+  fail('lang', 'no language files found under mc-plugin/src/main/resources/lang');
+} else {
+  pass(`${pluginLangs.size} language file(s): ${[...pluginLangs.keys()].join(', ')}`);
+}
+
+const defaultLangTree = pluginLangs.get('zh_CN');
+
+if (!defaultLangTree) {
+  fail('lang', 'the default language file lang/zh_CN.yml is missing');
+} else {
+  pass('default language lang/zh_CN.yml present');
+}
+
+// config.yml must select a language that exists, and must not carry messages.
+{
+  const configured = configYml.language;
+
+  if (typeof configured !== 'string' || configured === '') {
+    fail('config.yml', 'the language key is missing');
+  } else if (!pluginLangs.has(configured)) {
+    fail('config.yml', `language "${configured}" has no lang/${configured}.yml`);
+  } else {
+    pass(`config.yml language = ${configured}`);
+  }
+
+  if (lookupPath(configYml, 'messages') !== undefined) {
+    fail('config.yml', 'messages belong in lang/*.yml; config.yml must not define a messages section');
+  } else {
+    pass('config.yml carries no messages section');
   }
 }
 
-if (messageKeys.size === 0) {
-  fail('messages', 'no message keys referenced from Java sources');
+// The Java constant must agree with what is shipped.
+{
+  const source = read(join(javaRoot, 'cn/stalir/mcbridge/Messages.java'));
+  const declared = source.match(/DEFAULT_LANGUAGE\s*=\s*"([^"]+)"/);
+
+  if (!declared) {
+    fail('Messages.java', 'DEFAULT_LANGUAGE is not declared');
+  } else if (!pluginLangs.has(declared[1])) {
+    fail('Messages.java', `DEFAULT_LANGUAGE "${declared[1]}" has no lang/${declared[1]}.yml`);
+  } else {
+    pass(`Messages.DEFAULT_LANGUAGE = ${declared[1]}`);
+  }
+
+  const fallback = source.match(/FALLBACK_LANGUAGE\s*=\s*"([^"]+)"/);
+
+  if (!fallback) {
+    fail('Messages.java', 'FALLBACK_LANGUAGE is not declared');
+  } else if (!pluginLangs.has(fallback[1])) {
+    fail('Messages.java', `FALLBACK_LANGUAGE "${fallback[1]}" has no lang/${fallback[1]}.yml`);
+  } else {
+    pass(`Messages.FALLBACK_LANGUAGE = ${fallback[1]}`);
+  }
 }
 
-for (const key of messageKeys) {
-  if (lookupPath(configYml, `messages.${key}`) === undefined) {
-    fail('config.yml', `message key "${key}" is used in code but missing from messages`);
+// Every key the Java code asks for must exist in the default language.
+const usedKeys = new Set();
+
+for (const file of javaFiles) {
+  const source = read(file);
+
+  // Note: the leading dot is optional so that bare calls such as
+  // raw("prefix") inside Messages.java are picked up too, and \s* allows the
+  // key to sit on the line after the opening parenthesis (common in this
+  // codebase). Keys chosen inside an expression are not detectable and should
+  // be passed as plain literals instead.
+  for (const match of source.matchAll(/\b(?:prefixed|render|plain|string|raw)\(\s*"([A-Za-z0-9_.-]+)"/g)) {
+    usedKeys.add(match[1]);
+  }
+
+  for (const match of source.matchAll(/logText\(\s*"([A-Za-z0-9_.-]+)"/g)) {
+    usedKeys.add(match[1]);
+  }
+}
+
+if (defaultLangTree) {
+  if (usedKeys.size === 0) {
+    fail('messages', 'no message keys referenced from the Java sources');
+  }
+
+  const missing = [...usedKeys].filter((key) => lookupPath(defaultLangTree, key) === undefined);
+
+  if (missing.length > 0) {
+    for (const key of missing) {
+      fail('lang/zh_CN.yml', `key "${key}" is used in the code but missing from the default language`);
+    }
   } else {
-    pass(`message ${key}`);
+    pass(`all ${usedKeys.size} message keys used in the code resolve in zh_CN.yml`);
+  }
+
+  // Dead keys are not fatal, but they usually mean a feature was never wired up.
+  const declared = flattenKeys(defaultLangTree);
+  const unused = [...declared].filter((key) => !usedKeys.has(key));
+
+  if (unused.length > 0) {
+    warn('lang/zh_CN.yml', `${unused.length} key(s) are never referenced by the code: ${unused.join(', ')}`);
+  } else {
+    pass('every declared key is referenced by the code');
+  }
+}
+
+// Every language must define exactly the same key set as the default, so a
+// translation can never silently fall back mid-message.
+if (defaultLangTree) {
+  const reference = flattenKeys(defaultLangTree);
+
+  for (const [language, tree] of pluginLangs) {
+    if (language === 'zh_CN') continue;
+
+    const keys = flattenKeys(tree);
+    const absent = [...reference].filter((key) => !keys.has(key));
+    const extra = [...keys].filter((key) => !reference.has(key));
+
+    if (absent.length > 0 || extra.length > 0) {
+      fail(
+        `lang/${language}.yml`,
+        `key set differs from zh_CN.yml - missing: [${absent.join(', ')}] extra: [${extra.join(', ')}]`
+      );
+    } else {
+      pass(`lang/${language}.yml defines the same ${keys.size} keys as zh_CN.yml`);
+    }
   }
 }
 
@@ -674,6 +809,77 @@ section('13. Flarum 2.x framework contracts');
 
     pass(`console ${name} extends AbstractCommand and implements fire()`);
   }
+
+  // ------------------------------------------------------------------
+  // Translations. Flarum does NOT discover an extension's locale files on
+  // its own: extend.php has to register the directory, otherwise every
+  // translated string silently renders as its raw key.
+  // ------------------------------------------------------------------
+  const localeDir = join(EXT, 'locale');
+  const flarumLocales = existsSync(localeDir)
+    ? walk(localeDir, (file) => file.endsWith('.yml')).map((file) => ({
+        name: basename(file, '.yml'),
+        tree: parseYaml(read(file)),
+      }))
+    : [];
+
+  if (flarumLocales.length === 0) {
+    fail('locales', 'flarum-extension/locale/ contains no .yml files');
+  } else {
+    pass(`${flarumLocales.length} Flarum locale file(s): ${flarumLocales.map((l) => l.name).join(', ')}`);
+  }
+
+  if (!/new\s+Extend\\Locales\(/.test(extendFile)) {
+    fail(
+      'locales',
+      "extend.php must register the locale directory: new Extend\\Locales(__DIR__.'/locale'), " +
+      'otherwise no translation is ever loaded'
+    );
+  } else {
+    pass('extend.php registers the locale directory with Extend\\Locales');
+  }
+
+  const flarumDefault = flarumLocales.find((locale) => locale.name === 'zh-Hans');
+
+  if (!flarumDefault) {
+    fail('locales', 'the default locale locale/zh-Hans.yml is missing');
+  } else {
+    pass('default locale locale/zh-Hans.yml present');
+  }
+
+  {
+    const source = read(join(EXT, 'src/Service/BridgeMessages.php'));
+    const declared = source.match(/DEFAULT_LOCALE\s*=\s*'([^']+)'/);
+
+    if (!declared) {
+      fail('BridgeMessages.php', 'DEFAULT_LOCALE is not declared');
+    } else if (!flarumLocales.some((locale) => locale.name === declared[1])) {
+      fail('BridgeMessages.php', `DEFAULT_LOCALE "${declared[1]}" has no locale/${declared[1]}.yml`);
+    } else {
+      pass(`BridgeMessages.DEFAULT_LOCALE = ${declared[1]}`);
+    }
+  }
+
+  if (flarumDefault) {
+    const reference = flattenKeys(flarumDefault.tree);
+
+    for (const locale of flarumLocales) {
+      if (locale.name === flarumDefault.name) continue;
+
+      const keys = flattenKeys(locale.tree);
+      const absent = [...reference].filter((key) => !keys.has(key));
+      const extra = [...keys].filter((key) => !reference.has(key));
+
+      if (absent.length > 0 || extra.length > 0) {
+        fail(
+          `locale/${locale.name}.yml`,
+          `key set differs from zh-Hans.yml - missing: [${absent.slice(0, 6).join(', ')}] extra: [${extra.slice(0, 6).join(', ')}]`
+        );
+      } else {
+        pass(`locale/${locale.name}.yml defines the same ${keys.size} keys as zh-Hans.yml`);
+      }
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -802,6 +1008,9 @@ section('15. Java compile hazards');
     TabCompleter: 'org.bukkit.command.TabCompleter',
     Component: 'net.kyori.adventure.text.Component',
     LegacyComponentSerializer: 'net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer',
+    PlainTextComponentSerializer: 'net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer',
+    ConfigurationSection: 'org.bukkit.configuration.ConfigurationSection',
+    YamlConfiguration: 'org.bukkit.configuration.file.YamlConfiguration',
     JsonObject: 'com.google.gson.JsonObject',
     JsonArray: 'com.google.gson.JsonArray',
     JsonElement: 'com.google.gson.JsonElement',

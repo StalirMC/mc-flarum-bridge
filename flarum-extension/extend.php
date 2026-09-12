@@ -16,8 +16,16 @@ use Stalir\McBridge\Console\SecretCommand;
 use Stalir\McBridge\Console\SelfTestCommand;
 use Stalir\McBridge\Http\Middleware\BridgeCsrfBypassMiddleware;
 use Stalir\McBridge\Listener\QueueAnnouncement;
+use Stalir\McBridge\Service\BridgeMessages;
 
 return [
+    // ---------------------------------------------------------------------
+    // Translations. Flarum does not discover an extension's locale files on
+    // its own: every *.yml in this directory is registered, the file name
+    // being the locale. Without this line none of the translations load.
+    // ---------------------------------------------------------------------
+    new Extend\Locales(__DIR__.'/locale'),
+
     // ---------------------------------------------------------------------
     // Flarum applies CSRF verification to the whole `api` stack, which a
     // session-less Minecraft server cannot satisfy. This middleware marks
@@ -72,6 +80,7 @@ return [
     // ---------------------------------------------------------------------
     (new Extend\Settings())
         ->default('mc-bridge.secret', '')
+        ->default('mc-bridge.locale', BridgeMessages::DEFAULT_LOCALE)
         ->default('mc-bridge.announcement_tag_ids', '')
         ->default('mc-bridge.sync_replies', '0')
         ->default('mc-bridge.max_announcement_age_days', '30'),

@@ -2,7 +2,14 @@
 # McBridge configuration
 #
 # After editing this file run: /mcbridge reload
+#
+# Messages are NOT in this file. They live in lang/<language>.yml (player
+# messages and plugin log lines). Shipped languages: zh_CN (default), en.
 # ---------------------------------------------------------------------------
+
+# Output language: zh_CN (default) or en. Drop another file into
+# plugins/McBridge/lang/ to add a language.
+language: zh_CN
 
 forum:
   # Base URL of your Flarum installation, WITHOUT a trailing slash.
@@ -50,20 +57,3 @@ game:
   remote-command-whitelist:
     - "^broadcast .+"
     - "^say .+"
-
-messages:
-  prefix: "&8[&2MCBridge&8] &r"
-  no-permission: "&c你没有权限执行此命令。"
-  players-only: "&c该命令只能由玩家执行。"
-  bind-requesting: "&7正在向论坛申请绑定码…"
-  bind-code: "&a绑定码 &e{code} &a，有效期 &e{minutes} &a分钟。"
-  bind-hint: "&7请前往论坛 → 个人设置 → 输入该绑定码完成绑定。"
-  bind-already: "&a你的账号已绑定论坛用户 &e{user}&a。"
-  bind-failed: "&c获取绑定码失败：{reason}"
-  status-online: "&a在线服务器 &e{servers_online}&a/&e{servers}&a，玩家 &e{players}&a。"
-  status-unreachable: "&c无法连接论坛：{reason}"
-  outbox-empty: "&7论坛没有待投递的消息。"
-  outbox-header: "&7待投递消息 &e{count} &7条："
-  outbox-line: "&8- &f{type} &7{title}"
-  broadcast-sent: "&a消息已提交到论坛，将在服务器轮询后显示。"
-  reloaded: "&a配置已重新加载。"

@@ -4,12 +4,15 @@ namespace Stalir\McBridge\Api\Controller;
 
 use Carbon\Carbon;
 use Flarum\Http\RequestUtil;
+use Flarum\Settings\SettingsRepositoryInterface;
 use Flarum\User\Exception\NotAuthenticatedException;
+use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Database\ConnectionInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Stalir\McBridge\Model\McBindCode;
 use Stalir\McBridge\Model\McBinding;
+use Stalir\McBridge\Service\BridgeMessages;
 
 /**
  * POST   /api/mc-bridge/link   { "code": "ABCD2345" }   link a game account
@@ -21,11 +24,12 @@ use Stalir\McBridge\Model\McBinding;
 class LinkController extends AbstractBridgeController
 {
     public function __construct(
-        \Flarum\Settings\SettingsRepositoryInterface $settings,
-        \Illuminate\Contracts\Cache\Repository $cache,
+        SettingsRepositoryInterface $settings,
+        CacheRepository $cache,
+        BridgeMessages $messages,
         protected ConnectionInterface $db
     ) {
-        parent::__construct($settings, $cache);
+        parent::__construct($settings, $cache, $messages);
     }
 
     public function handle(ServerRequestInterface $request): ResponseInterface
@@ -38,7 +42,7 @@ class LinkController extends AbstractBridgeController
         try {
             $actor->assertRegistered();
         } catch (NotAuthenticatedException) {
-            return $this->error('You must be logged in to manage a Minecraft account link.', 401);
+            return $this->fail('link_login_required', 401);
         }
 
         return strtoupper($request->getMethod()) === 'DELETE'
@@ -52,43 +56,42 @@ class LinkController extends AbstractBridgeController
         $code = $body['code'] ?? null;
 
         if (! is_string($code) || trim($code) === '') {
-            return $this->error('A binding code is required.', 422);
+            return $this->fail('link_code_required', 422);
         }
 
         $code = strtoupper(trim($code));
 
         if (! preg_match('/^[A-Z0-9]{8}$/', $code)) {
-            return $this->error('That does not look like a binding code.', 422);
+            return $this->fail('link_code_malformed', 422);
         }
 
         /** @var McBindCode|null $record */
         $record = McBindCode::where('code', $code)->first();
 
         if (! $record) {
-            return $this->error('Unknown or already used binding code.', 404);
+            return $this->fail('link_code_unknown', 404);
         }
 
         if ($record->used_at !== null) {
-            return $this->error('This binding code has already been used.', 409);
+            return $this->fail('link_code_used', 409);
         }
 
         if ($record->expires_at === null || $record->expires_at->isPast()) {
-            return $this->error('This binding code has expired. Run /bind again in game.', 410);
+            return $this->fail('link_code_expired', 410);
         }
 
         $existingForUser = McBinding::where('user_id', $actor->id)->first();
 
         if ($existingForUser && $existingForUser->player_uuid !== $record->player_uuid) {
-            return $this->error(
-                'Your forum account is already linked to ' . $existingForUser->player_name . '. Unlink it first.',
-                409
-            );
+            return $this->fail('link_user_already_bound', 409, [
+                '%player%' => (string) $existingForUser->player_name,
+            ]);
         }
 
         $existingForPlayer = McBinding::where('player_uuid', $record->player_uuid)->first();
 
         if ($existingForPlayer && (int) $existingForPlayer->user_id !== (int) $actor->id) {
-            return $this->error('That Minecraft account is already linked to another forum account.', 409);
+            return $this->fail('link_player_already_bound', 409);
         }
 
         $binding = $this->db->transaction(function () use ($record, $actor) {
@@ -116,7 +119,7 @@ class LinkController extends AbstractBridgeController
         $binding = McBinding::where('user_id', $actor->id)->first();
 
         if (! $binding) {
-            return $this->error('Your account is not linked to a Minecraft account.', 404);
+            return $this->fail('link_not_bound', 404);
         }
 
         $binding->delete();

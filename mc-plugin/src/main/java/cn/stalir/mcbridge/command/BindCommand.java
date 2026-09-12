@@ -75,7 +75,7 @@ public final class BindCommand implements CommandExecutor {
         }
 
         if (!response.has("code") || !response.get("code").isJsonPrimitive()) {
-            player.sendMessage(plugin.messages().prefixed("bind-failed", "reason", "the forum did not return a code"));
+            player.sendMessage(plugin.messages().prefixed("bind-failed-no-code"));
             return;
         }
 
