@@ -880,6 +880,77 @@ section('13. Flarum 2.x framework contracts');
       }
     }
   }
+
+  // ------------------------------------------------------------------
+  // Installability. Flarum 2.x discovers extensions only through Composer's
+  // installed.json, so the monorepo root has to expose the sub-directory via
+  // extra.flarum-subextensions, and the ROOT autoload must cover the
+  // sub-extension's namespace: Composer ignores a sub-package autoload section
+  // and Flarum does not register namespaces itself.
+  // ------------------------------------------------------------------
+  const rootComposerFile = join(ROOT, 'composer.json');
+
+  if (!existsSync(rootComposerFile)) {
+    fail(
+      'composer.json',
+      'the repository root needs a composer.json with extra.flarum-subextensions, ' +
+      'otherwise Composer installs the repo but Flarum never sees an extension'
+    );
+  } else {
+    let rootComposer = null;
+
+    try {
+      rootComposer = JSON.parse(read(rootComposerFile));
+    } catch (exception) {
+      fail('composer.json', `invalid JSON: ${exception.message}`);
+    }
+
+    if (rootComposer) {
+      if (rootComposer.type === 'flarum-extension') {
+        fail('composer.json', 'the monorepo root must not be type flarum-extension; the extension lives in flarum-extension/');
+      } else {
+        pass(`root composer.json type = ${rootComposer.type}`);
+      }
+
+      const subextensions = rootComposer.extra?.['flarum-subextensions'];
+
+      if (!Array.isArray(subextensions) || !subextensions.includes('flarum-extension')) {
+        fail('composer.json', 'extra.flarum-subextensions must list "flarum-extension"');
+      } else {
+        pass('composer.json declares extra.flarum-subextensions = flarum-extension');
+
+        const subPath = join(ROOT, subextensions[0]);
+
+        if (!existsSync(join(subPath, 'composer.json')) || !existsSync(join(subPath, 'extend.php'))) {
+          fail('composer.json', 'the declared sub-extension path must contain both composer.json and extend.php');
+        } else {
+          pass('sub-extension path contains composer.json and extend.php');
+        }
+      }
+
+      let subNamespaces = [];
+
+      try {
+        const subComposer = JSON.parse(read(join(EXT, 'composer.json')));
+        subNamespaces = Object.keys(subComposer.autoload?.['psr-4'] ?? {});
+      } catch (exception) {
+        fail('flarum-extension/composer.json', exception.message);
+      }
+
+      const rootNamespaces = Object.keys(rootComposer.autoload?.['psr-4'] ?? {});
+      const unmapped = subNamespaces.filter((namespace) => !rootNamespaces.includes(namespace));
+
+      if (unmapped.length > 0) {
+        fail(
+          'composer.json',
+          `root autoload is missing PSR-4 mappings for: ${unmapped.join(', ')} ` +
+          '(Composer does not process a sub-package autoload section)'
+        );
+      } else {
+        pass(`root autoload covers ${subNamespaces.length} sub-extension namespace(s)`);
+      }
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

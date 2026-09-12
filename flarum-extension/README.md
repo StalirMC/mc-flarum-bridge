@@ -9,24 +9,52 @@
 
 ## 安装
 
+> ⚠️ **Flarum 2.x 没有 `extensions/` 目录。** 它只从 Composer 的
+> `vendor/composer/installed.json` 发现扩展，所以扩展**必须经由 Composer 安装**。
+> 详见 [`../docs/README.md`](../docs/README.md) 第 1 节（含源码依据与三种方式）。
+
+**方式 A — 后台安装（推荐）**：Extension Manager → 仓库 → 添加 `vcs` 仓库
+`https://github.com/StalirMC/mc-flarum-bridge` → 安装
+`stalir/mc-flarum-bridge:dev-main` → 启用「MC Bridge」。
+
+**方式 B — SSH / Composer**：
+
 ```bash
-# 1. 放到 <flarum>/extensions/mc-bridge/
-# 2. 在 composer.json 里加 path 仓库
-#    { "type": "path", "url": "extensions/mc-bridge", "options": { "symlink": false } }
-# 3. 安装
-composer require stalir/mc-bridge:'*'
+cd /path/to/flarum
+composer config repositories.mc-bridge vcs https://github.com/StalirMC/mc-flarum-bridge
+composer require stalir/mc-flarum-bridge:dev-main
 php flarum migrate
-php flarum extension:enable stalir/mc-bridge   # 用 php flarum extension:list 核对确切 ID
+php flarum extension:enable stalir-mc-bridge   # 用 php flarum extension:list 核对确切 ID
 php flarum cache:clear
+```
 
-# 4. 生成插件要用的共享密钥
-php flarum mc-bridge:secret
+**方式 C — 不上 GitHub**：把**本目录**（`flarum-extension/`）上传到
+`<flarum>/packages/mc-bridge/`，加 `path` 仓库后安装 `stalir/mc-bridge:dev-main`。
 
-# 5. 自检（强烈建议，含一次真实的带签名回环请求）
-php flarum mc-bridge:selftest --url=https://forum.kxkl2024.cn
+装好后：
+
+```bash
+php flarum mc-bridge:secret                    # 生成插件要用的共享密钥
+php flarum mc-bridge:selftest --url=https://forum.kxkl2024.cn   # 全链路自检
 ```
 
 完整步骤见 [`../docs/README.md`](../docs/README.md)。
+
+## 为什么仓库根目录有 composer.json
+
+因为它用 Flarum 2.x 的 `extra.flarum-subextensions` 把本目录声明为扩展，使
+**整个 monorepo 能作为一个 Composer 包安装**：
+
+```json
+{
+  "autoload": { "psr-4": { "Stalir\\McBridge\\": "flarum-extension/src/" } },
+  "extra": { "flarum-subextensions": ["flarum-extension"] }
+}
+```
+
+`ExtensionManager::subExtensionConfsFromJson()` 会读取该字段。autoload 必须写在
+根 `composer.json` 里——Composer 不处理子包自己的 `autoload`，Flarum 也不会替
+扩展注册命名空间。
 
 ## 组成
 

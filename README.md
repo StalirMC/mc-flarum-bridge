@@ -38,8 +38,14 @@
 
 ```bash
 # 1) 论坛侧
-#    把 flarum-extension/ 放到 <flarum>/extensions/mc-bridge/
-composer require stalir/mc-bridge:'*'
+#    Flarum 2.x 没有 extensions/ 目录，扩展必须经 Composer 安装。
+#    仓库根的 composer.json 用 flarum-subextensions 把 flarum-extension/
+#    声明为扩展，因此整个仓库可作为单个包安装：
+cd /path/to/flarum
+composer config repositories.mc-bridge vcs https://github.com/StalirMC/mc-flarum-bridge
+composer require stalir/mc-flarum-bridge:dev-main
+#    没有 SSH？后台 Extension Manager → 仓库 → 添加 vcs 仓库后，
+#    在「安装一个新的扩展程序」填 stalir/mc-flarum-bridge:dev-main
 php flarum migrate
 php flarum extension:enable stalir/mc-bridge   # 用 php flarum extension:list 核对确切 ID
 php flarum cache:clear

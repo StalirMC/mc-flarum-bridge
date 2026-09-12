@@ -16,38 +16,98 @@
 
 ## 1. Flarum 侧：安装扩展
 
-### 1.1 放入扩展目录
+### ⚠️ 先搞清楚：Flarum 2.x 没有 `extensions/` 目录
 
-把 `flarum-extension/` 放到 Flarum 根目录下的 `extensions/mc-bridge/`：
+**Flarum 2.x 只从 Composer 的 `vendor/composer/installed.json` 发现扩展**，源码依据：
 
+```php
+// framework/core/src/Extension/ExtensionManager.php
+$manifest = $this->paths->vendor.'/composer/installed.json';
+$installed = json_decode($this->filesystem->get($manifest), true);
+...
+if (Arr::get($package, 'type') === 'flarum-extension' && str_contains($name, '/')) {
+    $composerJsonConfs[$packagePath] = $package;
+}
 ```
-<flarum>/
-├── extensions/
-│   └── mc-bridge/          <- 本仓库的 flarum-extension/
-├── composer.json
-└── ...
+
+也就是说**没有「把文件夹丢进某个目录就能装」的机制**——扩展必须经由 Composer
+安装，让它出现在 `installed.json` 里。（Flarum 仓库里那个 `extensions/` 目录只是
+官方 monorepo 自己的源码布局，不是运行期约定。）
+
+本仓库是 monorepo（扩展在 `flarum-extension/`、插件在 `mc-plugin/`）。根目录的
+`composer.json` 使用了 Flarum 2.x 的 **`extra.flarum-subextensions`** 机制：
+
+```json
+{
+  "autoload": { "psr-4": { "Stalir\\McBridge\\": "flarum-extension/src/" } },
+  "extra": { "flarum-subextensions": ["flarum-extension"] }
+}
 ```
 
-### 1.2 注册 path 仓库并安装
+`ExtensionManager::subExtensionConfsFromJson()` 会读取这个字段，把子目录里的
+`composer.json` 识别为扩展。因此**整个仓库可以作为单个 Composer 包安装**，
+扩展 ID 是子目录里声明的 `stalir-mc-bridge`。
 
-编辑 Flarum 根目录的 `composer.json`，加入仓库声明：
+> 注意 autoload 必须写在根 `composer.json` 里：Composer 不会处理子包自己的
+> `autoload`，而 Flarum 也不会替扩展注册命名空间。
+
+---
+
+### 方式 A：后台安装（推荐，不需要 SSH）
+
+前提：仓库已推送到 GitHub（公开可读，Composer 读取无需凭据）。
+
+1. 管理后台 → **Extension Manager** → 拉到 **仓库** 区域 → **添加仓库**
+   - 类型：`vcs`
+   - URL：`https://github.com/StalirMC/mc-flarum-bridge`
+   - 保存
+2. 同页 → **安装一个新的扩展程序** → 填：
+   ```
+   stalir/mc-flarum-bridge:dev-main
+   ```
+   （仓库打过 `v1.0.0` 之类的标签后，直接填 `stalir/mc-flarum-bridge` 即可）
+3. 装好后到扩展列表**启用**「MC Bridge」
+4. 生成共享密钥（见 1.3）；如果后台没有终端，用方式 B/C 或在服务器上执行
+
+> Extension Manager 的仓库类型只接受 `composer`、`vcs`、`path` 三种
+> （`ConfigureComposerValidator` 中的校验规则），`vcs` 正是上面用的。
+
+### 方式 B：SSH / Composer（从 GitHub 装）
+
+```bash
+cd /path/to/flarum
+
+composer config repositories.mc-bridge vcs https://github.com/StalirMC/mc-flarum-bridge
+composer require stalir/mc-flarum-bridge:dev-main
+
+php flarum migrate
+php flarum extension:enable stalir-mc-bridge   # 用 php flarum extension:list 核对确切 ID
+php flarum cache:clear
+```
+
+### 方式 C：不经过 GitHub，直接用本地文件装
+
+把 **`flarum-extension/` 整个目录**（不是仓库根目录）上传到服务器，例如
+`<flarum>/packages/mc-bridge/`，然后加一个 **path 仓库**：
 
 ```json
 {
   "repositories": [
-    { "type": "path", "url": "extensions/mc-bridge", "options": { "symlink": false } }
+    { "type": "path", "url": "packages/mc-bridge", "options": { "symlink": false } }
   ]
 }
 ```
 
-然后执行：
-
 ```bash
-composer require stalir/mc-bridge:'*'
+composer require stalir/mc-bridge:dev-main
 php flarum migrate
-php flarum extension:enable stalir/mc-bridge   # 用 php flarum extension:list 核对确切 ID
+php flarum extension:enable stalir-mc-bridge
 php flarum cache:clear
 ```
+
+> 方式 C 指向的是 `flarum-extension/` 本身（它自带的 `composer.json` 已经是
+> `type: flarum-extension`），所以包名是 **`stalir/mc-bridge`**，与方式 A/B 的
+> `stalir/mc-flarum-bridge` 不同。走这条路**不需要** `flarum-subextensions`。
 
 ### 1.3 生成共享密钥
 
