@@ -89,6 +89,8 @@ stalir-mc-bridge:
         live_http_error: "POST {path} returned HTTP {status}: {body}"
         live_not_ok: "the endpoint answered but did not report ok=true"
         live_ok: "signed heartbeat accepted by the web server"
+        live_500_label: "Server-side 500"
+        live_500_hint: "Flarum only returns \"unknown\". Temporarily set debug to true in config.php and run this again to see the exception, or check the log under storage/logs/."
         probe_cleanup: "Probe cleanup"
         probe_cleanup_ok: "temporary selftest server row removed"
         probe_cleanup_failed: "could not remove the selftest row: {message}"

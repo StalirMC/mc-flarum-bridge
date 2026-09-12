@@ -167,10 +167,17 @@ class SelfTestCommand extends AbstractBridgeCommand
 
     private function checkPathNormalisation(): void
     {
+        // The canonical path starts at the bridge route prefix: Flarum strips
+        // its /api frontend prefix before the middleware stack runs, so the
+        // controller sees /mc-bridge/... while the client requested
+        // /api/mc-bridge/... (and a sub-directory install yields
+        // /sub/api/mc-bridge/...). Keep these expectations in sync with
+        // BridgeCrypto::normalizePath() and protocol/README.md.
         $cases = [
-            '/api/mc-bridge/outbox?server_key=survival&peek=1' => '/api/mc-bridge/outbox',
-            '/forum/api/mc-bridge/heartbeat' => '/api/mc-bridge/heartbeat',
-            'https://example.com/sub/api/mc-bridge/events' => '/api/mc-bridge/events',
+            '/api/mc-bridge/outbox?server_key=survival&peek=1' => '/mc-bridge/outbox',
+            '/forum/api/mc-bridge/heartbeat' => '/mc-bridge/heartbeat',
+            'https://example.com/sub/api/mc-bridge/events' => '/mc-bridge/events',
+            '/mc-bridge/heartbeat' => '/mc-bridge/heartbeat',
         ];
 
         foreach ($cases as $input => $expected) {
@@ -318,6 +325,13 @@ class SelfTestCommand extends AbstractBridgeCommand
                 ]));
 
                 $this->reportSignatureDiagnostic($payload, $timestamp, $nonce, 'POST', $signedPath, $body);
+
+                if ($status >= 500) {
+                    // Flarum hides the exception unless debug mode is on, and a
+                    // 500 here means the request reached the controller but
+                    // something inside it threw.
+                    $this->note($this->t('check.live_500_label'), $this->t('check.live_500_hint'));
+                }
 
                 return;
             }

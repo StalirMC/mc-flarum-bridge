@@ -88,6 +88,8 @@ stalir-mc-bridge:
         live_http_error: "POST {path} 返回 HTTP {status}：{body}"
         live_not_ok: "端点有响应，但没有返回 ok=true"
         live_ok: "带签名的心跳已被 Web 服务器接受"
+        live_500_label: "服务端 500"
+        live_500_hint: "Flarum 只返回 unknown。临时把 config.php 里的 debug 改为 true，再跑一次即可看到具体异常；或查看 storage/logs/ 下的日志。"
         probe_cleanup: "探针清理"
         probe_cleanup_ok: "已删除自检产生的临时服务器记录"
         probe_cleanup_failed: "无法删除自检记录：{message}"
