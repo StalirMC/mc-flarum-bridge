@@ -13,6 +13,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import java.util.logging.Logger;
@@ -117,7 +118,7 @@ public final class HttpBridgeClient {
         String signedPath = config.apiPath(path);
         String url = config.endpoint(path) + (query == null || query.isEmpty() ? "" : "?" + query);
 
-        HttpRequest request = signedBuilder(url, signedPath, "GET", null)
+        HttpRequest request = signedBuilder(url, signedPath, "GET", null, config.requestTimeout())
                 .GET()
                 .build();
 

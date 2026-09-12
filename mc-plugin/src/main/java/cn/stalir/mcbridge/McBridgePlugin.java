@@ -155,8 +155,12 @@ public final class McBridgePlugin extends JavaPlugin {
         scheduledTasks.add(getServer().getScheduler().runTaskTimerAsynchronously(
                 this, new OutboxTask(this), 20L * 10, outboxTicks));
 
+        // Cast to Runnable on purpose: BukkitScheduler also exposes a
+        // Consumer<BukkitTask> overload, and an implicitly typed method
+        // reference is not "pertinent to applicability", which makes the call
+        // ambiguous between the two overloads.
         scheduledTasks.add(getServer().getScheduler().runTaskTimerAsynchronously(
-                this, this::flushEvents, 20L * 8, flushTicks));
+                this, (Runnable) this::flushEvents, 20L * 8, flushTicks));
     }
 
     private void cancelTasks() {
@@ -352,7 +356,7 @@ public final class McBridgePlugin extends JavaPlugin {
     }
 
     private void flushEventsAsync() {
-        getServer().getScheduler().runTaskAsynchronously(this, this::flushEvents);
+        getServer().getScheduler().runTaskAsynchronously(this, (Runnable) this::flushEvents);
     }
 
     // ------------------------------------------------------------------

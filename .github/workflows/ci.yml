@@ -74,8 +74,16 @@ jobs:
             if (($manifest["extra"]["flarum-extension"]["title"] ?? "") === "") {
                 $fail("extra.flarum-extension.title is missing");
             }
-            if (($manifest["autoload"]["psr-4"]["Stalir\\\\McBridge\\\\"] ?? null) !== "src/") {
-                $fail("autoload psr-4 mapping for Stalir\\McBridge must point at src/");
+            # Compare without embedding backslash literals: inside a YAML block
+            # scalar the shell passes the text through verbatim, so a PHP
+            # "\\\\" would become two real backslashes and never match.
+            $psr4 = $manifest["autoload"]["psr-4"] ?? [];
+            if (count($psr4) !== 1) {
+                $fail("autoload psr-4 must contain exactly one mapping");
+            }
+            $prefix = array_key_first($psr4);
+            if ($psr4[$prefix] !== "src/" || strpos($prefix, "Stalir") !== 0) {
+                $fail("autoload psr-4 must map the Stalir namespace to src/, got: " . $prefix);
             }
             echo "extension manifest ok (requires flarum/core " . $require["flarum/core"] . ")\n";
           '

@@ -2,6 +2,7 @@ package cn.stalir.mcbridge.command;
 
 import cn.stalir.mcbridge.BridgeException;
 import cn.stalir.mcbridge.McBridgePlugin;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -64,7 +65,11 @@ public final class BindCommand implements CommandExecutor {
     }
 
     private void report(Player player, JsonObject response) {
-        if (response.has("already_bound") && response.get("already_bound").getAsBoolean()) {
+        JsonElement alreadyBound = response.get("already_bound");
+
+        // Check the JSON type before reading: getAsBoolean() on an object or
+        // array would throw and abort the whole reply.
+        if (alreadyBound != null && alreadyBound.isJsonPrimitive() && alreadyBound.getAsBoolean()) {
             player.sendMessage(plugin.messages().prefixed("bind-already", "user", boundUsername(response)));
             return;
         }
@@ -74,8 +79,12 @@ public final class BindCommand implements CommandExecutor {
             return;
         }
 
-        int minutes = response.has("expires_in_seconds")
-                ? Math.max(1, response.get("expires_in_seconds").getAsInt() / 60)
+        JsonElement expiresIn = response.get("expires_in_seconds");
+
+        int minutes = expiresIn != null
+                && expiresIn.isJsonPrimitive()
+                && expiresIn.getAsJsonPrimitive().isNumber()
+                ? Math.max(1, expiresIn.getAsInt() / 60)
                 : 10;
 
         player.sendMessage(plugin.messages().prefixed(

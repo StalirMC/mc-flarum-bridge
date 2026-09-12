@@ -753,6 +753,134 @@ section('14. CI workflow sanity');
 }
 
 // ---------------------------------------------------------------------------
+// 15. Java compile hazards that only a real javac would otherwise catch
+// ---------------------------------------------------------------------------
+
+section('15. Java compile hazards');
+
+{
+  // Simple name -> fully qualified name, for the JDK / third-party types this
+  // project uses. A file that mentions the simple name must import it.
+  const KNOWN_TYPES = {
+    Duration: 'java.time.Duration',
+    Instant: 'java.time.Instant',
+    UUID: 'java.util.UUID',
+    List: 'java.util.List',
+    ArrayList: 'java.util.ArrayList',
+    Map: 'java.util.Map',
+    LinkedHashMap: 'java.util.LinkedHashMap',
+    Collections: 'java.util.Collections',
+    Set: 'java.util.Set',
+    AtomicLong: 'java.util.concurrent.atomic.AtomicLong',
+    Pattern: 'java.util.regex.Pattern',
+    PatternSyntaxException: 'java.util.regex.PatternSyntaxException',
+    Logger: 'java.util.logging.Logger',
+    Level: 'java.util.logging.Level',
+    IOException: 'java.io.IOException',
+    URI: 'java.net.URI',
+    URLEncoder: 'java.net.URLEncoder',
+    StandardCharsets: 'java.nio.charset.StandardCharsets',
+    HexFormat: 'java.util.HexFormat',
+    Mac: 'javax.crypto.Mac',
+    SecretKeySpec: 'javax.crypto.spec.SecretKeySpec',
+    GeneralSecurityException: 'java.security.GeneralSecurityException',
+    Locale: 'java.util.Locale',
+    FileConfiguration: 'org.bukkit.configuration.file.FileConfiguration',
+    JavaPlugin: 'org.bukkit.plugin.java.JavaPlugin',
+    BukkitTask: 'org.bukkit.scheduler.BukkitTask',
+    Player: 'org.bukkit.entity.Player',
+    Listener: 'org.bukkit.event.Listener',
+    EventHandler: 'org.bukkit.event.EventHandler',
+    EventPriority: 'org.bukkit.event.EventPriority',
+    PlayerDeathEvent: 'org.bukkit.event.entity.PlayerDeathEvent',
+    PlayerJoinEvent: 'org.bukkit.event.player.PlayerJoinEvent',
+    PlayerQuitEvent: 'org.bukkit.event.player.PlayerQuitEvent',
+    PlayerAdvancementDoneEvent: 'org.bukkit.event.player.PlayerAdvancementDoneEvent',
+    Command: 'org.bukkit.command.Command',
+    CommandSender: 'org.bukkit.command.CommandSender',
+    CommandExecutor: 'org.bukkit.command.CommandExecutor',
+    TabCompleter: 'org.bukkit.command.TabCompleter',
+    Component: 'net.kyori.adventure.text.Component',
+    LegacyComponentSerializer: 'net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer',
+    JsonObject: 'com.google.gson.JsonObject',
+    JsonArray: 'com.google.gson.JsonArray',
+    JsonElement: 'com.google.gson.JsonElement',
+    JsonParser: 'com.google.gson.JsonParser',
+    JsonSyntaxException: 'com.google.gson.JsonSyntaxException',
+    Gson: 'com.google.gson.Gson',
+    HttpClient: 'java.net.http.HttpClient',
+    HttpRequest: 'java.net.http.HttpRequest',
+    HttpResponse: 'java.net.http.HttpResponse',
+  };
+
+  let missingImports = 0;
+
+  // Type names inside comments must not count, so strip both comment styles
+  // first. (This can over-strip the tail of a line containing "//" inside a
+  // string literal, which is acceptable: it only risks a missed warning.)
+  const stripJavaComments = (source) => source
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/\/\/[^\n]*/g, ' ');
+
+  for (const file of javaFiles) {
+    const raw = read(file);
+    const source = stripJavaComments(raw);
+    const packageMatch = raw.match(/^package\s+([A-Za-z0-9_.]+);/m);
+    const filePackage = packageMatch ? packageMatch[1] : '';
+    const name = basename(file);
+
+    for (const [simple, qualified] of Object.entries(KNOWN_TYPES)) {
+      // Word-boundary match on the simple name.
+      if (!new RegExp(`\\b${simple}\\b`).test(source)) continue;
+
+      // Types from the same package need no import.
+      if (qualified.startsWith(filePackage + '.')) continue;
+
+      const imported = new RegExp(`^import\\s+${qualified.replace(/\./g, '\\.')};`, 'm').test(raw);
+
+      if (!imported) {
+        fail(`Java ${name}`, `uses ${simple} but does not import ${qualified}`);
+        missingImports++;
+      }
+    }
+  }
+
+  if (missingImports === 0) {
+    pass(`no missing imports across ${javaFiles.length} Java files`);
+  }
+
+  // BukkitScheduler exposes both a Runnable and a Consumer<BukkitTask> overload.
+  // An implicitly typed method reference is not pertinent to applicability, so
+  // passing one directly is ambiguous; it must be cast to Runnable.
+  let ambiguousCallSites = 0;
+
+  for (const file of javaFiles) {
+    const source = read(file);
+    const name = basename(file);
+    const callPattern = /runTask[A-Za-z]*\s*\(/g;
+    let match;
+
+    while ((match = callPattern.exec(source)) !== null) {
+      const end = source.indexOf(';', match.index);
+      const call = source.slice(match.index, end === -1 ? match.index + 400 : end);
+
+      if (call.includes('::') && !call.includes('(Runnable)')) {
+        fail(
+          `Java ${name}`,
+          `a method reference passed to a scheduler call must be cast to Runnable, otherwise the ` +
+          `Runnable and Consumer<BukkitTask> overloads are ambiguous: ${call.replace(/\s+/g, ' ').slice(0, 90)}...`
+        );
+        ambiguousCallSites++;
+      }
+    }
+  }
+
+  if (ambiguousCallSites === 0) {
+    pass('no ambiguous scheduler method-reference call sites');
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Summary
 // ---------------------------------------------------------------------------
 
