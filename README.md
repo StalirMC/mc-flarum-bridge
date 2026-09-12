@@ -1,4 +1,4 @@
-# MC ↔ Flarum Bridge
+# MC  Flarum Bridge
 
 [![CI](https://github.com/StalirMC/mc-flarum-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/StalirMC/mc-flarum-bridge/actions/workflows/ci.yml)
 
