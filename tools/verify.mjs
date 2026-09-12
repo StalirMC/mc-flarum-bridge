@@ -584,17 +584,30 @@ if (!/"HmacSHA256"/.test(javaSignature)) {
   pass('Java uses Mac HmacSHA256');
 }
 
+// Both sides must normalise the signed path identically: the canonical path
+// starts at the bridge route prefix. Flarum strips its /api frontend prefix
+// before the controller runs, so signing the raw request path never matches.
 for (const [label, source] of [['PHP', phpCrypto], ['Java', javaSignature]]) {
-  if (!source.includes("'/api/mc-bridge'") && !source.includes('"/api/mc-bridge"')) {
-    if (label === 'PHP') {
-      fail('path normalisation (PHP)', 'BridgeCrypto must strip everything before /api/mc-bridge');
-    } else {
-      // The Java client signs the api path directly and never emits a
-      // sub-directory prefix, so no normalisation is required there.
-      pass('path normalisation (Java) - signs the api path directly');
-    }
+  const hasMarker = /PATH_MARKER\s*=\s*['"]\/mc-bridge['"]/.test(source);
+  const hasNormalize = /normalizePath\s*\(/.test(source);
+
+  if (!hasMarker) {
+    fail(`path normalisation (${label})`, 'must declare PATH_MARKER = \'/mc-bridge\' as the canonical path anchor');
+  } else if (!hasNormalize) {
+    fail(`path normalisation (${label})`, 'must implement normalizePath()');
   } else {
-    pass(`path prefix normalisation (${label})`);
+    pass(`path normalisation (${label}) anchors on /mc-bridge`);
+  }
+}
+
+// The Java client must actually apply it before signing.
+{
+  const client = read(join(javaRoot, 'cn/stalir/mcbridge/HttpBridgeClient.java'));
+
+  if (!/Signature\.normalizePath\(/.test(client)) {
+    fail('HttpBridgeClient', 'must sign Signature.normalizePath(path), not the raw request path');
+  } else {
+    pass('HttpBridgeClient signs the normalised path');
   }
 }
 

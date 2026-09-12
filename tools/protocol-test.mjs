@@ -167,7 +167,17 @@ async function request(baseUrl, options) {
   if (secret !== null) {
     requestHeaders[HEADER_TIMESTAMP] = String(timestamp);
     requestHeaders[HEADER_NONCE] = nonce;
-    requestHeaders[HEADER_SIGNATURE] = jsSign(secret, timestamp, nonce, method, signPath, signBody ?? '');
+    // Sign the canonical path, exactly like Signature.normalizePath() does on
+    // the Minecraft side: the forum strips its /api frontend prefix before the
+    // controller runs, so the raw request path must not be signed.
+    requestHeaders[HEADER_SIGNATURE] = jsSign(
+      secret,
+      timestamp,
+      nonce,
+      method,
+      normalizePath(signPath),
+      signBody ?? ''
+    );
   }
 
   if (payload !== null) requestHeaders['Content-Type'] = 'application/json; charset=utf-8';
@@ -279,18 +289,28 @@ async function checkSigningPrimitives() {
   await test('query string is excluded from the signed path', () => {
     assertEqual(
       normalizePath('/api/mc-bridge/outbox?peek=1&limit=20'),
-      '/api/mc-bridge/outbox',
+      '/mc-bridge/outbox',
       'normalizePath drops the query'
+    );
+  });
+
+  await test('the /api frontend prefix is stripped from the signed path', () => {
+    // Flarum removes /api before the middleware stack runs, so the forum sees
+    // /mc-bridge/heartbeat while the client requested /api/mc-bridge/heartbeat.
+    assertEqual(
+      normalizePath('/api/mc-bridge/heartbeat'),
+      '/mc-bridge/heartbeat',
+      'normalizePath strips the api frontend prefix'
     );
   });
 
   await test('a Flarum sub-directory is stripped from the signed path', () => {
     assertEqual(
       normalizePath('/forum/api/mc-bridge/heartbeat'),
-      '/api/mc-bridge/heartbeat',
+      '/mc-bridge/heartbeat',
       'normalizePath strips the prefix'
     );
-    assertEqual(BRIDGE_PREFIX, '/api/mc-bridge', 'bridge prefix constant');
+    assertEqual(BRIDGE_PREFIX, '/api/mc-bridge', 'public bridge prefix constant');
   });
 }
 

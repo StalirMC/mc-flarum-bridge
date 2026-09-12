@@ -52,8 +52,17 @@ export const HEADERS = {
   server: 'X-MC-Server',
 };
 
-/** Bridge API prefix. Everything before it is outside the signature. */
+/** Public URL prefix of the bridge API. */
 export const BRIDGE_PREFIX = '/api/mc-bridge';
+
+/**
+ * Route prefix every bridge route lives under. The canonical signed path starts
+ * here, NOT at BRIDGE_PREFIX: Flarum strips the api frontend prefix (`/api`)
+ * before the controller runs, so the forum sees `/mc-bridge/heartbeat` while
+ * the client requests `/api/mc-bridge/heartbeat`. Signing the raw request path
+ * makes the two sides disagree and every request fails with 401.
+ */
+export const SIGN_MARKER = '/mc-bridge';
 
 /** Allowed clock skew in seconds (BridgeCrypto::MAX_SKEW). */
 export const MAX_SKEW = 300;
@@ -134,8 +143,8 @@ export function sign(secret, timestamp, nonce, method, path, body = '') {
 
 /**
  * Normalise a request path the way BridgeCrypto::normalizePath() does: drop
- * everything before `/api/mc-bridge`, so a Flarum sub-directory never changes
- * the signature.
+ * everything before `/mc-bridge`, so neither the api frontend prefix nor a
+ * Flarum sub-directory changes the signature.
  *
  * @param {string} rawPath
  * @returns {string}
@@ -148,7 +157,7 @@ export function normalizePath(rawPath) {
   if (hash >= 0) path = path.slice(0, hash);
   path = '/' + path.replace(/^\/+/, '');
 
-  const position = path.indexOf(BRIDGE_PREFIX);
+  const position = path.indexOf(SIGN_MARKER);
   if (position >= 0) path = path.slice(position);
 
   return path === '' ? '/' : path;
@@ -793,12 +802,14 @@ export function createServer(options = {}) {
 
     const url = new URL(request.url ?? '/', 'http://localhost');
     const query = new URLSearchParams(url.searchParams);
-    // The signed path always starts at the bridge prefix (that is the value the
-    // client signs); routing keys are bridge-relative.
+    // The signed path is the canonical one starting at SIGN_MARKER; routing keys
+    // are relative to the public bridge prefix, which may sit after a Flarum
+    // sub-directory (e.g. /forum/api/mc-bridge/...).
     const signedPath = normalizePath(url.pathname);
-    const routePath = signedPath.startsWith(BRIDGE_PREFIX)
-      ? signedPath.slice(BRIDGE_PREFIX.length) || '/'
-      : signedPath;
+    const prefixPosition = url.pathname.indexOf(BRIDGE_PREFIX);
+    const routePath = prefixPosition >= 0
+      ? url.pathname.slice(prefixPosition + BRIDGE_PREFIX.length) || '/'
+      : url.pathname;
     const route = routes.get(routePath);
 
     if (route === undefined) {

@@ -29,14 +29,28 @@ Every request from the plugin to a machine endpoint carries four headers:
 ```
 
 - `{METHOD}` is uppercase (`GET`, `POST`, `DELETE`).
-- `{path}` is the request path **starting at the bridge prefix**, with the
-  query string removed. For `https://forum.example.com/api/mc-bridge/outbox?peek=1`
-  the signed path is `/api/mc-bridge/outbox`.
-  If Flarum is served from a sub-directory (`https://example.com/forum/...`),
-  the signed path is still `/api/mc-bridge/...` — the sub-directory is not part
-  of the signature.
+- `{path}` is the **canonical** request path: everything before the bridge route
+  prefix `/mc-bridge` is dropped, and the query string is removed. So for
+  `https://forum.example.com/api/mc-bridge/outbox?peek=1` the signed path is
+  `/mc-bridge/outbox`.
+
+  This matters, and it is not the raw request path: **Flarum strips its `api`
+  frontend prefix (`/api`) before the middleware stack runs**, so the controller
+  sees `/mc-bridge/outbox` while the client requested `/api/mc-bridge/outbox`.
+  Signing the raw path makes the two sides disagree on the first segment and
+  every request is rejected with `401`. Anchoring on `/mc-bridge` also keeps
+  sub-directory installs (`https://example.com/forum/api/mc-bridge/...`) working
+  without any extra configuration.
+
+  Both implementations expose this as `normalizePath()`:
+  `BridgeCrypto::normalizePath()` (PHP) and `Signature.normalizePath()` (Java),
+  each anchored on a `PATH_MARKER` of `/mc-bridge`.
 - `{body}` is the raw request body exactly as transmitted. For requests without
   a body (`GET`) it is the empty string.
+
+  On the forum side this must be read **before** it is consumed:
+  `ParseJsonBody` runs ahead of the controller, so `rawBody()` rewinds the
+  stream when possible and otherwise re-opens `php://input`.
 
 ### Signature
 

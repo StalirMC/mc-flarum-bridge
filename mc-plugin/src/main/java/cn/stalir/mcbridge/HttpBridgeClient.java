@@ -143,7 +143,12 @@ public final class HttpBridgeClient {
     private HttpRequest.Builder signedBuilder(String url, String signedPath, String method, String body, Duration timeout) {
         String timestamp = String.valueOf(Instant.now().getEpochSecond());
         String nonce = Signature.newNonce();
-        String signature = Signature.sign(config.secret(), timestamp, nonce, method, signedPath, body);
+
+        // The canonical path starts at the bridge route prefix: the forum strips
+        // its /api frontend prefix before the controller runs, so signing the
+        // raw request path would never match.
+        String canonicalPath = Signature.normalizePath(signedPath);
+        String signature = Signature.sign(config.secret(), timestamp, nonce, method, canonicalPath, body);
 
         return HttpRequest.newBuilder(URI.create(url))
                 .timeout(timeout)

@@ -267,7 +267,11 @@ class SelfTestCommand extends AbstractBridgeCommand
         }
 
         $url = rtrim($url, '/');
+        // The URL uses the full public path; the signature uses the canonical
+        // path (from the bridge route prefix), because Flarum strips the `/api`
+        // frontend prefix before the controller sees the request.
         $path = '/api/mc-bridge/heartbeat';
+        $signedPath = BridgeCrypto::normalizePath($path);
         $serverKey = 'selftest';
         $body = (string) json_encode([
             'server_key' => $serverKey,
@@ -279,7 +283,7 @@ class SelfTestCommand extends AbstractBridgeCommand
 
         $timestamp = (string) time();
         $nonce = bin2hex(random_bytes(16));
-        $signature = BridgeCrypto::sign($secret, $timestamp, $nonce, 'POST', $path, $body);
+        $signature = BridgeCrypto::sign($secret, $timestamp, $nonce, 'POST', $signedPath, $body);
 
         try {
             $client = new \GuzzleHttp\Client([
@@ -313,7 +317,7 @@ class SelfTestCommand extends AbstractBridgeCommand
                     'body' => mb_substr($payload, 0, 200),
                 ]));
 
-                $this->reportSignatureDiagnostic($payload, $timestamp, $nonce, 'POST', $path, $body);
+                $this->reportSignatureDiagnostic($payload, $timestamp, $nonce, 'POST', $signedPath, $body);
 
                 return;
             }

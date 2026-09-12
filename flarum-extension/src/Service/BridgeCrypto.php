@@ -26,6 +26,12 @@ final class BridgeCrypto
      */
     public const HEADER_DIAGNOSTIC = 'X-MC-Diagnostic';
 
+    /**
+     * Route prefix every bridge route lives under. The canonical signed path
+     * starts here (see {@see self::normalizePath()}).
+     */
+    public const PATH_MARKER = '/mc-bridge';
+
     /** Allowed clock skew, in seconds. */
     public const MAX_SKEW = 300;
 
@@ -77,17 +83,24 @@ final class BridgeCrypto
     /**
      * Normalises a request path so that both sides always sign the same value.
      *
-     * The query string is dropped, and everything before the bridge API prefix
-     * is stripped, so the signature does not depend on whether Flarum is served
-     * from the domain root or from a sub-directory (e.g. `/forum`).
+     * The canonical path starts at the bridge route prefix, i.e. at
+     * {@see self::PATH_MARKER}. Everything before it is dropped and the query
+     * string is removed. That makes the signature independent of:
+     *
+     *  - the api frontend prefix: Flarum strips `/api` before the middleware
+     *    stack runs, so the controller sees `/mc-bridge/heartbeat` while the
+     *    client requested `/api/mc-bridge/heartbeat`;
+     *  - a Flarum installation in a sub-directory (`/forum/api/mc-bridge/...`).
+     *
+     * Signing the raw request path does NOT work: the two sides would disagree
+     * on the very first segment.
      */
     public static function normalizePath(string $path): string
     {
         $path = parse_url($path, PHP_URL_PATH) ?: '/';
         $path = '/' . ltrim($path, '/');
 
-        $marker = '/api/mc-bridge';
-        $position = strpos($path, $marker);
+        $position = strpos($path, self::PATH_MARKER);
 
         if ($position !== false) {
             $path = substr($path, $position);
