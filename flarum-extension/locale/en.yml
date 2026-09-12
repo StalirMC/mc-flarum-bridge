@@ -50,6 +50,13 @@ stalir-mc-bridge:
       mark_ok: "  OK  "
       mark_fail: " FAIL "
       mark_note: " NOTE "
+      diagnostic:
+        title: "Signature comparison (client vs server)"
+        client_canonical: "client canonical: {value}"
+        server_canonical: "server canonical: {value}"
+        unavailable: "The forum returned no diagnostic (older build, or the request never reached the signature check)."
+        stream_seekable: "request body stream seekable: {value}"
+        server_body_length: "body length the forum read: {value}"
       check:
         secret_title: "Shared secret"
         secret_missing: "not configured - run: php flarum mc-bridge:secret"

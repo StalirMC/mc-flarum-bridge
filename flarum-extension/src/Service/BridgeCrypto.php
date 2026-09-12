@@ -19,6 +19,13 @@ final class BridgeCrypto
     public const HEADER_SIGNATURE = 'X-MC-Signature';
     public const HEADER_SERVER = 'X-MC-Server';
 
+    /**
+     * Opt-in request header: when present, a failed signature check returns a
+     * breakdown of the canonical string the server built, so a client can see
+     * which component differs. Contains no secret material.
+     */
+    public const HEADER_DIAGNOSTIC = 'X-MC-Diagnostic';
+
     /** Allowed clock skew, in seconds. */
     public const MAX_SKEW = 300;
 

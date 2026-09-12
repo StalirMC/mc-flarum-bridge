@@ -49,6 +49,13 @@ stalir-mc-bridge:
       mark_ok: "  通过 "
       mark_fail: "  失败 "
       mark_note: "  注意 "
+      diagnostic:
+        title: "签名对比（客户端 vs 服务器）"
+        client_canonical: "客户端签名串：{value}"
+        server_canonical: "服务器签名串：{value}"
+        unavailable: "服务器未返回诊断信息（可能是旧版本，或请求没走到签名校验）。"
+        stream_seekable: "请求体流可回退(seekable)：{value}"
+        server_body_length: "服务器读到的请求体长度：{value}"
       check:
         secret_title: "共享密钥"
         secret_missing: "未配置 —— 请运行：php flarum mc-bridge:secret"

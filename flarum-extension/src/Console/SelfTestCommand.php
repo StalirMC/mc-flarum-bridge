@@ -297,6 +297,9 @@ class SelfTestCommand extends AbstractBridgeCommand
                     BridgeCrypto::HEADER_NONCE => $nonce,
                     BridgeCrypto::HEADER_SIGNATURE => $signature,
                     BridgeCrypto::HEADER_SERVER => $serverKey,
+                    // Ask the server to describe what it signed when the check
+                    // fails, so a mismatch can be pinpointed in one run.
+                    BridgeCrypto::HEADER_DIAGNOSTIC => '1',
                 ],
             ]);
 
@@ -309,6 +312,8 @@ class SelfTestCommand extends AbstractBridgeCommand
                     'status' => (string) $status,
                     'body' => mb_substr($payload, 0, 200),
                 ]));
+
+                $this->reportSignatureDiagnostic($payload, $timestamp, $nonce, 'POST', $path, $body);
 
                 return;
             }
@@ -340,6 +345,78 @@ class SelfTestCommand extends AbstractBridgeCommand
     // ------------------------------------------------------------------
     // Reporting
     // ------------------------------------------------------------------
+
+    /**
+     * Compare the canonical string this command signed with the one the forum
+     * built, component by component, so a signature mismatch can be diagnosed
+     * in a single run instead of guessing.
+     */
+    private function reportSignatureDiagnostic(
+        string $payload,
+        string $timestamp,
+        string $nonce,
+        string $method,
+        string $path,
+        string $body
+    ): void {
+        $decoded = json_decode($payload, true);
+        $diagnostic = is_array($decoded) ? ($decoded['diagnostic'] ?? null) : null;
+
+        $this->line('');
+
+        if (! is_array($diagnostic)) {
+            $this->comment($this->t('diagnostic.unavailable'));
+
+            return;
+        }
+
+        $clientCanonical = BridgeCrypto::canonicalString($timestamp, $nonce, $method, $path, $body);
+        $serverCanonical = (string) ($diagnostic['canonical'] ?? '');
+
+        $this->comment($this->t('diagnostic.title'));
+        $this->line($this->t('diagnostic.client_canonical', ['value' => $this->flatten($clientCanonical)]));
+        $this->line($this->t('diagnostic.server_canonical', ['value' => $this->flatten($serverCanonical)]));
+        $this->line('');
+
+        $clientParts = explode("\n", $clientCanonical);
+        $serverParts = explode("\n", $serverCanonical);
+
+        foreach (['timestamp', 'nonce', 'method', 'path', 'body'] as $index => $label) {
+            $client = $clientParts[$index] ?? '(missing)';
+            $server = $serverParts[$index] ?? '(missing)';
+
+            $this->line(sprintf(
+                '  %s %-9s %s',
+                $client === $server ? '==' : '!=',
+                $label,
+                $client === $server
+                    ? $this->shorten($client)
+                    : 'client=' . $this->shorten($client) . '  server=' . $this->shorten($server)
+            ));
+        }
+
+        $this->line('');
+        $this->line($this->t('diagnostic.stream_seekable', [
+            'value' => ! empty($diagnostic['stream_seekable']) ? 'yes' : 'no',
+        ]));
+        $this->line($this->t('diagnostic.server_body_length', [
+            'value' => (string) ($diagnostic['body_length'] ?? '?'),
+        ]));
+        $this->line('');
+    }
+
+    /** One-line, formatter-safe rendering of a canonical string. */
+    private function flatten(string $value): string
+    {
+        return str_replace(['\\', '<'], ['\\\\', '\\<'], str_replace("\n", '\\n', $value));
+    }
+
+    private function shorten(string $value): string
+    {
+        $flat = $this->flatten($value);
+
+        return mb_strlen($flat) > 70 ? mb_substr($flat, 0, 67).'...' : $flat;
+    }
 
     private function pass(string $label, string $detail): void
     {
