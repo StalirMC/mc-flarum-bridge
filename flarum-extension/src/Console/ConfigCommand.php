@@ -2,9 +2,6 @@
 
 namespace Stalir\McBridge\Console;
 
-use Flarum\Console\AbstractCommand;
-use Flarum\Settings\SettingsRepositoryInterface;
-use Stalir\McBridge\Service\BridgeMessages;
 use Symfony\Component\Console\Input\InputOption;
 
 /**
@@ -16,15 +13,8 @@ use Symfony\Component\Console\Input\InputOption;
  * default). Changing it with --locale takes effect from the next command run,
  * so the summary printed at the end of this run still uses the old language.
  */
-class ConfigCommand extends AbstractCommand
+class ConfigCommand extends AbstractBridgeCommand
 {
-    public function __construct(
-        protected SettingsRepositoryInterface $settings,
-        protected BridgeMessages $messages
-    ) {
-        parent::__construct();
-    }
-
     protected function configure(): void
     {
         parent::configure();

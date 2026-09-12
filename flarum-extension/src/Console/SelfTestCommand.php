@@ -2,7 +2,6 @@
 
 namespace Stalir\McBridge\Console;
 
-use Flarum\Console\AbstractCommand;
 use Flarum\Settings\SettingsRepositoryInterface;
 use Illuminate\Database\ConnectionInterface;
 use Stalir\McBridge\Model\McBindCode;
@@ -23,7 +22,7 @@ use Symfony\Component\Console\Input\InputOption;
  * Output language follows the mc-bridge.locale setting (Simplified Chinese by
  * default) and can be changed with: php flarum mc-bridge:config --locale=en
  */
-class SelfTestCommand extends AbstractCommand
+class SelfTestCommand extends AbstractBridgeCommand
 {
     private const REQUIRED_TABLES = [
         'mc_servers',
@@ -37,11 +36,11 @@ class SelfTestCommand extends AbstractCommand
     private int $failures = 0;
 
     public function __construct(
-        protected SettingsRepositoryInterface $settings,
-        protected ConnectionInterface $db,
-        protected BridgeMessages $messages
+        SettingsRepositoryInterface $settings,
+        BridgeMessages $messages,
+        protected ConnectionInterface $db
     ) {
-        parent::__construct();
+        parent::__construct($settings, $messages);
     }
 
     protected function configure(): void

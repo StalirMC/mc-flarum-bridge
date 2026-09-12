@@ -2,9 +2,6 @@
 
 namespace Stalir\McBridge\Console;
 
-use Flarum\Console\AbstractCommand;
-use Flarum\Settings\SettingsRepositoryInterface;
-use Stalir\McBridge\Service\BridgeMessages;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputOption;
 
@@ -16,15 +13,8 @@ use Symfony\Component\Console\Input\InputOption;
  * Output language follows the mc-bridge.locale setting (Simplified Chinese by
  * default) and can be changed with: php flarum mc-bridge:config --locale=en
  */
-class SecretCommand extends AbstractCommand
+class SecretCommand extends AbstractBridgeCommand
 {
-    public function __construct(
-        protected SettingsRepositoryInterface $settings,
-        protected BridgeMessages $messages
-    ) {
-        parent::__construct();
-    }
-
     protected function configure(): void
     {
         parent::configure();

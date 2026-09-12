@@ -783,22 +783,57 @@ section('13. Flarum 2.x framework contracts');
     }
   }
 
-  // Flarum resolves console commands through the container and calls fire()
-  // on Flarum\Console\AbstractCommand; extending Symfony's Command directly
-  // leaves $this->laravel and the info()/error() helpers unbound.
+  // Flarum's AbstractCommand extends Symfony's Command, NOT Illuminate's. It
+  // provides only info(), comment(), error(), hasOption() plus $this->input and
+  // $this->output. Illuminate helpers such as option(), argument() or line()
+  // therefore fatal at runtime ("Call to undefined method"), so every command
+  // must go through AbstractBridgeCommand, which defines those three shims.
   const consoleDir = join(EXT, 'src/Console');
+  const consoleFiles = walk(consoleDir, (f) => f.endsWith('.php'));
+  const shimName = 'AbstractBridgeCommand.php';
+  const shimFile = join(consoleDir, shimName);
 
-  for (const file of walk(consoleDir, (f) => f.endsWith('.php'))) {
-    const source = read(file);
+  if (!existsSync(shimFile)) {
+    fail('console', `${shimName} is missing; Flarum commands must not use the Illuminate console helpers directly`);
+  } else {
+    const shim = read(shimFile);
+
+    for (const helper of ['option', 'argument', 'line']) {
+      if (new RegExp(`function\\s+${helper}\\s*\\(`).test(shim)) {
+        pass(`AbstractBridgeCommand provides ${helper}()`);
+      } else {
+        fail(shimName, `does not define the ${helper}() shim`);
+      }
+    }
+  }
+
+  // Helpers that exist on Illuminate\Console\Command but not on Flarum's.
+  const ILLUMINATE_ONLY = [
+    'table', 'ask', 'confirm', 'anticipate', 'choice', 'secret', 'newLine',
+    'warn', 'alert', 'call', 'callSilent', 'askWithCompletion',
+  ];
+
+  for (const file of consoleFiles) {
     const name = basename(file);
 
-    if (/extends\s+Command\b/.test(source)) {
-      fail(`console ${name}`, 'must extend Flarum\\Console\\AbstractCommand, not Symfony\\Component\\Console\\Command');
+    if (name === shimName) {
       continue;
     }
 
-    if (!/extends\s+AbstractCommand\b/.test(source)) {
-      fail(`console ${name}`, 'does not extend Flarum\\Console\\AbstractCommand');
+    const source = read(file);
+    const isAbstract = /abstract\s+class/.test(source);
+
+    if (/extends\s+Command\b/.test(source)) {
+      fail(`console ${name}`, 'must not extend Symfony\\Component\\Console\\Command directly');
+      continue;
+    }
+
+    if (!/extends\s+AbstractBridgeCommand\b/.test(source)) {
+      fail(`console ${name}`, 'must extend AbstractBridgeCommand');
+      continue;
+    }
+
+    if (isAbstract) {
       continue;
     }
 
@@ -807,7 +842,17 @@ section('13. Flarum 2.x framework contracts');
       continue;
     }
 
-    pass(`console ${name} extends AbstractCommand and implements fire()`);
+    const misused = ILLUMINATE_ONLY.filter((helper) => new RegExp(`\\$this->${helper}\\s*\\(`).test(source));
+
+    if (misused.length > 0) {
+      fail(
+        `console ${name}`,
+        `uses Illuminate-only helper(s) that do not exist on Flarum's AbstractCommand: ${misused.join(', ')}`
+      );
+      continue;
+    }
+
+    pass(`console ${name} extends AbstractBridgeCommand and implements fire()`);
   }
 
   // ------------------------------------------------------------------
