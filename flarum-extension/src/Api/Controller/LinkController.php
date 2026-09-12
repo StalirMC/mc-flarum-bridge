@@ -84,7 +84,7 @@ class LinkController extends AbstractBridgeController
 
         if ($existingForUser && $existingForUser->player_uuid !== $record->player_uuid) {
             return $this->fail('link_user_already_bound', 409, [
-                '%player%' => (string) $existingForUser->player_name,
+                'player' => (string) $existingForUser->player_name,
             ]);
         }
 

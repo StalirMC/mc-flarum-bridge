@@ -51,7 +51,7 @@ abstract class AbstractBridgeController implements RequestHandlerInterface
      * Respond with a translated message.
      *
      * @param  string  $key  Suffix below `api.error.`, e.g. "server_key_required".
-     * @param  array<string, string>  $replace  %placeholder% pairs.
+     * @param  array<string, string>  $replace  placeholder name => value (ICU {name} syntax; no braces in the key).
      */
     protected function fail(string $key, int $status, array $replace = [], array $extra = []): ResponseInterface
     {

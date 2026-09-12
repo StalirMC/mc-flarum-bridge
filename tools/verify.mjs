@@ -927,6 +927,71 @@ section('13. Flarum 2.x framework contracts');
   }
 
   // ------------------------------------------------------------------
+  // ICU placeholders. LocaleManager::addTranslations registers every locale
+  // file under the "messages+intl-icu" domain, so Flarum renders translations
+  // with ICU MessageFormat and placeholders must be {name}. Symfony's %name%
+  // style is silently NOT substituted - it surfaced as a literal
+  // "security.secret: %secret%" in real command output.
+  // ------------------------------------------------------------------
+  for (const locale of flarumLocales) {
+    const source = read(join(localeDir, `${locale.name}.yml`));
+
+    // Comments are not translated, so they must not influence these checks.
+    const body = source
+      .split('\n')
+      .filter((line) => !/^\s*#/.test(line))
+      .join('\n');
+
+    const percent = [...new Set([...body.matchAll(/%[a-z_]+%/g)].map((m) => m[0]))];
+
+    if (percent.length > 0) {
+      fail(
+        `locale/${locale.name}.yml`,
+        `uses Symfony-style placeholders (${percent.join(', ')}); ` +
+        'Flarum renders translations with ICU MessageFormat, so write {name} instead'
+      );
+    } else {
+      pass(`locale/${locale.name}.yml uses ICU {placeholder} syntax`);
+    }
+
+    const opened = (body.match(/\{/g) ?? []).length;
+    const closed = (body.match(/\}/g) ?? []).length;
+    const braces = [...body.matchAll(/\{[^}]*\}/g)].map((m) => m[0]);
+    const malformed = [...new Set(braces.filter((brace) => !/^\{[a-z_]+\}$/.test(brace)))];
+
+    if (opened !== closed) {
+      fail(`locale/${locale.name}.yml`, `unbalanced braces: ${opened} "{" vs ${closed} "}" (ICU throws on this)`);
+    } else if (malformed.length > 0) {
+      fail(
+        `locale/${locale.name}.yml`,
+        `malformed placeholders, ICU expects {lower_snake_case}: ${malformed.join(', ')}`
+      );
+    } else {
+      pass(`locale/${locale.name}.yml has ${braces.length} well-formed {placeholder}(s)`);
+    }
+  }
+
+  // The call sites must pass bare placeholder names to match.
+  {
+    let offenders = 0;
+
+    for (const file of walk(EXT, (f) => f.endsWith('.php'))) {
+      const bad = [
+        ...new Set([...read(file).matchAll(/'%[a-z_]+%'\s*=>/g)].map((m) => m[0].replace(/\s*=>$/, ''))),
+      ];
+
+      if (bad.length > 0) {
+        fail(rel(file), `passes Symfony-style placeholder keys: ${bad.join(', ')}`);
+        offenders++;
+      }
+    }
+
+    if (offenders === 0) {
+      pass('no PHP call site passes %name% placeholder keys');
+    }
+  }
+
+  // ------------------------------------------------------------------
   // Installability. Flarum 2.x discovers extensions only through Composer's
   // installed.json, so the monorepo root has to expose the sub-directory via
   // extra.flarum-subextensions, and the ROOT autoload must cover the

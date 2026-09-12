@@ -111,7 +111,7 @@ class SelfTestCommand extends AbstractBridgeCommand
 
         $this->pass(
             $this->t('check.secret_title'),
-            $this->t('check.secret_ok', ['%length%' => (string) strlen($secret)])
+            $this->t('check.secret_ok', ['length' => (string) strlen($secret)])
         );
     }
 
@@ -178,9 +178,9 @@ class SelfTestCommand extends AbstractBridgeCommand
 
             if ($actual !== $expected) {
                 $this->fail($this->t('check.path_title'), $this->t('check.path_bad', [
-                    '%input%' => $input,
-                    '%actual%' => $actual,
-                    '%expected%' => $expected,
+                    'input' => $input,
+                    'actual' => $actual,
+                    'expected' => $expected,
                 ]));
 
                 return;
@@ -203,14 +203,14 @@ class SelfTestCommand extends AbstractBridgeCommand
 
         if ($missing !== []) {
             $this->fail($this->t('check.tables_title'), $this->t('check.tables_missing', [
-                '%tables%' => implode(', ', $missing),
+                'tables' => implode(', ', $missing),
             ]));
 
             return;
         }
 
         $this->pass($this->t('check.tables_title'), $this->t('check.tables_ok', [
-            '%count%' => (string) count(self::REQUIRED_TABLES),
+            'count' => (string) count(self::REQUIRED_TABLES),
         ]));
     }
 
@@ -221,15 +221,15 @@ class SelfTestCommand extends AbstractBridgeCommand
             $servers = $this->db->table('mc_servers')->count();
         } catch (\Throwable $exception) {
             $this->fail($this->t('check.queries_title'), $this->t('check.queries_failed', [
-                '%message%' => $exception->getMessage(),
+                'message' => $exception->getMessage(),
             ]));
 
             return;
         }
 
         $this->pass($this->t('check.queries_title'), $this->t('check.queries_ok', [
-            '%pending%' => (string) $pending,
-            '%servers%' => (string) $servers,
+            'pending' => (string) $pending,
+            'servers' => (string) $servers,
         ]));
     }
 
@@ -239,7 +239,7 @@ class SelfTestCommand extends AbstractBridgeCommand
             $code = McBindCode::generateCode();
 
             if (strlen($code) !== 8 || ! preg_match('/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/', $code)) {
-                $this->fail($this->t('check.bind_title'), $this->t('check.bind_bad', ['%code%' => $code]));
+                $this->fail($this->t('check.bind_title'), $this->t('check.bind_bad', ['code' => $code]));
 
                 return;
             }
@@ -305,9 +305,9 @@ class SelfTestCommand extends AbstractBridgeCommand
 
             if ($status < 200 || $status >= 300) {
                 $this->fail($this->t('check.live_title'), $this->t('check.live_http_error', [
-                    '%path%' => $path,
-                    '%status%' => (string) $status,
-                    '%body%' => mb_substr($payload, 0, 200),
+                    'path' => $path,
+                    'status' => (string) $status,
+                    'body' => mb_substr($payload, 0, 200),
                 ]));
 
                 return;
@@ -329,7 +329,7 @@ class SelfTestCommand extends AbstractBridgeCommand
                 $this->pass($this->t('check.probe_cleanup'), $this->t('check.probe_cleanup_ok'));
             } catch (\Throwable $exception) {
                 $this->note($this->t('check.probe_cleanup'), $this->t('check.probe_cleanup_failed', [
-                    '%message%' => $exception->getMessage(),
+                    'message' => $exception->getMessage(),
                 ]));
             }
         } catch (\Throwable $exception) {
@@ -385,7 +385,7 @@ class SelfTestCommand extends AbstractBridgeCommand
             $this->info($this->t('all_passed'));
             $this->line($this->t('next_step'));
         } else {
-            $this->error($this->t('failed', ['%count%' => (string) $this->failures]));
+            $this->error($this->t('failed', ['count' => (string) $this->failures]));
             $this->line($this->t('troubleshoot'));
         }
 

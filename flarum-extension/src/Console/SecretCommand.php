@@ -62,7 +62,7 @@ class SecretCommand extends AbstractBridgeCommand
         $this->line('');
         $this->line($this->messages->get('console.secret.paste_intro'));
         $this->line('');
-        $this->line($this->messages->get('console.secret.paste_line', ['%secret%' => $secret]));
+        $this->line($this->messages->get('console.secret.paste_line', ['secret' => $secret]));
         $this->line('');
 
         if ($current !== '' && ! hash_equals($current, $secret)) {

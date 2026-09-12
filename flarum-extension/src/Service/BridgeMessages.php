@@ -4,6 +4,7 @@ namespace Stalir\McBridge\Service;
 
 use Flarum\Locale\Translator;
 use Flarum\Settings\SettingsRepositoryInterface;
+use Symfony\Component\Translation\MessageCatalogueInterface;
 
 /**
  * Resolves the language used for everything this extension outputs.
@@ -26,6 +27,13 @@ final class BridgeMessages
 
     public const SETTING_KEY = 'mc-bridge.locale';
 
+    /**
+     * Domain Flarum registers every locale file under
+     * (LocaleManager::addTranslations), which is what makes the messages render
+     * through ICU MessageFormat.
+     */
+    public const DOMAIN = 'messages'.MessageCatalogueInterface::INTL_DOMAIN_SUFFIX;
+
     private string $locale;
 
     public function __construct(
@@ -43,11 +51,45 @@ final class BridgeMessages
     /**
      * Translate one of this extension's keys.
      *
-     * @param  array<string, string>  $replace  Symfony style %placeholder% pairs.
+     * Flarum registers locale files in the "messages+intl-icu" domain, so
+     * messages are rendered with ICU MessageFormat: placeholders are written
+     * {like_this}, NOT Symfony's %like_this%. A %placeholder% is silently left
+     * untouched and shows up verbatim in the output.
+     *
+     * @param  array<string, string>  $replace  placeholder name => value, without braces.
      */
     public function get(string $suffix, array $replace = []): string
     {
-        return $this->translator->get(self::PACKAGE.'.'.$suffix, $replace, $this->locale);
+        $key = self::PACKAGE.'.'.$suffix;
+
+        try {
+            return $this->translator->get($key, $replace, $this->locale);
+        } catch (\Throwable $exception) {
+            // ICU throws on a malformed pattern or a missing argument, and a
+            // translation slip must not take a command down.
+            return $this->fromCatalogue($key, $replace);
+        }
+    }
+
+    /**
+     * Last-resort rendering straight from the message catalogue, bypassing the
+     * ICU formatter and substituting {name} literally.
+     *
+     * @param  array<string, string>  $replace
+     */
+    private function fromCatalogue(string $key, array $replace): string
+    {
+        try {
+            $template = $this->translator->getCatalogue($this->locale)->get($key, self::DOMAIN);
+        } catch (\Throwable $exception) {
+            return $key;
+        }
+
+        foreach ($replace as $name => $value) {
+            $template = str_replace('{'.$name.'}', (string) $value, $template);
+        }
+
+        return $template;
     }
 
     public static function resolveLocale(SettingsRepositoryInterface $settings): string

@@ -70,7 +70,7 @@ class ConfigCommand extends AbstractBridgeCommand
             $this->comment($this->messages->get('console.config.nothing_changed'));
             $this->line('');
         } else {
-            $this->info($this->messages->get('console.config.updated', ['%count%' => (string) $changed]));
+            $this->info($this->messages->get('console.config.updated', ['count' => (string) $changed]));
             $this->comment($this->messages->get('console.config.note'));
             $this->line('');
         }
@@ -90,15 +90,15 @@ class ConfigCommand extends AbstractBridgeCommand
 
         if (! BridgeMessages::isAvailable($locale)) {
             $this->error($this->messages->get('console.config.unknown_locale', [
-                '%locale%' => $locale,
-                '%available%' => implode(', ', BridgeMessages::availableLocales()),
+                'locale' => $locale,
+                'available' => implode(', ', BridgeMessages::availableLocales()),
             ]));
 
             return 0;
         }
 
         $this->settings->set(BridgeMessages::SETTING_KEY, $locale);
-        $this->info($this->messages->get('console.config.locale_set', ['%locale%' => $locale]));
+        $this->info($this->messages->get('console.config.locale_set', ['locale' => $locale]));
 
         return 1;
     }
@@ -139,7 +139,7 @@ class ConfigCommand extends AbstractBridgeCommand
         }
 
         if ($invalid !== []) {
-            $this->error($this->messages->get('console.config.invalid_tags', ['%tags%' => implode(', ', $invalid)]));
+            $this->error($this->messages->get('console.config.invalid_tags', ['tags' => implode(', ', $invalid)]));
             $this->comment($this->messages->get('console.config.tag_hint'));
 
             return 0;
@@ -149,7 +149,7 @@ class ConfigCommand extends AbstractBridgeCommand
         sort($unique);
 
         $this->settings->set('mc-bridge.announcement_tag_ids', implode(',', $unique));
-        $this->info($this->messages->get('console.config.tags_set', ['%tags%' => implode(', ', $unique)]));
+        $this->info($this->messages->get('console.config.tags_set', ['tags' => implode(', ', $unique)]));
 
         return 1;
     }
@@ -193,7 +193,7 @@ class ConfigCommand extends AbstractBridgeCommand
         }
 
         $this->settings->set('mc-bridge.max_announcement_age_days', $raw);
-        $this->info($this->messages->get('console.config.retention', ['%days%' => $raw]));
+        $this->info($this->messages->get('console.config.retention', ['days' => $raw]));
 
         return 1;
     }
@@ -208,7 +208,7 @@ class ConfigCommand extends AbstractBridgeCommand
 
         $secretValue = $secret === ''
             ? $this->messages->get('console.config.value_secret_unset')
-            : $this->messages->get('console.config.value_secret_set', ['%length%' => (string) strlen($secret)]);
+            : $this->messages->get('console.config.value_secret_set', ['length' => (string) strlen($secret)]);
 
         $this->line('');
         $this->info($this->messages->get('console.config.title'));
@@ -227,7 +227,7 @@ class ConfigCommand extends AbstractBridgeCommand
             ],
             [
                 $this->messages->get('console.config.label_retention'),
-                $this->messages->get('console.config.value_retention', ['%days%' => $maxAge]),
+                $this->messages->get('console.config.value_retention', ['days' => $maxAge]),
             ],
         ];
 
