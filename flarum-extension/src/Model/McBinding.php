@@ -18,6 +18,17 @@ class McBinding extends AbstractModel
 {
     protected $table = 'mc_bindings';
 
+    /**
+     * Mass assignment must be allowed here: the link controller uses
+     * firstOrNew()/fill(), and Eloquent rejects unguarded attributes.
+     */
+    protected $fillable = [
+        'user_id',
+        'player_uuid',
+        'player_name',
+        'server_key',
+    ];
+
     /** Flarum's AbstractModel disables timestamps by default. */
     public $timestamps = true;
 

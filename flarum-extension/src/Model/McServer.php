@@ -25,6 +25,23 @@ class McServer extends AbstractModel
     protected $table = 'mc_servers';
 
     /**
+     * Mass assignment must be allowed here: the heartbeat controller uses
+     * firstOrNew()/fill(), and Eloquent rejects unguarded attributes.
+     */
+    protected $fillable = [
+        'server_key',
+        'online',
+        'players_online',
+        'players_max',
+        'tps',
+        'mspt',
+        'version',
+        'motd',
+        'player_names',
+        'last_heartbeat_at',
+    ];
+
+    /**
      * Flarum's AbstractModel turns timestamps off by default; this model has
      * created_at/updated_at columns and relies on them.
      */

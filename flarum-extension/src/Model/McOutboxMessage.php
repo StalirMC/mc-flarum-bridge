@@ -20,6 +20,20 @@ class McOutboxMessage extends AbstractModel
 {
     protected $table = 'mc_outbox';
 
+    /**
+     * Mass assignment must be allowed here: the broadcast controller saves a
+     * new message, and Eloquent rejects unguarded attributes.
+     */
+    protected $fillable = [
+        'server_key',
+        'type',
+        'title',
+        'body',
+        'url',
+        'payload',
+        'delivered_at',
+    ];
+
     /** Flarum's AbstractModel disables timestamps by default. */
     public $timestamps = true;
 

@@ -20,6 +20,20 @@ class McBindCode extends AbstractModel
 {
     protected $table = 'mc_bind_codes';
 
+    /**
+     * Mass assignment must be allowed here: bind/start saves a new code, and
+     * Eloquent rejects unguarded attributes.
+     */
+    protected $fillable = [
+        'code',
+        'player_uuid',
+        'player_name',
+        'server_key',
+        'user_id',
+        'expires_at',
+        'used_at',
+    ];
+
     /** Flarum's AbstractModel disables timestamps by default. */
     public $timestamps = true;
 

@@ -19,6 +19,19 @@ class McEvent extends AbstractModel
 {
     protected $table = 'mc_events';
 
+    /**
+     * Mass assignment must be allowed here: the events controller uses
+     * firstOrNew()/fill(), and Eloquent rejects unguarded attributes.
+     */
+    protected $fillable = [
+        'server_key',
+        'type',
+        'player_uuid',
+        'player_name',
+        'message',
+        'happened_at',
+    ];
+
     /** Flarum's AbstractModel disables timestamps by default. */
     public $timestamps = true;
 

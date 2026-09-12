@@ -667,6 +667,57 @@ for (const table of migrationTables) {
   }
 }
 
+// Mass assignment: every column a model lists in $fillable must exist in the
+// migration, otherwise fill() silently drops it. The controllers use
+// firstOrNew()/fill(), so a missing entry is a runtime MassAssignmentException
+// ("Add [x] to fillable property"), which is exactly what the live selftest
+// surfaced.
+const columnsByTable = new Map();
+
+for (const table of migrationTables) {
+  const start = migrationSource.indexOf(`create('${table}'`);
+  if (start < 0) continue;
+  const end = migrationSource.indexOf('hasTable', start + 1);
+  const block = migrationSource.slice(start, end > start ? end : undefined);
+
+  columnsByTable.set(
+    table,
+    [...block.matchAll(/\$table->\w+\('([a-z_]+)'/g)].map((m) => m[1])
+  );
+}
+
+let fillableIssues = 0;
+
+for (const { table, file } of modelTables) {
+  const source = read(file);
+  const match = source.match(/protected\s+\$fillable\s*=\s*\[([^\]]*)\]/);
+  const declared = match ? [...match[1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1]) : [];
+  const columns = columnsByTable.get(table) ?? [];
+
+  if (declared.length === 0) {
+    fail(
+      `model ${basename(file)}`,
+      `declares no $fillable although the controllers use fill()/firstOrNew() on ${table}`
+    );
+    fillableIssues++;
+    continue;
+  }
+
+  const unknown = declared.filter((column) => !columns.includes(column));
+
+  if (unknown.length > 0) {
+    fail(`model ${basename(file)}`, `fillable columns missing from the ${table} migration: ${unknown.join(', ')}`);
+    fillableIssues++;
+    continue;
+  }
+
+  pass(`model ${basename(file)}: ${declared.length} $fillable columns match the ${table} migration`);
+}
+
+if (fillableIssues === 0 && modelTables.length > 0) {
+  pass('every model declares $fillable columns that exist in the migration');
+}
+
 // ---------------------------------------------------------------------------
 // 12. Route coverage in the docs
 // ---------------------------------------------------------------------------
