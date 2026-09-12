@@ -1,0 +1,48 @@
+plugins {
+    id 'java'
+}
+
+group = 'cn.stalir'
+version = '1.0.0'
+description = 'Bidirectional bridge between Paper servers and a Flarum forum'
+
+repositories {
+    mavenCentral()
+    maven {
+        name = 'papermc'
+        url = uri('https://repo.papermc.io/repository/maven-public/')
+    }
+}
+
+dependencies {
+    compileOnly "io.papermc.paper:paper-api:${paperApiVersion}"
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 21
+    options.compilerArgs << '-Xlint:deprecation' << '-Xlint:unchecked'
+}
+
+processResources {
+    filteringCharset = 'UTF-8'
+    filesMatching('plugin.yml') {
+        expand(version: project.version)
+    }
+}
+
+tasks.named('jar') {
+    archiveBaseName = 'McBridge'
+    manifest {
+        attributes(
+            'Implementation-Title': 'McBridge',
+            'Implementation-Version': project.version
+        )
+    }
+}

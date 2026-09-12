@@ -1,0 +1,12 @@
+# Normalise line endings so the repository stays consistent regardless of the
+# machine that clones it (CI runs on Linux).
+* text=auto eol=lf
+
+# Windows-only helpers keep CRLF if they are ever added.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binaries must never be touched.
+*.jar binary
+*.png binary
+*.zip binary

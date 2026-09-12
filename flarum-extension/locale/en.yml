@@ -1,0 +1,8 @@
+stalir-mc-bridge:
+  admin:
+    settings:
+      title: MC Bridge
+      secret_label: Shared secret
+      secret_help: The HMAC secret shared with your Minecraft servers. Generate one with "php flarum mc-bridge:secret".
+      tags_label: Announcement tags
+      tags_help: Only discussions carrying one of these tags are pushed to the game. Leave empty to push every new discussion.

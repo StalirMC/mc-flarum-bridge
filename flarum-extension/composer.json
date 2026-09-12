@@ -1,0 +1,37 @@
+{
+    "name": "stalir/mc-bridge",
+    "description": "Bidirectional bridge between Minecraft servers and your Flarum forum.",
+    "type": "flarum-extension",
+    "keywords": [
+        "flarum",
+        "minecraft",
+        "bridge",
+        "server status"
+    ],
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Stalir"
+        }
+    ],
+    "require": {
+        "php": "^8.3",
+        "flarum/core": "^2.0.0-beta"
+    },
+    "autoload": {
+        "psr-4": {
+            "Stalir\\McBridge\\": "src/"
+        }
+    },
+    "extra": {
+        "flarum-extension": {
+            "title": "MC Bridge",
+            "category": "feature",
+            "icon": {
+                "name": "fas fa-gamepad",
+                "backgroundColor": "#2f6f4e",
+                "color": "#ffffff"
+            }
+        }
+    }
+}

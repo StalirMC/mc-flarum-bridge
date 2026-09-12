@@ -1,0 +1,2 @@
+// Required by Gradle 7+ (an undefined build cannot be executed by `gradle build`).
+rootProject.name = 'McBridge'

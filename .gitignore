@@ -1,0 +1,21 @@
+# Java / Gradle
+mc-plugin/build/
+mc-plugin/.gradle/
+*.class
+
+# PHP / Composer
+flarum-extension/vendor/
+composer.lock
+
+# Editor / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+
+# Runtime artefacts
+*.log

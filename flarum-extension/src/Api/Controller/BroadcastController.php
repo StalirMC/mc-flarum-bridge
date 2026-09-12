@@ -1,0 +1,100 @@
+<?php
+
+namespace Stalir\McBridge\Api\Controller;
+
+use Flarum\Http\RequestUtil;
+use Flarum\Settings\SettingsRepositoryInterface;
+use Illuminate\Contracts\Cache\Repository as CacheRepository;
+use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\ServerRequestInterface;
+use Stalir\McBridge\Model\McOutboxMessage;
+use Stalir\McBridge\Service\BridgeCrypto;
+
+/**
+ * POST /api/mc-bridge/broadcast
+ *
+ * Queues a message for one server (or all servers). Two callers are accepted:
+ *
+ *  - a Flarum administrator, using their normal session cookie (and therefore a
+ *    valid CSRF token);
+ *  - an external automation client, using the HMAC scheme.
+ *
+ * The choice is made by the presence of the bridge authentication headers, not
+ * by whether authentication happened to succeed: a request that carries them is
+ * always evaluated as a machine request, so a missing or bad signature yields
+ * 401 instead of silently degrading into a confusing 403.
+ */
+class BroadcastController extends AbstractBridgeController
+{
+    private const ALLOWED_TYPES = [
+        McOutboxMessage::TYPE_BROADCAST,
+        McOutboxMessage::TYPE_COMMAND,
+        McOutboxMessage::TYPE_ANNOUNCEMENT,
+    ];
+
+    public function handle(ServerRequestInterface $request): ResponseInterface
+    {
+        $body = $this->body($request);
+
+        $claimsMachine = $request->hasHeader(BridgeCrypto::HEADER_SIGNATURE)
+            || $request->hasHeader(BridgeCrypto::HEADER_TIMESTAMP)
+            || $request->hasHeader(BridgeCrypto::HEADER_NONCE);
+
+        if ($claimsMachine) {
+            if ($error = $this->assertMachine($request)) {
+                return $error;
+            }
+        } else {
+            $actor = RequestUtil::getActor($request);
+
+            if ($actor->isGuest()) {
+                return $this->error(
+                    'Authentication required: sign the request with the bridge secret or log in as an administrator.',
+                    401
+                );
+            }
+
+            if (! $actor->isAdmin()) {
+                return $this->error('Administrator privileges are required to broadcast.', 403);
+            }
+        }
+
+        $type = $body['type'] ?? McOutboxMessage::TYPE_BROADCAST;
+
+        if (! is_string($type) || ! in_array($type, self::ALLOWED_TYPES, true)) {
+            return $this->error('Unsupported message type.', 422);
+        }
+
+        $title = isset($body['title']) ? mb_substr(trim((string) $body['title']), 0, 255) : null;
+        $text = isset($body['body']) ? mb_substr(trim((string) $body['body']), 0, 4000) : null;
+
+        if (($title === null || $title === '') && ($text === null || $text === '')) {
+            return $this->error('A title or body is required.', 422);
+        }
+
+        $serverKey = $body['server_key'] ?? null;
+
+        if ($serverKey !== null) {
+            $serverKey = $this->resolveServerKey($request, $body);
+
+            if ($serverKey === null) {
+                return $this->error('server_key must match [A-Za-z0-9._-] when supplied.', 422);
+            }
+        }
+
+        $message = new McOutboxMessage();
+        $message->server_key = $serverKey;
+        $message->type = $type;
+        $message->title = $title;
+        $message->body = $text;
+        $message->url = isset($body['url']) ? mb_substr((string) $body['url'], 0, 255) : null;
+        $payload = $body['payload'] ?? null;
+        $message->payload = is_array($payload) ? $payload : [];
+        $message->save();
+
+        return $this->json([
+            'ok' => true,
+            'message' => $message->toApiPayload(),
+        ], 201);
+    }
+}

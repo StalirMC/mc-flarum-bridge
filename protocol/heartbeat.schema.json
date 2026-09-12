@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stalir.cn/schemas/mc-bridge/heartbeat.schema.json",
+  "title": "McBridge heartbeat",
+  "description": "POST /api/mc-bridge/heartbeat request body.",
+  "type": "object",
+  "required": ["server_key"],
+  "additionalProperties": true,
+  "properties": {
+    "server_key": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,100}$",
+      "description": "Stable identifier of the reporting server."
+    },
+    "online": {
+      "type": "boolean",
+      "default": true,
+      "description": "False when the server is shutting down."
+    },
+    "name": {
+      "type": "string",
+      "maxLength": 100,
+      "description": "Friendly name shown on the forum."
+    },
+    "version": {
+      "type": "string",
+      "maxLength": 64,
+      "description": "Server/implementation version string."
+    },
+    "motd": {
+      "type": "string",
+      "maxLength": 255
+    },
+    "players_online": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "players_max": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "tps": {
+      "type": "number",
+      "minimum": 0,
+      "description": "One-minute TPS."
+    },
+    "mspt": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Average milliseconds per tick."
+    },
+    "player_names": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "string",
+        "maxLength": 64
+      }
+    }
+  }
+}

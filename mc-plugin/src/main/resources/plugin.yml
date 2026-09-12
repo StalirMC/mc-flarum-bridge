@@ -1,0 +1,27 @@
+name: McBridge
+version: '${version}'
+main: cn.stalir.mcbridge.McBridgePlugin
+api-version: '1.21'
+authors: [Stalir]
+description: Reports server status to Flarum and relays forum announcements back into the game.
+website: https://forum.kxkl2024.cn
+folia-supported: false
+
+commands:
+  bind:
+    description: Link your Minecraft account to your Flarum account
+    usage: /bind
+    permission: mcbridge.bind
+  mcbridge:
+    description: McBridge administration
+    usage: /mcbridge <status|outbox|broadcast|stats|reload>
+    aliases: [mcb]
+    permission: mcbridge.admin
+
+permissions:
+  mcbridge.bind:
+    description: Allows a player to request an account binding code
+    default: true
+  mcbridge.admin:
+    description: Allows managing the bridge and sending broadcasts
+    default: op
