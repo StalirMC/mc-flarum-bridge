@@ -12,15 +12,25 @@
 
 ## CSRF 行为（重要）
 
-Flarum 对整个 `api` 中间件栈强制校验 CSRF，而服务器没有 session，因此扩展注册了
-一个中间件，**对携带 `X-MC-Signature` 头的 `/api/mc-bridge/*` 请求**放行 CSRF 校验
-（这类请求由 HMAC 认证）。由此产生的约定：
+Flarum 对整个 `api` 中间件栈强制校验 CSRF，而服务器没有 session 也没有 CSRF token。
+扩展通过官方的 **`Extend\Csrf`** 扩展器按**路由名**豁免机器端点：
 
-| 调用方 | 需要什么 |
-|--------|---------|
-| Minecraft 插件 / 自动化脚本（带签名头） | 只需 HMAC 签名，**不需要** CSRF token |
-| 浏览器前端（Flarum 页面内） | 自动携带 CSRF token，无需额外处理 |
-| curl 调用**会话**端点（`POST`/`DELETE /link`、管理员的 `POST /broadcast`） | 除 Cookie 外还需 `X-CSRF-Token` 头 |
+```php
+(new Extend\Csrf())
+    ->exemptRoute('mc-bridge.heartbeat')
+    ->exemptRoute('mc-bridge.events')
+    // ...
+```
+
+由此产生的约定：
+
+| 端点 | 是否需要 CSRF token |
+|------|--------------------|
+| 机器端点（`heartbeat` / `events` / `outbox` / `announcements` / `bind/start` / `bind/status`） | ❌ 不需要，靠 HMAC 认证 |
+| `POST /mc-bridge/broadcast`（带签名头） | ❌ 不需要 |
+| `POST /mc-bridge/broadcast`（管理员会话） | ✅ **需要** `X-CSRF-Token`，控制器内单独校验 |
+| `POST` / `DELETE /mc-bridge/link`（会话） | ✅ 需要，**未豁免**，由框架校验 |
+| `GET /mc-bridge/status` | 公开只读 |
 
 用 curl 调用会话端点时，从 `XSRF-TOKEN` Cookie 取值放进 `X-CSRF-Token` 头：
 
@@ -33,8 +43,9 @@ curl -s -X POST https://forum.kxkl2024.cn/api/mc-bridge/link \
   -d '{"code":"K7MPQ2XY"}'
 ```
 
-> 该放行**仅**作用于带签名头的请求：会话端点的 CSRF 保护依然生效，浏览器伪造请求
-> 无法带上自定义头，因此不存在 CSRF 缺口。
+> **安全边界**：`link` / `unlink` 作用于登录用户的账号，**故意不在豁免名单里**。
+> `broadcast` 为了机器调用被豁免，因此控制器对**会话路径**单独校验
+> `X-CSRF-Token`，跨站表单依旧打不进来。
 
 ## 后台界面
 

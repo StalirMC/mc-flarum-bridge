@@ -21,14 +21,14 @@
 
 ## 2. 已完成的验证
 
-### 2.1 静态一致性校验 —— 194 项全部通过
+### 2.1 静态一致性校验 —— 210 项全部通过
 
 ```bash
 cd mc-flarum-bridge
 node tools/verify.mjs
 ```
 
-实测输出：`checks run: 194 / errors: 0 / warnings: 0 / ALL CHECKS PASSED`
+实测输出：`checks run: 210 / errors: 0 / warnings: 0 / ALL CHECKS PASSED`
 
 覆盖的 15 类不变量：
 
@@ -46,7 +46,7 @@ node tools/verify.mjs
 | 10 | **PHP 与 Java 的 HMAC 规范化字符串顺序一致**（`timestamp→nonce→method→path→body`） | 两端算法不一致 = 所有请求 401 |
 | 11 | 迁移创建的 5 张表与 5 个模型的 `$table` 一一对应 | 查询不存在的表 |
 | 12 | 10 条注册路由全部在 `docs/API.md` 中有文档 | 文档与实现漂移 |
-| 13 | **Flarum 2.x 框架契约**：迁移必须返回 `['up'=>fn(Builder $schema), ...]`、模型必须显式开启 `$timestamps`、CSRF 放行中间件必须 `insertBefore(CheckCsrfToken)`、控制台命令必须继承 `AbstractCommand` 并实现 `fire()`、**必须用 `Extend\Locales` 注册语言目录**、`BridgeMessages.DEFAULT_LOCALE` 与随包语言一致、各语言键集一致 | 这些是审查与实测中查出的真实缺陷，已固化为自动回归防护 |
+| 13 | **Flarum 2.x 框架契约**：迁移必须返回 `['up'=>fn(Builder $schema), ...]`、模型必须显式开启 `$timestamps`、机器路由必须用 `Extend\Csrf` 豁免且**会话路由不得被豁免**、控制台命令必须继承 `AbstractBridgeCommand` 并实现 `fire()`、**必须用 `Extend\Locales` 注册语言目录**、占位符必须是 ICU `{name}` 语法、`BridgeMessages.DEFAULT_LOCALE` 与随包语言一致、各语言键集一致 | 这些是审查与实测中查出的真实缺陷，已固化为自动回归防护 |
 | 14 | **CI 工作流自检**：`working-directory` 路径存在、引用的 `tools/*.mjs` 存在、三个 job 已声明、产物路径与 Gradle 默认输出一致 | 避免首次推送就因路径拼错而红 |
 | 15 | **Java 编译隐患**：用到的 JDK/第三方简单名必须已 import（先剥离注释）、调度器调用不得直接传未加 `(Runnable)` 强转的方法引用 | 这两类正是首次 CI 编译失败的真实原因，现无需编译器即可拦截 |
 
@@ -94,7 +94,7 @@ node tools/protocol-test.mjs
 | 级别 | 问题 | 处理 |
 |------|------|------|
 | **BLOCKER** | 迁移使用 `$this->schema`。Flarum 2.x 的 `Migration` 已重构为纯静态工厂类，**没有 schema 属性**，2.x 的契约是返回 `['up' => fn(Builder $schema), ...]`。原写法在 `php flarum migrate` 时必然抛 `Call to a member function hasTable() on null`，**5 张表一张都建不出来** | 改为返回闭包数组 ✅ |
-| **BLOCKER** | Flarum 对整个 `api` 中间件栈强制校验 CSRF，只豁免 `token`/`registration-token` 路由。服务器没有 session 也没有 CSRF token，**所有 POST 端点会被 400 拦下**，HMAC 认证代码根本执行不到 | 新增 `BridgeCsrfBypassMiddleware`，**仅对携带 `X-MC-Signature` 的请求**设置 `bypassCsrfToken`，并用 `insertBefore(CheckCsrfToken::class, ...)` 注册（用 `add()` 会太晚而无效）✅ |
+| **BLOCKER** | Flarum 对整个 `api` 中间件栈强制校验 CSRF，只豁免 `token`/`registration-token` 路由。服务器没有 session 也没有 CSRF token，**所有 POST 端点会被 400 拦下**，HMAC 认证代码根本执行不到 | 第一次尝试用 `Extend\Middleware('api')->insertBefore(CheckCsrfToken::class, ...)` 插一个放行中间件——**实测无效**（`flarum.api.handler` 是单例，管道只构建一次，之后注册的 extender 被静默忽略），线上回环请求仍返回 `400 csrf_token_mismatch`。最终改用官方 `Extend\Csrf()->exemptRoute()` 按路由名豁免机器端点；`link`/`unlink` 故意不豁免，`broadcast` 因需支持机器调用而豁免、并在控制器内对会话路径单独校验 `X-CSRF-Token` ✅ |
 | HIGH | `Flarum\Database\AbstractModel` 默认 `$timestamps = false`（与 Laravel 相反），导致 `created_at`/`linked_at` 恒为 `null`，`mc_events` 的复合索引失效 | 5 个模型显式 `$timestamps = true` ✅ |
 | HIGH | 控制台命令继承 Symfony 原生 `Command`，Flarum 不会调用 `setLaravel()`，`$this->laravel` 与 `info()/error()` 助手不可用 | 改用 `Flarum\Console\AbstractCommand` + `fire(): int` ✅ |
 | MEDIUM | `broadcast` 认证分支会静默降级为 403，排障时误判为权限问题 | 带任一 bridge 认证头即强制走 HMAC，失败直接 401 ✅ |

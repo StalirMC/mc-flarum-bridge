@@ -52,6 +52,17 @@ class BroadcastController extends AbstractBridgeController
             if (! $actor->isAdmin()) {
                 return $this->fail('broadcast_admin_required', 403);
             }
+
+            // This route is exempted from the global CSRF check so that signed
+            // machine calls work, so the session path has to enforce it here.
+            // Without this a cross-site form post could broadcast on behalf of a
+            // logged-in administrator.
+            $session = $request->getAttribute('session');
+            $provided = $request->getHeaderLine('X-CSRF-Token');
+
+            if (! $session || $provided === '' || ! hash_equals((string) $session->token(), $provided)) {
+                return $this->fail('broadcast_csrf_required', 403);
+            }
         }
 
         $type = $body['type'] ?? McOutboxMessage::TYPE_BROADCAST;

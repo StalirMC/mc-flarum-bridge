@@ -1,7 +1,6 @@
 <?php
 
 use Flarum\Extend;
-use Flarum\Http\Middleware\CheckCsrfToken;
 use Flarum\Post\Event\Posted;
 use Stalir\McBridge\Api\Controller\AnnouncementsController;
 use Stalir\McBridge\Api\Controller\BindStartController;
@@ -14,7 +13,6 @@ use Stalir\McBridge\Api\Controller\StatusController;
 use Stalir\McBridge\Console\ConfigCommand;
 use Stalir\McBridge\Console\SecretCommand;
 use Stalir\McBridge\Console\SelfTestCommand;
-use Stalir\McBridge\Http\Middleware\BridgeCsrfBypassMiddleware;
 use Stalir\McBridge\Listener\QueueAnnouncement;
 use Stalir\McBridge\Service\BridgeMessages;
 
@@ -27,13 +25,28 @@ return [
     new Extend\Locales(__DIR__.'/locale'),
 
     // ---------------------------------------------------------------------
-    // Flarum applies CSRF verification to the whole `api` stack, which a
-    // session-less Minecraft server cannot satisfy. This middleware marks
-    // signature-bearing bridge requests as exempt *before* the CSRF check runs.
-    // It must be inserted (not appended) to take effect.
+    // CSRF exemptions.
+    //
+    // Flarum runs CheckCsrfToken across the whole `api` stack and exempts
+    // routes BY NAME through this extender (Extend\Csrf -> the
+    // flarum.http.csrfExemptPaths binding). A session-less Minecraft server
+    // cannot produce a CSRF token, so every machine endpoint has to be listed
+    // here; otherwise it is rejected with a 400 before the HMAC check runs.
+    //
+    // Only machine endpoints are listed. mc-bridge.link and mc-bridge.unlink
+    // act on the forum session and MUST keep their CSRF protection, so they are
+    // deliberately absent. mc-bridge.broadcast is dual-auth: it is listed so
+    // signed machine calls work, and BroadcastController re-enforces a CSRF
+    // token by hand for the session path.
     // ---------------------------------------------------------------------
-    (new Extend\Middleware('api'))
-        ->insertBefore(CheckCsrfToken::class, BridgeCsrfBypassMiddleware::class),
+    (new Extend\Csrf())
+        ->exemptRoute('mc-bridge.heartbeat')
+        ->exemptRoute('mc-bridge.events')
+        ->exemptRoute('mc-bridge.outbox')
+        ->exemptRoute('mc-bridge.announcements')
+        ->exemptRoute('mc-bridge.bind.start')
+        ->exemptRoute('mc-bridge.bind.status')
+        ->exemptRoute('mc-bridge.broadcast'),
 
     // ---------------------------------------------------------------------
     // Machine-to-machine endpoints. Every request here is authenticated with

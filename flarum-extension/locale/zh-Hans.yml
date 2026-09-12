@@ -104,6 +104,7 @@ stalir-mc-bridge:
       message_content_required: "title 与 body 至少需要提供一个。"
       broadcast_auth_required: "需要认证：请用共享密钥签名，或以管理员身份登录。"
       broadcast_admin_required: "只有管理员才能发送广播。"
+      broadcast_csrf_required: "会话调用缺少有效的 CSRF 令牌。"
       link_code_required: "请提供绑定码。"
       link_code_malformed: "绑定码格式不正确。"
       link_code_unknown: "绑定码不存在或已被使用。"

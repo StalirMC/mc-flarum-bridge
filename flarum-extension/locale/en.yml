@@ -105,6 +105,7 @@ stalir-mc-bridge:
       message_content_required: "A title or body is required."
       broadcast_auth_required: "Authentication required: sign the request with the bridge secret or log in as an administrator."
       broadcast_admin_required: "Administrator privileges are required to broadcast."
+      broadcast_csrf_required: "The session call is missing a valid CSRF token."
       link_code_required: "A binding code is required."
       link_code_malformed: "That does not look like a binding code."
       link_code_unknown: "Unknown or already used binding code."

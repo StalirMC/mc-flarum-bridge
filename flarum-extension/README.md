@@ -65,7 +65,7 @@ src/Service/BridgeCrypto.php    HMAC 签名与路径规范化
 src/Service/BridgeMessages.php  语言解析与翻译包装（默认中文）
 locale/                         语言文件：zh-Hans（默认）、en
 src/Api/Controller/             8 个控制器（1 个抽象基类 + 7 个端点控制器，共 10 条路由）
-src/Http/Middleware/            CSRF 放行中间件（HMAC 请求免 session CSRF）
+extend.php                      路由 / CSRF 豁免 / 事件 / 语言 / 控制台命令注册
 src/Model/                      Eloquent 模型
 src/Listener/QueueAnnouncement.php   新帖 → outbox 队列
 src/Console/SecretCommand.php   php flarum mc-bridge:secret

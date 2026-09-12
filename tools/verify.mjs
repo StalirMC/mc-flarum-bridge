@@ -743,44 +743,87 @@ section('13. Flarum 2.x framework contracts');
     }
   }
 
-  // Flarum's api middleware stack runs CheckCsrfToken; a session-less HMAC client
-  // gets a 400 unless the request is marked as exempt before that check.
+  // Flarum runs CheckCsrfToken across the api stack and exempts routes BY NAME
+  // through the official Extend\Csrf extender. Inserting a middleware before
+  // CheckCsrfToken does NOT work reliably: flarum.api.handler is a singleton
+  // that builds the pipeline once, so an extender applied afterwards is
+  // silently ignored - which showed up as 400 csrf_token_mismatch on the live
+  // forum.
   const extendFile = read(join(EXT, 'extend.php'));
+  const exempted = [...extendFile.matchAll(/exemptRoute\(\s*'([^']+)'\s*\)/g)].map((m) => m[1]);
+  const definedRoutes = [...extendFile.matchAll(/->(?:get|post|delete)\(\s*'[^']*',\s*'([^']+)'/g)].map(
+    (m) => m[1]
+  );
 
-  if (!/Extend\\Middleware\('api'\)/.test(extendFile)) {
-    fail('CSRF', "no Extend\\Middleware('api') extender found; HMAC POST requests will be rejected with 400");
+  if (!/new\s+Extend\\Csrf\(\)/.test(extendFile)) {
+    fail('CSRF', 'no Extend\\Csrf() extender; signed machine POSTs are rejected with 400 csrf_token_mismatch');
   } else {
-    pass("Extend\\Middleware('api') registered");
+    pass('extend.php registers Extend\\Csrf() exemptions');
   }
 
-  if (!/insertBefore\(\s*CheckCsrfToken::class/.test(extendFile)) {
-    fail(
+  const MACHINE_ROUTES = [
+    'mc-bridge.heartbeat',
+    'mc-bridge.events',
+    'mc-bridge.outbox',
+    'mc-bridge.announcements',
+    'mc-bridge.bind.start',
+    'mc-bridge.bind.status',
+    'mc-bridge.broadcast',
+  ];
+
+  const SESSION_ROUTES = ['mc-bridge.link', 'mc-bridge.unlink'];
+
+  for (const route of MACHINE_ROUTES) {
+    if (!definedRoutes.includes(route)) {
+      fail('CSRF', `route ${route} is not defined in extend.php`);
+    } else if (exempted.includes(route)) {
+      pass(`machine route ${route} is CSRF-exempt`);
+    } else {
+      fail(
+        'CSRF',
+        `machine route ${route} must be exempted with Extend\\Csrf()->exemptRoute(); ` +
+        'without it every signed call gets 400 csrf_token_mismatch'
+      );
+    }
+  }
+
+  for (const route of SESSION_ROUTES) {
+    if (!definedRoutes.includes(route)) {
+      fail('CSRF', `route ${route} is not defined in extend.php`);
+    } else if (exempted.includes(route)) {
+      fail(
+        'CSRF',
+        `session route ${route} must NOT be CSRF-exempt: it acts on the logged-in user's account`
+      );
+    } else {
+      pass(`session route ${route} keeps its CSRF protection`);
+    }
+  }
+
+  // Broadcast is exempt so signed machine calls work, which means the session
+  // path has to verify the token itself.
+  {
+    const broadcast = read(join(EXT, 'src/Api/Controller/BroadcastController.php'));
+    const enforced = broadcast.includes('X-CSRF-Token') && broadcast.includes('hash_equals');
+
+    if (exempted.includes('mc-bridge.broadcast') && !enforced) {
+      fail(
+        'BroadcastController',
+        'mc-bridge.broadcast is CSRF-exempt, so its session path must verify X-CSRF-Token itself'
+      );
+    } else if (!exempted.includes('mc-bridge.broadcast')) {
+      fail('CSRF', 'mc-bridge.broadcast must be exempt, otherwise the plugin cannot send broadcasts');
+    } else {
+      pass('BroadcastController re-enforces CSRF for the session path');
+    }
+  }
+
+  if (existsSync(join(EXT, 'src/Http/Middleware/BridgeCsrfBypassMiddleware.php'))) {
+    warn(
       'CSRF',
-      'the bypass middleware must be registered with insertBefore(CheckCsrfToken::class, ...); ' +
-      'add() would run after the CSRF check and have no effect'
+      'BridgeCsrfBypassMiddleware still exists although it is no longer registered; ' +
+      'the middleware approach does not work here, so remove the dead code'
     );
-  } else {
-    pass('CSRF bypass inserted before CheckCsrfToken');
-  }
-
-  const bypassFile = join(EXT, 'src/Http/Middleware/BridgeCsrfBypassMiddleware.php');
-
-  if (!existsSync(bypassFile)) {
-    fail('CSRF', 'src/Http/Middleware/BridgeCsrfBypassMiddleware.php is missing');
-  } else {
-    const bypass = read(bypassFile);
-
-    if (!bypass.includes('bypassCsrfToken')) {
-      fail('CSRF', 'the bypass middleware never sets the bypassCsrfToken attribute');
-    } else {
-      pass('bypass middleware sets bypassCsrfToken');
-    }
-
-    if (!/hasHeader\(\s*self::SIGNATURE_HEADER\s*\)/.test(bypass)) {
-      fail('CSRF', 'the bypass must require the signature header, otherwise session endpoints lose CSRF protection');
-    } else {
-      pass('bypass is limited to requests carrying the signature header');
-    }
   }
 
   // Flarum's AbstractCommand extends Symfony's Command, NOT Illuminate's. It
