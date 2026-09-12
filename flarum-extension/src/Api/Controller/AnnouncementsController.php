@@ -4,7 +4,7 @@ namespace Stalir\McBridge\Api\Controller;
 
 use Carbon\Carbon;
 use Flarum\Settings\SettingsRepositoryInterface;
-use Illuminate\Contracts\Cache\Repository as CacheRepository;
+use Illuminate\Cache\Repository as CacheRepository;
 use Illuminate\Database\ConnectionInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;

@@ -1048,6 +1048,26 @@ section('13. Flarum 2.x framework contracts');
   }
 
   // ------------------------------------------------------------------
+  // Nonce replay protection. The nonce guard calls cache->add(), which exists
+  // on the concrete Illuminate\Cache\Repository but NOT on the
+  // Illuminate\Contracts\Cache\Repository contract, so the contract must not be
+  // injected where add() is used.
+  // ------------------------------------------------------------------
+  {
+    const bridgeController = read(join(EXT, 'src/Api/Controller/AbstractBridgeController.php'));
+
+    if (/add\(\s*\$cacheKey/.test(bridgeController) && /use Illuminate\\Contracts\\Cache\\Repository/.test(bridgeController)) {
+      fail(
+        'AbstractBridgeController',
+        'injects Illuminate\\Contracts\\Cache\\Repository but calls add() on it; ' +
+        'add() only exists on the concrete Illuminate\\Cache\\Repository'
+      );
+    } else {
+      pass('nonce replay guard uses a repository that has add()');
+    }
+  }
+
+  // ------------------------------------------------------------------
   // Installability. Flarum 2.x discovers extensions only through Composer's
   // installed.json, so the monorepo root has to expose the sub-directory via
   // extra.flarum-subextensions, and the ROOT autoload must cover the
