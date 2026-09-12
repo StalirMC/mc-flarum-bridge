@@ -21,16 +21,16 @@
 
 ## 2. 已完成的验证
 
-### 2.1 静态一致性校验 —— 173 项全部通过
+### 2.1 静态一致性校验 —— 185 项全部通过
 
 ```bash
 cd mc-flarum-bridge
 node tools/verify.mjs
 ```
 
-实测输出：`checks run: 173 / errors: 0 / warnings: 0 / ALL CHECKS PASSED`
+实测输出：`checks run: 185 / errors: 0 / warnings: 0 / ALL CHECKS PASSED`
 
-覆盖的 13 类不变量：
+覆盖的 15 类不变量：
 
 | # | 检查项 | 为什么重要 |
 |---|--------|-----------|
@@ -47,6 +47,8 @@ node tools/verify.mjs
 | 11 | 迁移创建的 5 张表与 5 个模型的 `$table` 一一对应 | 查询不存在的表 |
 | 12 | 10 条注册路由全部在 `docs/API.md` 中有文档 | 文档与实现漂移 |
 | 13 | **Flarum 2.x 框架契约**：迁移必须返回 `['up'=>fn(Builder $schema), ...]`、模型必须显式开启 `$timestamps`、CSRF 放行中间件必须 `insertBefore(CheckCsrfToken)`、控制台命令必须继承 `AbstractCommand` 并实现 `fire()` | 这些是审查中实际查出的 blocker，已固化为自动回归防护 |
+| 14 | **CI 工作流自检**：`working-directory` 路径存在、引用的 `tools/*.mjs` 存在、三个 job 已声明、产物路径与 Gradle 默认输出一致 | 避免首次推送就因路径拼错而红 |
+| 15 | **Java 编译隐患**：用到的 JDK/第三方简单名必须已 import（先剥离注释）、调度器调用不得直接传未加 `(Runnable)` 强转的方法引用 | 这两类正是首次 CI 编译失败的真实原因，现无需编译器即可拦截 |
 
 第 10 项是这套桥接最关键的契约：两端分别用 PHP 和 Java 独立实现了同一套签名
 算法，脚本会提取各自的字段顺序并断言完全一致，同时确认 PHP 使用
@@ -126,21 +128,57 @@ RFC 4231 官方向量与独立 ipad/opad 实现交叉验证锁死。
 上述所有契约类问题都已写进 `tools/verify.mjs` 第 13 节作为**自动回归防护**，不会
 再被改回。
 
-## 3. 无法在本机验证的内容（需你在服务器上执行）
+### 2.4 真实 CI 运行 —— 三个 job 全部通过 ✅
 
-> 这些检查已全部写进 CI（`.github/workflows/ci.yml`）。把仓库推到 GitHub 后，
-> 每次提交都会在带 PHP 8.3 / JDK 21 的真实环境里自动执行 `php -l`、真实
-> `gradle build`、以及全部静态与协议测试。推上仓库即可永久关闭本节的缺口。
+仓库：**https://github.com/StalirMC/mc-flarum-bridge**
 
-| 项目 | 命令 | 期望 |
+| 运行 | 提交 | 结果 |
 |------|------|------|
-| PHP 语法 | `find flarum-extension -name '*.php' -exec php -l {} \;` | 无 `Parse error` |
-| Java 编译 | `cd mc-plugin && gradle wrapper --gradle-version 8.10 && ./gradlew build` | `BUILD SUCCESSFUL` |
-| Flarum 安装 | `composer require stalir/mc-bridge:'*'` | 扩展出现在管理后台 |
-| 迁移执行 | `php flarum migrate` | 5 张表建立 |
-| **桥接自检** | `php flarum mc-bridge:selftest --url=https://你的域名` | 全部 `OK` |
-| 插件加载 | 放入 jar 后启动服务器 | 日志出现 `McBridge enabled as server ...` |
-| 真实心跳 | 观察日志 / `GET /api/mc-bridge/status` | 服务器状态出现在论坛 |
+| #1 | `84b5954` | ❌ 失败（暴露 4 个真实缺陷，见下） |
+| #2 | `b5b7f5d` | ✅ **全部通过** —— [run #2](https://github.com/StalirMC/mc-flarum-bridge/actions/runs/34698839560) |
+
+run #2 的三个 job：
+
+| Job | 内容 | 结果 |
+|-----|------|------|
+| Static consistency + protocol conformance | `verify.mjs`（185 项）+ `protocol-test.mjs`（32 项），Linux/Node 22 | ✅ |
+| PHP lint + extension manifest | `php -l` 全部文件、`composer validate`、清单检查、**实际 require 迁移文件并反射校验 up 闭包签名** | ✅ |
+| Build the plugin with Gradle | Temurin JDK 21 + Gradle 8.10 → `gradle build` | ✅ |
+
+产物：**`McBridge-plugin` jar（34.6 KB）已成功构建并上传为 workflow artifact**，
+运行耗时 45 秒。
+
+#### 首次 CI 运行抓到的问题（本机无法发现）
+
+这正是把仓库推上 CI 的意义——本机没有 PHP/JDK，而 `javac` 给出了 4 个真实缺陷：
+
+| 文件 | 错误 | 根因 |
+|------|------|------|
+| `HttpBridgeClient.java:54,62,131,142` | `cannot find symbol` | 加 `Duration` 超时参数时**漏了 `import java.time.Duration;`** |
+| `HttpBridgeClient.java:120` | `signedBuilder cannot be applied to given types` | 给 `signedBuilder` 加超时参数后，`get()` 调用点仍是旧的 4 参数 |
+| `McBridgePlugin.java:158,355` | `reference to runTaskTimerAsynchronously / runTaskAsynchronously is ambiguous` | Bukkit 调度器同时有 `Runnable` 与 `Consumer<BukkitTask>` 重载，而**隐式类型的方法引用不参与适用性判定**，导致歧义；需显式 `(Runnable)` 强转 |
+| CI 的 PHP 清单检查 | `autoload psr-4 mapping ... must point at src/` | 内联 `php -r` 里把 PSR-4 键写成 `"Stalir\\\\McBridge\\\\"`；YAML 块标量原样传给 shell，PHP 得到两个真实反斜杠，永远匹配不上 composer.json 的单反斜杠 |
+
+全部已修复（提交 `b5b7f5d`），并**把这两类 Java 隐患写进 `tools/verify.mjs` 第 15 节**
+（缺 import 检测 + 调度器方法引用歧义检测），无需编译器即可拦截回归。
+
+> 附：修正一处此前的不实记录 —— `BindCommand` 的 `already_bound` 类型检查在上一轮
+> 被报告为"已修复"，但实际并未改动；本次已真正修复（提交 `b5b7f5d`）。
+
+## 3. 无法在本机验证的内容（现由 CI 覆盖）
+
+> 本机没有 PHP / JDK，这些检查**已全部由 CI 在带 PHP 8.3 / JDK 21 的真实环境中
+> 自动执行并通过**（见 2.4）。下表保留为「在任何机器上手动复核」的参考命令。
+
+| 项目 | 命令 | 期望 | CI 状态 |
+|------|------|------|---------|
+| PHP 语法 | `find flarum-extension -name '*.php' -exec php -l {} \;` | 无 `Parse error` | ✅ CI 已执行通过 |
+| Java 编译 | `cd mc-plugin && gradle wrapper --gradle-version 8.10 && ./gradlew build` | `BUILD SUCCESSFUL` | ✅ CI 已执行通过，jar 已上传为 artifact |
+| Flarum 安装 | `composer require stalir/mc-bridge:'*'` | 扩展出现在管理后台 | ⬜ 需在真实论坛执行（CI 不安装 Flarum） |
+| 迁移执行 | `php flarum migrate` | 5 张表建立 | ⬜ 需真实数据库（CI 仅反射校验迁移契约） |
+| **桥接自检** | `php flarum mc-bridge:selftest --url=https://你的域名` | 全部 `OK` | ⬜ 需在真实论坛执行 |
+| 插件加载 | 放入 jar 后启动服务器 | 日志出现 `McBridge enabled as server ...` | ⬜ 需在真实服务器执行 |
+| 真实心跳 | 观察日志 / `GET /api/mc-bridge/status` | 服务器状态出现在论坛 | ⬜ 需在真实服务器执行 |
 
 其中 `mc-bridge:selftest` 是专为此设计的：它在**运行论坛的那台机器**上检查密钥
 长度、HMAC 签名/验签/篡改检测、规范化字符串格式、路径规范化（含子目录安装）、
@@ -178,7 +216,12 @@ cd mc-plugin && gradle wrapper --gradle-version 8.10 && ./gradlew build
 - 静态校验能证明**结构正确、契约一致、引用可解析**，不能替代编译器。
 - 协议测试能证明**协议规范自洽且可实现**，但不能证明 PHP/Java 的具体实现
   运行时无错（例如某处 API 在目标版本上签名不符）。
-- 因此第 2.3 节的独立审查关注点正是「本机无法编译」这一盲区：API 存在性与
-  签名正确性。
-- 最终判定仍需第 4 节在真实服务器上跑一次。`mc-bridge:selftest` 已把这一步
+- **编译这一环已由 CI 补上**：第 2.4 节的真实运行证明插件能在 JDK 21 + Paper API
+  下编译出 jar、全部 PHP 文件能通过 `php -l`。而且这条路径确实有价值——首次运行
+  就抓出了 4 个本机无法发现的真实缺陷。
+- 仍然**没有**验证的是「运行时行为」：CI 只编译，不启动 Flarum、不启动 Minecraft
+  服务器、不连数据库。因此：
+  - Flarum 侧的接口/迁移/绑定流程，仍建议跑一次 `mc-bridge:selftest`；
+  - 插件侧的真实心跳与公告投递，需装到服务器上观察。
+- 最终判定仍需第 4 节在真实服务器上跑一次。`mc-bridge:selftest` 已把论坛侧这一步
   压缩为一条命令。

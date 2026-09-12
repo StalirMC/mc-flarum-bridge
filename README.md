@@ -1,6 +1,11 @@
 # MC ↔ Flarum Bridge
 
+[![CI](https://github.com/StalirMC/mc-flarum-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/StalirMC/mc-flarum-bridge/actions/workflows/ci.yml)
+
 一套把 Minecraft 服务器与 Flarum 论坛双向打通的开源方案。
+
+> **仓库**：https://github.com/StalirMC/mc-flarum-bridge
+> **最新 CI**：[三个 job（静态+协议 / PHP lint / Gradle 编译）全部通过](https://github.com/StalirMC/mc-flarum-bridge/actions)
 
 | 目录 | 组件 | 技术栈 |
 |------|------|--------|
