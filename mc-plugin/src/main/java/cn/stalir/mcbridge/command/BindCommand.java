@@ -95,7 +95,11 @@ public final class BindCommand implements CommandExecutor {
                 String.valueOf(minutes)
         ));
 
-        player.sendMessage(plugin.messages().prefixed("bind-hint"));
+        player.sendMessage(plugin.messages().prefixed(
+                "bind-hint",
+                "url",
+                plugin.config().forumUrl() + "/mc-bridge/link"
+        ));
     }
 
     private String boundUsername(JsonObject response) {

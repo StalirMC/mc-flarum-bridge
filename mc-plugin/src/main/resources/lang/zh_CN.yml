@@ -19,7 +19,7 @@ help-reload: "&7/mcbridge reload &8- &f重新加载配置"
 # ---- 账号绑定 ----
 bind-requesting: "&7正在向论坛申请绑定码…"
 bind-code: "&a绑定码 &e{code} &a，有效期 &e{minutes} &a分钟。"
-bind-hint: "&7请前往论坛 → 个人设置 → 输入该绑定码完成绑定。"
+bind-hint: "&7请在浏览器打开 &e{url} &7并输入该绑定码完成绑定。"
 bind-already: "&a你的账号已绑定论坛用户 &e{user}&a。"
 bind-failed: "&c获取绑定码失败：{reason}"
 bind-failed-no-code: "&c论坛没有返回绑定码。"

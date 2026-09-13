@@ -123,12 +123,42 @@ stalir-mc-bridge:
       link_player_already_bound: "该 Minecraft 账号已绑定到另一个论坛账号。"
       link_not_bound: "你的账号尚未绑定 Minecraft 账号。"
       link_login_required: "请先登录再管理 Minecraft 账号绑定。"
+  forum:
+    settings:
+      title: "Minecraft 账号绑定"
+      enter_code: "在游戏内输入 /bind 获取绑定码，然后把 8 位绑定码填到这里，即可把游戏账号与论坛账号关联。"
+      code_placeholder: "8 位绑定码"
+      bind_button: "绑定"
+      unlink_button: "解除绑定"
+      bound_to: "已绑定 Minecraft 账号：{name}"
+      load_error: "无法读取绑定状态。"
+      bind_ok: "绑定成功！"
+      unlink_ok: "已解除绑定。"
+      code_too_short: "绑定码是 8 位字符，请检查后重试。"
+      generic_error: "操作失败，请稍后再试。"
   admin:
     settings:
       title: MC Bridge
       locale_label: 输出语言
       locale_help: 控制台命令与接口错误的语言。
+      locale_zh: 简体中文
+      locale_en: English
       secret_label: 共享密钥
       secret_help: 与 Minecraft 服务器共享的 HMAC 密钥，用 php flarum mc-bridge:secret 生成。
       tags_label: 公告标签
       tags_help: 只有携带这些标签的讨论才会推送到游戏。留空表示推送全部新讨论。
+      sync_replies_label: 同时同步回复
+      sync_replies_help: 开启后，符合条件讨论的每条回复也会推送到游戏；关闭则只推送新讨论。
+  page:
+    title: "Minecraft 账号绑定"
+    intro: "在游戏内输入 /bind 获取 8 位绑定码，然后在这里提交，即可把游戏账号与论坛账号关联。绑定后，论坛会显示你的游戏昵称。"
+    code_label: "绑定码"
+    code_placeholder: "8 位绑定码"
+    submit: "提交绑定"
+    unlink_submit: "解除绑定"
+    bound_to: "已绑定 Minecraft 账号：%s"
+    not_bound: "当前未绑定 Minecraft 账号。"
+    success_bound: "绑定成功！"
+    success_unbound: "已解除绑定。"
+    not_logged_in: "请先登录论坛后再访问此页面。"
+    back: "返回论坛"

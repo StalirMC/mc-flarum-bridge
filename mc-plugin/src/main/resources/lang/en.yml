@@ -20,7 +20,7 @@ help-reload: "&7/mcbridge reload &8- &fReload the configuration"
 # ---- account binding ----
 bind-requesting: "&7Requesting a binding code from the forum..."
 bind-code: "&aBinding code &e{code} &a- valid for &e{minutes} &aminutes."
-bind-hint: "&7Open the forum, go to your settings and enter the code to finish linking."
+bind-hint: "&7Open &e{url} &7in a browser and enter the code to finish linking."
 bind-already: "&aYour account is already linked to the forum user &e{user}&a."
 bind-failed: "&cCould not obtain a binding code: {reason}"
 bind-failed-no-code: "&cThe forum did not return a binding code."

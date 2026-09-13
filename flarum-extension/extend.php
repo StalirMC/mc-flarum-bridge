@@ -9,6 +9,8 @@ use Stalir\McBridge\Api\Controller\BroadcastController;
 use Stalir\McBridge\Api\Controller\EventController;
 use Stalir\McBridge\Api\Controller\HeartbeatController;
 use Stalir\McBridge\Api\Controller\LinkController;
+use Stalir\McBridge\Api\Controller\LinkPageController;
+use Stalir\McBridge\Api\Controller\LinkStatusController;
 use Stalir\McBridge\Api\Controller\StatusController;
 use Stalir\McBridge\Console\ConfigCommand;
 use Stalir\McBridge\Console\SecretCommand;
@@ -70,6 +72,33 @@ return [
         ->get('/mc-bridge/status', 'mc-bridge.status', StatusController::class)
         ->post('/mc-bridge/link', 'mc-bridge.link', LinkController::class)
         ->delete('/mc-bridge/link', 'mc-bridge.unlink', LinkController::class),
+
+    // ---------------------------------------------------------------------
+    // Build-free binding page. A player opens this URL (logged in), enters the
+    // code printed by /bind, and the link is made. The forum stack enforces the
+    // CSRF token for the POST, and the session carries the identity.
+    //
+    // The routes use the forum frontend, so the session cookie and the actor
+    // are available without any API token.
+    // ---------------------------------------------------------------------
+    (new Extend\Routes('forum'))
+        ->get('/mc-bridge/link', 'mc-bridge.linkPage', LinkPageController::class)
+        ->post('/mc-bridge/link', 'mc-bridge.linkPage.submit', LinkPageController::class),
+
+    // ---------------------------------------------------------------------
+    // Frontend JS. Only registered when the bundle has actually been built
+    // (npm install && npm run build inside flarum-extension/js); otherwise
+    // Flarum would try to load a file that does not exist on every page view.
+    //
+    // The binding flow works without it through the page above. The sources
+    // live in js/src and build to js/dist.
+    // ---------------------------------------------------------------------
+    ...(file_exists(__DIR__.'/js/dist/forum.js')
+        ? [(new Extend\Frontend('forum'))->js(__DIR__.'/js/dist/forum.js')]
+        : []),
+    ...(file_exists(__DIR__.'/js/dist/admin.js')
+        ? [(new Extend\Frontend('admin'))->js(__DIR__.'/js/dist/admin.js')]
+        : []),
 
     // ---------------------------------------------------------------------
     // Queue forum activity for delivery to the game servers.

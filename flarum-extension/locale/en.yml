@@ -124,12 +124,42 @@ stalir-mc-bridge:
       link_player_already_bound: "That Minecraft account is already linked to another forum account."
       link_not_bound: "Your account is not linked to a Minecraft account."
       link_login_required: "You must be logged in to manage a Minecraft account link."
+  forum:
+    settings:
+      title: "Minecraft account"
+      enter_code: "Type /bind in game to get a binding code, then enter the 8 characters here to link your Minecraft account with this forum account."
+      code_placeholder: "8-character code"
+      bind_button: "Link"
+      unlink_button: "Unlink"
+      bound_to: "Linked Minecraft account: {name}"
+      load_error: "Could not load the binding status."
+      bind_ok: "Account linked!"
+      unlink_ok: "The link has been removed."
+      code_too_short: "A binding code is 8 characters; please check it."
+      generic_error: "Something went wrong, please try again."
   admin:
     settings:
       title: MC Bridge
       locale_label: Output language
       locale_help: Language used by the console commands and API errors.
+      locale_zh: Simplified Chinese
+      locale_en: English
       secret_label: Shared secret
       secret_help: The HMAC secret shared with your Minecraft servers. Generate one with "php flarum mc-bridge:secret".
       tags_label: Announcement tags
       tags_help: Only discussions carrying one of these tags are pushed to the game. Leave empty to push every new discussion.
+      sync_replies_label: Sync replies too
+      sync_replies_help: When enabled, every reply of a matching discussion is pushed to the game; otherwise only new discussions are.
+  page:
+    title: "Minecraft account"
+    intro: "Type /bind in game to get an 8-character code, then submit it here to link your Minecraft account with this forum account. Once linked, the forum shows your in-game name."
+    code_label: "Binding code"
+    code_placeholder: "8-character code"
+    submit: "Link account"
+    unlink_submit: "Unlink"
+    bound_to: "Linked Minecraft account: %s"
+    not_bound: "No Minecraft account is linked yet."
+    success_bound: "Link created!"
+    success_unbound: "The link has been removed."
+    not_logged_in: "Please log in to the forum first."
+    back: "Back to the forum"
