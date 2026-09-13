@@ -3,7 +3,9 @@ import Component from 'flarum/common/Component';
 import FieldSet from 'flarum/common/components/FieldSet';
 import Button from 'flarum/common/components/Button';
 import LoadingIndicator from 'flarum/common/components/LoadingIndicator';
-import m from 'mithril';
+
+// m is the global Mithril hyperscript function that Flarum's own bundle
+// exposes (via expose-loader), so JSX/hyperscript calls need no import.
 
 const EXTENSION_ID = 'stalir-mc-bridge';
 
