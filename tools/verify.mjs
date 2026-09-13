@@ -1399,6 +1399,134 @@ section('15. Java compile hazards');
 }
 
 // ---------------------------------------------------------------------------
+// 16. Flarum frontend bundle
+// ---------------------------------------------------------------------------
+
+section('16. Flarum frontend bundle');
+
+{
+  const JS_DIR = join(EXT, 'js');
+  const DIST = join(JS_DIR, 'dist');
+
+  // flarum-webpack-config resolves the entry points at the js root.
+  for (const entry of ['forum.js', 'admin.js']) {
+    if (existsSync(join(JS_DIR, entry))) {
+      pass(`js/${entry} entry point exists`);
+    } else {
+      fail(`js/${entry}`, 'flarum-webpack-config looks for the entry points at the js root, not under src/');
+    }
+  }
+
+  // Core loads route pages through dynamic import(), so they live in their own
+  // chunk instead of the main bundle. A static import therefore evaluates to
+  // undefined when the extension bundle is evaluated, and touching .prototype
+  // on it throws while the app boots ("Cannot read properties of undefined").
+  // Such modules must be passed to extend()/override() as a module path string,
+  // which resolves them lazily through flarum.reg.onLoad().
+  const LAZY_CORE_MODULES = [
+    'flarum/forum/components/SettingsPage',
+    'flarum/forum/components/PostsPage',
+    'flarum/forum/components/NotificationsPage',
+    'flarum/forum/components/PostStream',
+    'flarum/forum/components/PostStreamScrubber',
+    'flarum/forum/components/DiscussionsUserPage',
+    'flarum/forum/components/UserSecurityPage',
+  ];
+
+  const stripJsComments = (source) =>
+    source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^[ \t]*\/\/[^\n]*$/gm, ' ');
+
+  const frontendSources = walk(
+    JS_DIR,
+    (file) =>
+      file.endsWith('.js') &&
+      !rel(file).includes('/js/dist/') &&
+      !rel(file).includes('node_modules')
+  );
+
+  let staticLazyImports = 0;
+
+  for (const file of frontendSources) {
+    const source = stripJsComments(read(file));
+
+    for (const module of LAZY_CORE_MODULES) {
+      const escaped = module.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+      const pattern = new RegExp(`^[ \\t]*import[^\\n;]*from[ \\t]*['"]${escaped}['"]`, 'm');
+
+      if (pattern.test(source)) {
+        fail(
+          rel(file),
+          `statically imports ${module}, but core only loads it as a lazy chunk; ` +
+            "reference it as a path string, e.g. extend('" + module + "', ...)"
+        );
+        staticLazyImports++;
+      }
+    }
+  }
+
+  if (staticLazyImports === 0) {
+    pass(`no static import of a lazily chunked core module across ${frontendSources.length} frontend sources`);
+  }
+
+  const forumEntry = join(JS_DIR, 'forum.js');
+
+  if (existsSync(forumEntry)) {
+    if (/extend\(\s*['"]flarum\/forum\/components\/SettingsPage['"]/.test(read(forumEntry))) {
+      pass('js/forum.js extends the settings page through its module path');
+    } else {
+      fail(
+        'js/forum.js',
+        "the settings section must be registered as extend('flarum/forum/components/SettingsPage', 'settingsItems', ...)"
+      );
+    }
+  }
+
+  for (const bundle of ['forum.js', 'admin.js']) {
+    const file = join(DIST, bundle);
+
+    if (!existsSync(file)) {
+      fail(`js/dist/${bundle}`, 'built bundle is missing; run npm run build inside flarum-extension/js');
+      continue;
+    }
+
+    const built = read(file);
+
+    if (built.length === 0) {
+      fail(`js/dist/${bundle}`, 'built bundle is empty');
+    } else if (built.includes('SettingsPage.prototype')) {
+      fail(`js/dist/${bundle}`, 'accesses .prototype of the lazily chunked SettingsPage while evaluating the bundle');
+    } else {
+      pass(`js/dist/${bundle} built (${built.length} bytes, no eager SettingsPage.prototype access)`);
+    }
+  }
+
+  // Every key the section asks the translator for must exist in every locale.
+  const sectionSource = join(JS_DIR, 'src/forum/components/McBridgeSection.js');
+  const usedKeys = new Set();
+
+  if (existsSync(sectionSource)) {
+    for (const match of read(sectionSource).matchAll(/this\.t\(\s*'([a-z0-9_]+)'/g)) {
+      usedKeys.add(match[1]);
+    }
+  }
+
+  if (usedKeys.size === 0) {
+    warn('McBridgeSection.js', 'no this.t(...) keys found, so the frontend locale coverage check was skipped');
+  } else {
+    for (const file of walk(join(EXT, 'locale'), (candidate) => candidate.endsWith('.yml'))) {
+      const keys = flattenKeys(parseYaml(read(file)));
+      const absent = [...usedKeys].filter((key) => !keys.has(`stalir-mc-bridge.forum.settings.${key}`));
+
+      if (absent.length > 0) {
+        fail(rel(file), `missing forum.settings keys used by the settings section: [${absent.join(', ')}]`);
+      } else {
+        pass(`locale/${basename(file)} covers all ${usedKeys.size} forum.settings keys used by the frontend`);
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Summary
 // ---------------------------------------------------------------------------
 

@@ -165,6 +165,44 @@ run #2 的三个 job：
 > 附：修正一处此前的不实记录 —— `BindCommand` 的 `already_bound` 类型检查在上一轮
 > 被报告为"已修复"，但实际并未改动；本次已真正修复（提交 `b5b7f5d`）。
 
+### 2.5 前端 bundle 初始化崩溃 —— 懒加载 chunk 陷阱（已修复）
+
+**现象**：装上扩展后论坛前端报 `stalir-mc-bridge failed to initialize /
+TypeError: Cannot read properties of undefined (reading 'prototype')`，「个人设置」里
+根本看不到绑定码输入框。
+
+**排查**（对照 `.tools/flarum-framework` 中的 Flarum 2.x 源码逐条取证）：
+
+| 证据 | 位置 | 结论 |
+|------|------|------|
+| `settings: { path: '/settings', component: () => import('./components/SettingsPage') }` | `framework/core/js/src/forum/routes.ts:39` | 设置页是**动态 `import()` 的懒加载 chunk**，不在主 bundle 里 |
+| 核心 `dist/forum.js` 中 `flarum.reg.add("core","forum/components/SettingsPage",…)` 命中 **0** 次（该产物共注册 217 个模块） | 核心构建产物 | 静态 `import SettingsPage from 'flarum/forum/components/SettingsPage'` 在 bundle 求值那一刻就是 `undefined` |
+| `extend(object: T \| string, …)` 的字符串分支：`flarum.reg.onLoad(namespace, id, module => extend(module.prototype, …))` | `framework/core/js/src/common/extend.ts:37-43` | 传**模块路径字符串**时由 `extend` 自行取 `.prototype`，并等模块就绪 |
+| `namespaceAndIdFromPath` 正则 | `common/ExportRegistry.ts:260` | `'flarum/forum/components/SettingsPage'` → `namespace='core'`、`id='forum/components/SettingsPage'` |
+| `onLoad()`：已注册则**立即回调**，未注册则入队，等 `add()` 时触发 | `common/ExportRegistry.ts:109-117` | 两种时序都覆盖，chunk 加载完成后模块自己 `reg.add` 即触发 |
+| `expose-loader` 是 `framework/core/js` 的依赖，核心 `.tsx` 只 `import type Mithril` | `framework/core/js/package.json:39` | 全局 `m` 是官方约定，组件里直接用 `m(...)` 正确 |
+
+**修复**（`flarum-extension/js/forum.js`）：不再静态 import 设置页，改为按模块路径注册：
+
+```js
+extend('flarum/forum/components/SettingsPage', 'settingsItems', function (items) {
+  items.add('mc-bridge', m(McBridgeSection), 12);
+});
+```
+
+产物中已是 `(0,r.extend)("flarum/forum/components/SettingsPage","settingsItems",…)`，
+`SettingsPage.prototype` 不再出现（构建产物 3.3 KB）。
+
+**顺带确认**：`McBridgeSection` 用到的 `common/Component`、`common/components/FieldSet`、
+`Button`、`LoadingIndicator` 均**在主 bundle 中注册**，静态 import 安全；只有懒加载的
+核心页面组件不能静态 import。
+
+**回归防护**：`tools/verify.mjs` 第 16 节（8 项）——入口文件必须位于 `js` 根目录、
+禁止静态 import 懒加载核心模块（SettingsPage / PostsPage / NotificationsPage /
+PostStream / PostStreamScrubber / DiscussionsUserPage / UserSecurityPage）、必须按模块
+路径 `extend` 设置页、产物不得含 `SettingsPage.prototype`、前端 `this.t()` 用到的 9 个 key
+必须存在于**所有** locale 文件。
+
 ## 3. 无法在本机验证的内容（现由 CI 覆盖）
 
 > 本机没有 PHP / JDK，这些检查**已全部由 CI 在带 PHP 8.3 / JDK 21 的真实环境中
