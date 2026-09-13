@@ -112,6 +112,22 @@ php flarum cache:clear
 > `type: flarum-extension`），所以包名是 **`stalir/mc-bridge`**，与方式 A/B 的
 > `stalir/mc-flarum-bridge` 不同。走这条路**不需要** `flarum-subextensions`。
 
+### 1.2.1 更新到最新代码（前端资源必须重新发布）
+
+仓库仍在施工阶段，每次拉取新代码后**必须重新发布前端资源**，否则浏览器拿到的还是旧的
+`dist/forum.js`（表现为：代码改了、行为没变）：
+
+```bash
+cd <flarum>
+composer update stalir/mc-flarum-bridge      # 走方式 C 安装的则是 stalir/mc-bridge
+php flarum cache:clear
+php flarum assets:publish                    # 扩展的前端 JS 会复制进 public/assets
+```
+
+> 在管理后台点「清除缓存」会顺带执行 `assets:publish`——`ClearCacheController`
+> 内部直接调用 `AssetsPublishCommand`，所以两种做法等价。
+> 另外浏览器可能仍缓存旧脚本，建议 `Ctrl+F5` 强制刷新一次。
+
 ### 1.3 生成共享密钥
 
 ```bash
