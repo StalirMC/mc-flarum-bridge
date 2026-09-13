@@ -1500,6 +1500,58 @@ section('16. Flarum frontend bundle');
     }
   }
 
+  // Flarum 2.x replaced `app.extensionData` with `app.registry` (AdminRegistry)
+  // and defines extensionData nowhere, so the legacy entry point is undefined
+  // and `.for(...)` throws while the admin app boots.
+  let legacyAdminApis = 0;
+
+  for (const file of frontendSources) {
+    if (/app\.extensionData/.test(stripJsComments(read(file)))) {
+      fail(rel(file), 'uses app.extensionData, which Flarum 2.x removed; use app.registry.for(...) instead');
+      legacyAdminApis++;
+    }
+  }
+
+  if (legacyAdminApis === 0) {
+    pass('no use of the removed app.extensionData API');
+  }
+
+  const adminEntry = join(JS_DIR, 'admin.js');
+
+  if (existsSync(adminEntry)) {
+    if (/app\.registry\s*\.\s*for\(/.test(stripJsComments(read(adminEntry)))) {
+      pass('js/admin.js registers its settings through app.registry.for(...)');
+    } else {
+      fail('js/admin.js', 'settings must be registered as app.registry.for(<extension id>).registerSetting(...)');
+    }
+  }
+
+  const builtAdmin = join(DIST, 'admin.js');
+
+  if (!existsSync(builtAdmin)) {
+    // Already reported by the bundle loop above.
+  } else if (read(builtAdmin).includes('extensionData')) {
+    fail('js/dist/admin.js', 'the committed bundle still references the removed extensionData API; rebuild it');
+  } else {
+    pass('js/dist/admin.js has no reference to the removed extensionData API');
+  }
+
+  // Flarum 2.x's FieldSet renders its own <label class="FieldSet-label"> from the
+  // `label` attribute and is not a <fieldset> element, so a `legend` child lands
+  // inside FieldSet-items and the section title loses its styling.
+  let legendChildren = 0;
+
+  for (const file of frontendSources) {
+    if (/m\(\s*['"`]legend/.test(stripJsComments(read(file)))) {
+      fail(rel(file), 'passes a `legend` child to FieldSet; use the `label` attribute instead');
+      legendChildren++;
+    }
+  }
+
+  if (legendChildren === 0) {
+    pass('no FieldSet legend children (Flarum 2.x expects the label attribute)');
+  }
+
   // Every key the section asks the translator for must exist in every locale.
   const sectionSource = join(JS_DIR, 'src/forum/components/McBridgeSection.js');
   const usedKeys = new Set();

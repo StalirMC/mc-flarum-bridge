@@ -203,6 +203,39 @@ PostStream / PostStreamScrubber / DiscussionsUserPage / UserSecurityPage）、�
 路径 `extend` 设置页、产物不得含 `SettingsPage.prototype`、前端 `this.t()` 用到的 9 个 key
 必须存在于**所有** locale 文件。
 
+### 2.6 管理后台启动崩溃 —— 2.x 移除了 `app.extensionData`（已修复）
+
+**现象**：打开 `admin#/extension/stalir-mc-bridge` 后控制台报
+`stalir-mc-bridge failed to initialize / TypeError: Cannot read properties of
+undefined (reading 'for')`，位置 `admin.js:8`（即 `app.extensionData.for(...)`）。
+
+**排查**：
+
+| 证据 | 位置 | 结论 |
+|------|------|------|
+| 核心源码中 `app.extensionData` **0 命中** | `framework/core/js/src` 全树 | 2.x 已彻底移除该 API |
+| 类文档示例写作 `app.registry.for('flarum-tags')` | `admin/utils/AdminRegistry.ts:50` | 新入口是 `app.registry`（`AdminRegistry`） |
+| `registry = new AdminRegistry();` 是类属性 | `admin/AdminApplication.tsx:117` | 初始化器运行时它已存在（不是懒加载 chunk，无 2.5 那类时序问题） |
+| `app.registry.getSettings(this.extension.id)` | `admin/components/ExtensionPage.tsx:179` | 扩展页正是从这里读回设置项 |
+
+**修复**（`flarum-extension/js/admin.js`）：`app.extensionData.for(id)` → `app.registry.for(id)`，
+产物为 `n().registry.for(s).registerSetting({…})`。
+
+顺带把前端其余 1.x 写法一并对齐（都已写入 `tools/verify.mjs` 第 16 节）：
+
+| 项 | 1.x 写法 | 2.x 正确写法 | 依据 |
+|---|---|---|---|
+| 设置区块标题 | `m(FieldSet, …, m('legend', …))` | `m(FieldSet, { label, description })` | `common/components/FieldSet.tsx:19-24`：渲染自己的 `<label class="FieldSet-label">`，且根元素是 `div` 而非 `fieldset` |
+| 提示信息 | `m('.Alert.Alert--error', m('li', …))` | `m(Alert, { type, content, dismissible: false })` | `common/components/Alert.tsx:10-27`（不传 `dismissible` 会默认渲染一个关闭按钮） |
+| 设置页扩展点 | `extend(SettingsPage.prototype, …)` | `extend('flarum/forum/components/SettingsPage', …)` | 见 2.5：该页是懒加载 chunk |
+
+**同时逐项确认存在**（避免再往返一轮）：`SettingsPage.settingsItems()`
+（`SettingsPage.tsx:57`，由 `content()` 经 `listItems` 渲染）、`app.session.csrfToken`
+（核心自己也发同名 `X-CSRF-Token` 头）、`app.forum.attribute('apiUrl')`（`ForumResource.php:96`）、
+`Extend\Settings->default()`、`Flarum\Post\Event\Posted`、样式类 `.Form-group` /
+`.FormControl` / `.FieldSet-label`、`Button` 的 `loading` 属性、
+`SelectFieldComponentOptions.options` 的「值 → 标签」映射形状。
+
 ## 3. 无法在本机验证的内容（现由 CI 覆盖）
 
 > 本机没有 PHP / JDK，这些检查**已全部由 CI 在带 PHP 8.3 / JDK 21 的真实环境中

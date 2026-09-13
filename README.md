@@ -11,11 +11,12 @@
 > **可用性尚未验证，请勿直接用于生产环境。** 接口、配置项与数据表结构都可能随时变动。
 >
 > **已经确认的部分**
-> - CI 全绿：`gradle build` 真机编译通过、`php -l` 全部通过、239 项静态一致性检查 + 33 项协议一致性测试通过
+> - CI 全绿：`gradle build` 真机编译通过、`php -l` 全部通过、243 项静态一致性检查 + 33 项协议一致性测试通过
 > - 在真实论坛（Flarum 2.0.0-rc.8）上完成过：安装、`migrate`、启用扩展、自检命令运行
 > - 已逐项打通并修复：CSRF 豁免（`Extend\Csrf`）、HMAC 签名链路、请求体读取、批量赋值、
->   前端启动崩溃（设置页属于懒加载 chunk，必须按模块路径 `extend`，见
->   [VERIFICATION.md](docs/VERIFICATION.md) 2.5）
+>   论坛端启动崩溃（设置页属于懒加载 chunk，必须按模块路径 `extend`）、
+>   后台端启动崩溃（2.x 用 `app.registry` 取代了 `app.extensionData`）——
+>   详见 [VERIFICATION.md](docs/VERIFICATION.md) 2.5 / 2.6
 >
 > **尚未验证的部分**
 > - **游戏侧插件从未在真实 Paper 服务器上运行过**（只编译通过，未加载测试）

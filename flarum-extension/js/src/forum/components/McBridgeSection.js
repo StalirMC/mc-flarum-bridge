@@ -1,7 +1,8 @@
 import app from 'flarum/forum/app';
+import Alert from 'flarum/common/components/Alert';
+import Button from 'flarum/common/components/Button';
 import Component from 'flarum/common/Component';
 import FieldSet from 'flarum/common/components/FieldSet';
-import Button from 'flarum/common/components/Button';
 import LoadingIndicator from 'flarum/common/components/LoadingIndicator';
 
 // m is the global Mithril hyperscript function that Flarum's own bundle
@@ -132,45 +133,54 @@ export default class McBridgeSection extends Component {
       });
   }
 
-  view() {
-    const children = [];
+  /**
+   * One line of hint text under the section title, describing the current state.
+   *
+   * FieldSet renders this through its `description` prop, which is how core's own
+   * settings sections present supporting text (FieldSet takes `label`/`description`
+   * attributes in Flarum 2.x, not a `legend` child).
+   */
+  description() {
+    if (this.loading) return undefined;
 
-    if (this.loading) {
-      return m(
-        FieldSet,
-        { className: 'McBridgeSection' },
-        m('legend', this.t('title')),
-        m(LoadingIndicator)
-      );
+    if (this.bound) {
+      return this.t('bound_to', { name: (this.binding && this.binding.player_name) || '?' });
     }
 
+    return this.t('enter_code');
+  }
+
+  /**
+   * The interactive part of the section: status messages and the current action.
+   */
+  controls() {
+    const children = [];
+
     if (this.error) {
-      children.push(m('.Alert.Alert--error', m('li', this.error)));
+      // dismissible is false because this is inline feedback, not a transient alert.
+      children.push(m(Alert, { type: 'error', content: this.error, dismissible: false }));
     }
 
     if (this.success) {
-      children.push(m('.Alert.Alert--success', m('li', this.success)));
+      children.push(m(Alert, { type: 'success', content: this.success, dismissible: false }));
     }
 
     if (this.bound) {
       children.push(
         m(
-          'p.helpText',
-          this.t('bound_to', { name: (this.binding && this.binding.player_name) || '?' })
-        )
-      );
-      children.push(
-        m(
           '.Form-group',
           m(
             Button,
-            { className: 'Button Button--danger', onclick: () => this.unlink() },
+            {
+              className: 'Button Button--danger',
+              loading: this.busy,
+              onclick: () => this.unlink(),
+            },
             this.t('unlink_button')
           )
         )
       );
     } else {
-      children.push(m('p.helpText', this.t('enter_code')));
       children.push(
         m('.Form-group', [
           m('input.FormControl', {
@@ -191,6 +201,18 @@ export default class McBridgeSection extends Component {
       );
     }
 
-    return m(FieldSet, { className: 'McBridgeSection' }, [m('legend', this.t('title')), children]);
+    return children;
+  }
+
+  view() {
+    return m(
+      FieldSet,
+      {
+        className: 'Settings-mcBridge FieldSet--min',
+        label: this.t('title'),
+        description: this.description(),
+      },
+      this.loading ? m(LoadingIndicator) : this.controls()
+    );
   }
 }
