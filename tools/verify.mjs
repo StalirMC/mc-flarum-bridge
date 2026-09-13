@@ -175,7 +175,8 @@ function flattenKeys(node, prefix = '') {
 
 section('1. JSON files parse');
 
-const jsonFiles = walk(ROOT, (file) => file.endsWith('.json'));
+// npm packages may ship non-strict JSON, so dependencies are not validated.
+const jsonFiles = walk(ROOT, (file) => file.endsWith('.json') && !file.includes('node_modules'));
 
 for (const file of jsonFiles) {
   try {
