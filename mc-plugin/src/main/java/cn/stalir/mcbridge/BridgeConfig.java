@@ -1,14 +1,11 @@
 package cn.stalir.mcbridge;
 
-import org.bukkit.configuration.file.FileConfiguration;
-
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
-import java.util.logging.Logger;
 
 /**
  * Immutable view of config.yml, validated once at load time.
@@ -85,7 +82,7 @@ public final class BridgeConfig {
         this.problems = problems;
     }
 
-    public static BridgeConfig from(FileConfiguration config, Logger logger, Messages messages) {
+    public static BridgeConfig from(Yaml config, Log log, Messages messages) {
         List<String> problems = new ArrayList<>();
 
         String language = messages.language();
@@ -171,7 +168,7 @@ public final class BridgeConfig {
         );
 
         for (String problem : problems) {
-            logger.warning(messages.plain("config.problem.summary", "message", problem));
+            log.warn(messages.plain("config.problem.summary", "message", problem));
         }
 
         return built;

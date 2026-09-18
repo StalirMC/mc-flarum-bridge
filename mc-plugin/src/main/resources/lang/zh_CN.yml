@@ -38,6 +38,7 @@ broadcast-sent: "&a消息已提交到论坛，将在服务器轮询后显示。"
 reloaded: "&a配置已重新加载。"
 reload-problems: "&c配置仍有问题：&7{problems}"
 stats-header: "&8&m--------&r &2McBridge &8&m--------"
+stats-platform: "&7运行平台：&f{platform}"
 stats-server-key: "&7服务器标识：&f{key}"
 stats-forum-url: "&7论坛地址：&f{url}"
 stats-locale: "&7输出语言：&f{locale}"
@@ -50,7 +51,7 @@ stats-config-bad: "&c有问题"
 
 # ---- 控制台日志 ----
 log:
-  enabled: "McBridge 已启用：服务器标识 '{key}'，目标 {url}"
+  enabled: "McBridge 已启用（平台 {platform}）：服务器标识 '{key}'，目标 {url}"
   disabled: "McBridge 已关闭。"
   idle: "配置存在问题，McBridge 暂不工作，请先按上面的提示修复。"
   heartbeat-failed: "心跳上报失败（连续 {count} 次）：{reason}"

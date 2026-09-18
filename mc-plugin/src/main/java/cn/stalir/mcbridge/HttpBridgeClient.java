@@ -16,7 +16,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
-import java.util.logging.Logger;
 
 /**
  * Talks to the Flarum MC Bridge API.
@@ -28,12 +27,10 @@ import java.util.logging.Logger;
 public final class HttpBridgeClient {
 
     private final BridgeConfig config;
-    private final Logger logger;
     private final HttpClient http;
 
-    public HttpBridgeClient(BridgeConfig config, Logger logger) {
+    public HttpBridgeClient(BridgeConfig config) {
         this.config = config;
-        this.logger = logger;
         this.http = HttpClient.newBuilder()
                 .connectTimeout(config.requestTimeout())
                 .followRedirects(HttpClient.Redirect.NORMAL)
@@ -221,7 +218,7 @@ public final class HttpBridgeClient {
     }
 
     private String userAgent() {
-        return "McBridge/1.0 (+" + config.forumUrl() + ")";
+        return "McBridge/" + Version.VERSION + " (+" + config.forumUrl() + ")";
     }
 
     /**

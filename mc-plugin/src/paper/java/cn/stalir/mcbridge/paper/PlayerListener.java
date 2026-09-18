@@ -1,6 +1,7 @@
-package cn.stalir.mcbridge.listener;
+package cn.stalir.mcbridge.paper;
 
-import cn.stalir.mcbridge.McBridgePlugin;
+import cn.stalir.mcbridge.BridgeConfig;
+import cn.stalir.mcbridge.BridgeCore;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -14,37 +15,51 @@ import org.bukkit.event.player.PlayerQuitEvent;
  * Forwards gameplay events to the forum.
  *
  * Everything is queued locally first, so a forum outage never blocks the
- * server tick loop.
+ * server tick loop. The rendering of the event and the transmission are owned by
+ * the shared {@link BridgeCore}, which is why every handler only decides whether
+ * the configured switches report this event type.
+ *
+ * The listener is registered just before the core starts, so the configuration
+ * may not be loaded yet when the very first event is dispatched; a handler
+ * therefore treats a missing configuration as "report nothing".
  */
 public final class PlayerListener implements Listener {
 
-    private final McBridgePlugin plugin;
+    private final BridgeCore core;
 
-    public PlayerListener(McBridgePlugin plugin) {
-        this.plugin = plugin;
+    public PlayerListener(BridgeCore core) {
+        this.core = core;
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onJoin(PlayerJoinEvent event) {
-        if (!plugin.config().reportJoins()) {
+        BridgeConfig config = core.config();
+
+        if (config == null || !config.reportJoins()) {
             return;
         }
 
-        plugin.enqueuePlayerEvent("join", event.getPlayer(), null);
+        Player player = event.getPlayer();
+        core.enqueuePlayerEvent("join", player.getUniqueId(), player.getName(), null);
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onQuit(PlayerQuitEvent event) {
-        if (!plugin.config().reportQuits()) {
+        BridgeConfig config = core.config();
+
+        if (config == null || !config.reportQuits()) {
             return;
         }
 
-        plugin.enqueuePlayerEvent("quit", event.getPlayer(), null);
+        Player player = event.getPlayer();
+        core.enqueuePlayerEvent("quit", player.getUniqueId(), player.getName(), null);
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onDeath(PlayerDeathEvent event) {
-        if (!plugin.config().reportDeaths()) {
+        BridgeConfig config = core.config();
+
+        if (config == null || !config.reportDeaths()) {
             return;
         }
 
@@ -54,16 +69,19 @@ public final class PlayerListener implements Listener {
                 ? "UNKNOWN"
                 : player.getLastDamageCause().getCause().name();
 
-        plugin.enqueuePlayerEvent(
+        core.enqueuePlayerEvent(
                 "death",
-                player,
+                player.getUniqueId(),
+                player.getName(),
                 "cause=" + cause + " world=" + player.getWorld().getName()
         );
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onAdvancement(PlayerAdvancementDoneEvent event) {
-        if (!plugin.config().reportAdvancements()) {
+        BridgeConfig config = core.config();
+
+        if (config == null || !config.reportAdvancements()) {
             return;
         }
 
@@ -74,6 +92,7 @@ public final class PlayerListener implements Listener {
             return;
         }
 
-        plugin.enqueuePlayerEvent("advancement", event.getPlayer(), key);
+        Player player = event.getPlayer();
+        core.enqueuePlayerEvent("advancement", player.getUniqueId(), player.getName(), key);
     }
 }

@@ -3,14 +3,12 @@ package cn.stalir.mcbridge;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
-import org.bukkit.configuration.ConfigurationSection;
-import org.bukkit.configuration.file.YamlConfiguration;
-import org.bukkit.plugin.java.JavaPlugin;
 
-import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.logging.Logger;
 
 /**
  * Renders player-facing messages and log lines from lang/&lt;language&gt;.yml.
@@ -19,6 +17,10 @@ import java.util.logging.Logger;
  * folder on first use, so server owners can edit it in place. Any key missing
  * from the selected language falls back to {@link #FALLBACK_LANGUAGE}
  * (Simplified Chinese), and then to the key itself.
+ *
+ * Shared by every platform: the forum, the language selection and the shipped
+ * language files are the same whether the plugin runs on Paper, Folia or
+ * Velocity.
  */
 public final class Messages {
 
@@ -48,20 +50,18 @@ public final class Messages {
      *
      * @param requested value of the {@code language} config key.
      */
-    public static Messages load(JavaPlugin plugin, String requested, Logger logger) {
-        File directory = new File(plugin.getDataFolder(), FOLDER);
+    public static Messages load(Platform platform, String requested) {
+        Path directory = platform.dataFolder().resolve(FOLDER);
 
-        if (!directory.isDirectory() && !directory.mkdirs()) {
-            logger.warning("Could not create the language directory: " + directory.getPath());
+        try {
+            Files.createDirectories(directory);
+        } catch (IOException exception) {
+            platform.log().warn("Could not create the language directory: " + directory);
         }
 
         for (String shipped : SHIPPED) {
-            try {
-                // replace = false, so an existing (possibly edited) file is kept.
-                plugin.saveResource(FOLDER + "/" + shipped + ".yml", false);
-            } catch (IllegalArgumentException exception) {
-                // This build does not bundle that language; nothing to do.
-            }
+            // Existing (possibly edited) files are never overwritten.
+            platform.saveResource(FOLDER + "/" + shipped + ".yml");
         }
 
         String language = requested == null ? "" : requested.trim();
@@ -70,49 +70,30 @@ public final class Messages {
             language = DEFAULT_LANGUAGE;
         }
 
-        Map<String, String> selected = read(new File(directory, language + ".yml"));
+        Map<String, String> selected = flatten(directory.resolve(language + ".yml"));
 
         if (selected.isEmpty() && !language.equals(DEFAULT_LANGUAGE)) {
-            logger.warning("Language file " + FOLDER + "/" + language + ".yml is missing or empty; using " + DEFAULT_LANGUAGE);
+            platform.log().warn("Language file " + FOLDER + "/" + language + ".yml is missing or empty; using " + DEFAULT_LANGUAGE);
             language = DEFAULT_LANGUAGE;
-            selected = read(new File(directory, DEFAULT_LANGUAGE + ".yml"));
+            selected = flatten(directory.resolve(DEFAULT_LANGUAGE + ".yml"));
         }
 
         Map<String, String> fallback = language.equals(FALLBACK_LANGUAGE)
                 ? selected
-                : read(new File(directory, FALLBACK_LANGUAGE + ".yml"));
+                : flatten(directory.resolve(FALLBACK_LANGUAGE + ".yml"));
 
         if (selected.isEmpty()) {
-            logger.warning("No language file could be loaded from " + directory.getPath() + "; falling back to key names.");
+            platform.log().warn("No language file could be loaded from " + directory + "; falling back to key names.");
         }
 
         return new Messages(language, selected, fallback);
     }
 
-    /**
-     * Flatten a YAML file into "dotted.key" -&gt; "value" pairs.
-     */
-    private static Map<String, String> read(File file) {
-        Map<String, String> values = new LinkedHashMap<>();
+    /** Flatten a language file into "dotted.key" -&gt; "value" pairs. */
+    private static Map<String, String> flatten(Path file) {
+        Map<String, String> values = Yaml.load(file).flattened();
 
-        if (file == null || !file.isFile()) {
-            return values;
-        }
-
-        YamlConfiguration yaml = YamlConfiguration.loadConfiguration(file);
-
-        for (Map.Entry<String, Object> entry : yaml.getValues(true).entrySet()) {
-            Object value = entry.getValue();
-
-            // getValues(true) also yields the section objects themselves.
-            if (value == null || value instanceof ConfigurationSection) {
-                continue;
-            }
-
-            values.put(entry.getKey(), String.valueOf(value));
-        }
-
-        return values;
+        return values == null ? new LinkedHashMap<>() : values;
     }
 
     public String language() {

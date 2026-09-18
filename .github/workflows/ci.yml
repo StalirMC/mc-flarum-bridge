@@ -146,6 +146,31 @@ jobs:
           ls -l mc-plugin/build/libs
           test -n "$(find mc-plugin/build/libs -name '*.jar' -print -quit)"
 
+      # The Gradle build already asserts this in `verifyJar`; repeating it with
+      # plain shell tools keeps the evidence visible in the CI log and catches
+      # the case where that task is ever skipped.
+      - name: Assert one jar serves Paper, Folia and Velocity
+        run: |
+          set -euo pipefail
+          jar=$(find mc-plugin/build/libs -name '*.jar' ! -name '*-sources.jar' -print -quit)
+          echo "inspecting $jar"
+          unzip -l "$jar"
+
+          for entry in plugin.yml velocity-plugin.json config.yml lang/zh_CN.yml lang/en.yml \
+                       cn/stalir/mcbridge/paper/McBridgePlugin.class \
+                       cn/stalir/mcbridge/velocity/McBridgeVelocityPlugin.class; do
+            unzip -l "$jar" "$entry" > /dev/null || { echo "::error::missing $entry"; exit 1; }
+          done
+
+          unzip -p "$jar" plugin.yml | grep -q 'folia-supported: true' \
+            || { echo "::error::plugin.yml must declare folia-supported: true"; exit 1; }
+          unzip -p "$jar" plugin.yml | grep -q 'main: cn.stalir.mcbridge.paper.McBridgePlugin' \
+            || { echo "::error::plugin.yml points at the wrong main class"; exit 1; }
+          unzip -p "$jar" velocity-plugin.json | grep -q '"id": *"mc-bridge"' \
+            || { echo "::error::velocity-plugin.json is missing the mc-bridge id"; exit 1; }
+
+          echo "the jar declares both entry points"
+
       - name: Upload the plugin jar
         uses: actions/upload-artifact@v4
         with:

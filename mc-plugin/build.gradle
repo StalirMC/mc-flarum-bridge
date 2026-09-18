@@ -3,8 +3,7 @@ plugins {
 }
 
 group = 'cn.stalir'
-version = '1.0.0'
-description = 'Bidirectional bridge between Paper servers and a Flarum forum'
+description = 'Bidirectional bridge between Minecraft (Paper, Folia, Velocity) and a Flarum forum'
 
 repositories {
     mavenCentral()
@@ -14,9 +13,68 @@ repositories {
     }
 }
 
-dependencies {
-    compileOnly "io.papermc.paper:paper-api:${paperApiVersion}"
+// ---------------------------------------------------------------------------
+// Three source sets, one jar
+//
+//   main     platform independent core: protocol, config, language files and the
+//            heartbeat/event/outbox orchestration. Compiled against the JDK plus
+//            Adventure and Gson only, both of which every platform already ships,
+//            so the jar bundles no third-party code at all.
+//   paper    the Paper and Folia entry points (paper-api).
+//   velocity the Velocity entry point (velocity-api; its annotation processor
+//            generates velocity-plugin.json, which Velocity looks for in the jar
+//            root).
+//
+// Both descriptors end up at the jar root, and each platform only ever loads the
+// class its own descriptor names, so one artifact works on all three.
+// ---------------------------------------------------------------------------
+
+sourceSets {
+    main {
+        java.srcDirs = ['src/main/java']
+        resources.srcDirs = ['src/main/resources']
+    }
+
+    paper {
+        java.srcDirs = ['src/paper/java']
+        resources.srcDirs = ['src/paper/resources']
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+
+    velocity {
+        java.srcDirs = ['src/velocity/java']
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
 }
+
+dependencies {
+    // Provided by Paper/Folia and by Velocity at runtime, so never bundled.
+    compileOnly "net.kyori:adventure-api:${adventureApiVersion}"
+    compileOnly "net.kyori:adventure-text-serializer-legacy:${adventureApiVersion}"
+    compileOnly "net.kyori:adventure-text-serializer-plain:${adventureApiVersion}"
+    compileOnly "com.google.code.gson:gson:${gsonVersion}"
+
+    paperCompileOnly "io.papermc.paper:paper-api:${paperApiVersion}"
+
+    velocityCompileOnly "com.velocitypowered:velocity-api:${velocityApiVersion}"
+    velocityAnnotationProcessor "com.velocitypowered:velocity-api:${velocityApiVersion}"
+
+    // Only the runtime self test needs these on the classpath at run time.
+    testImplementation "net.kyori:adventure-api:${adventureApiVersion}"
+    testImplementation "net.kyori:adventure-text-serializer-legacy:${adventureApiVersion}"
+    testImplementation "net.kyori:adventure-text-serializer-plain:${adventureApiVersion}"
+    testImplementation "com.google.code.gson:gson:${gsonVersion}"
+}
+
+// ---------------------------------------------------------------------------
+// Compilation
+//
+// The toolchain is JDK 21 but the bytecode targets Java 17 on purpose: Paper and
+// Folia 1.21 need Java 21 to run and execute Java 17 bytecode fine, while
+// Velocity 3.x still supports Java 17. Targeting 21 would lock proxy owners out.
+// ---------------------------------------------------------------------------
 
 java {
     toolchain {
@@ -26,23 +84,162 @@ java {
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
-    options.release = 21
+    options.release = 17
     options.compilerArgs << '-Xlint:deprecation' << '-Xlint:unchecked'
 }
 
+// config.yml and lang/*.yml are copied verbatim: they contain {placeholders},
+// not Gradle templates.
 processResources {
+    filteringCharset = 'UTF-8'
+}
+
+// plugin.yml is the only filtered resource: ${version} becomes the project
+// version and the result has to sit at the jar root.
+processPaperResources {
     filteringCharset = 'UTF-8'
     filesMatching('plugin.yml') {
         expand(version: project.version)
     }
 }
 
+// ---------------------------------------------------------------------------
+// Packaging
+// ---------------------------------------------------------------------------
+
 tasks.named('jar') {
     archiveBaseName = 'McBridge'
+
+    from sourceSets.paper.output
+    from sourceSets.velocity.output
+
     manifest {
         attributes(
-            'Implementation-Title': 'McBridge',
-            'Implementation-Version': project.version
+                'Implementation-Title': 'McBridge',
+                'Implementation-Version': project.version,
+                'Implementation-Vendor': 'Stalir'
         )
     }
+}
+
+// ---------------------------------------------------------------------------
+// Runtime self test
+//
+// Compilation cannot prove the hand written YAML reader, the language pipeline
+// or the configuration validation are correct, and the static checks in
+// tools/verify.mjs never execute Java. CI has a JDK, so this runs the shared core
+// against the exact files that ship inside the jar.
+// ---------------------------------------------------------------------------
+
+tasks.register('selfTest', JavaExec) {
+    description = 'Runs the shared core against the shipped config.yml and language files.'
+    group = 'verification'
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'cn.stalir.mcbridge.SelfTest'
+    workingDir = projectDir
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('selfTest')
+}
+
+// ---------------------------------------------------------------------------
+// Jar content assertions
+//
+// A universal jar fails in a way that is easy to miss: the file builds, but one
+// platform silently cannot load it because its descriptor, entry point or
+// language files are absent. Failing the build is far better than shipping that.
+// ---------------------------------------------------------------------------
+
+tasks.register('verifyJar') {
+    description = 'Assert that the built jar can be loaded by Paper, Folia and Velocity.'
+    group = 'verification'
+    dependsOn tasks.named('jar')
+
+    def jarTask = tasks.named('jar')
+    def expectedVersion = project.version.toString()
+
+    doLast {
+        def jarFile = jarTask.get().archiveFile.get().asFile
+        def zip = new java.util.zip.ZipFile(jarFile)
+
+        try {
+            def entries = zip.entries().collect { it.name } as Set
+
+            def required = [
+                    'plugin.yml',
+                    'velocity-plugin.json',
+                    'config.yml',
+                    'lang/zh_CN.yml',
+                    'lang/en.yml',
+                    'cn/stalir/mcbridge/BridgeCore.class',
+                    'cn/stalir/mcbridge/paper/McBridgePlugin.class',
+                    'cn/stalir/mcbridge/paper/PaperPlatform.class',
+                    'cn/stalir/mcbridge/velocity/McBridgeVelocityPlugin.class',
+                    'cn/stalir/mcbridge/velocity/VelocityPlatform.class',
+            ]
+
+            def missing = required.findAll { !entries.contains(it) }
+
+            if (!missing.isEmpty()) {
+                throw new GradleException("The jar cannot serve every platform; missing entries: ${missing}")
+            }
+
+            def readEntry = { String name ->
+                zip.getInputStream(zip.getEntry(name)).getText('UTF-8')
+            }
+
+            def pluginYml = readEntry('plugin.yml')
+            def velocityJson = readEntry('velocity-plugin.json')
+
+            if (!pluginYml.contains('main: cn.stalir.mcbridge.paper.McBridgePlugin')) {
+                throw new GradleException('plugin.yml does not point at the Paper entry point')
+            }
+
+            if (!pluginYml.contains('folia-supported: true')) {
+                throw new GradleException('plugin.yml must declare folia-supported: true or Folia refuses to load the plugin')
+            }
+
+            if (!pluginYml.contains(expectedVersion)) {
+                throw new GradleException("plugin.yml does not carry the project version ${expectedVersion}")
+            }
+
+            if (!velocityJson.contains('mc-bridge')) {
+                throw new GradleException('velocity-plugin.json does not declare the mc-bridge plugin id')
+            }
+
+            if (!velocityJson.contains(expectedVersion)) {
+                throw new GradleException("velocity-plugin.json does not carry the project version ${expectedVersion}")
+            }
+
+            // The shared core must stay platform neutral: one Bukkit or Velocity
+            // reference inside it would be resolved when the *other* platform
+            // loads those classes and would fail with NoClassDefFoundError. The
+            // string constant pool of the class file is enough to catch that.
+            zip.entries().findAll { entry ->
+                entry.name.startsWith('cn/stalir/mcbridge/')
+                        && entry.name.endsWith('.class')
+                        && !entry.name.contains('/paper/')
+                        && !entry.name.contains('/velocity/')
+            }.each { entry ->
+                def pool = new String(zip.getInputStream(entry).readAllBytes(), java.nio.charset.StandardCharsets.ISO_8859_1)
+
+                ['org/bukkit/', 'com/velocitypowered/', 'io/papermc/'].each { forbidden ->
+                    if (pool.contains(forbidden)) {
+                        throw new GradleException(
+                                "Shared class ${entry.name} references ${forbidden}, which does not exist on every platform")
+                    }
+                }
+            }
+
+            logger.lifecycle("verified ${jarFile.name}: ${entries.size()} entries, loadable by Paper, Folia and Velocity")
+        } finally {
+            zip.close()
+        }
+    }
+}
+
+tasks.named('build') {
+    dependsOn tasks.named('verifyJar')
 }

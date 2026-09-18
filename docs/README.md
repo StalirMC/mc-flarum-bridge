@@ -10,8 +10,8 @@
 | 组件 | 要求 |
 |------|------|
 | Flarum | 2.x（PHP 8.1+），已能正常运行 |
-| Minecraft 服务端 | Paper 1.21.x（同 API 的 Spigot 衍生端亦可） |
-| Java | 21（Paper 运行时自带） |
+| Minecraft 服务端 | Paper 1.21.x · Folia 1.21.x · Velocity 3.x（**同一个 jar**） |
+| Java | 插件字节码目标 17；Paper/Folia 需 Java 21 运行，Velocity 可用 Java 17 |
 | 网络 | MC 服务端能访问论坛的 `https://<forum>/api/mc-bridge/*` |
 
 > 若论坛在 Cloudflare 等 CDN 之后，请确认没有对 `/api/mc-bridge/*` 开启
@@ -195,6 +195,11 @@ language: zh_CN     # 或 en
 
 ## 2. Minecraft 侧：构建并安装插件
 
+> **同一个 jar 支持 Paper、Folia 与 Velocity。** jar 根同时放着 `plugin.yml`
+> （Paper/Folia 读）与 `velocity-plugin.json`（Velocity 读），各平台只加载自己
+> 描述符里写明的入口类。构建时的 `verifyJar` 会校验两份描述符、两个入口类都在，
+> 且共享层不含任何平台类引用。
+
 ### 2.1 构建
 
 仓库不含 Gradle wrapper 的二进制，先生成一次或用系统 Gradle：
@@ -205,7 +210,9 @@ gradle wrapper --gradle-version 8.10   # 可选：生成 gradlew / gradlew.bat
 ./gradlew build                        # 或直接 gradle build
 ```
 
-需要 **JDK 21**。产物：`build/libs/McBridge-1.0.0.jar`
+需要 **JDK 21**（编译目标字节码为 Java 17，因此 Java 17 的 Velocity 也能加载）。
+首次构建会从 PaperMC 仓库拉取 `velocity-api`，需要网络。
+产物：`build/libs/McBridge-0.0.1.jar`
 
 如果服务器不是 1.21.1，可覆盖 Paper API 版本：
 
@@ -215,12 +222,28 @@ gradle wrapper --gradle-version 8.10   # 可选：生成 gradlew / gradlew.bat
 
 ### 2.2 安装
 
+| 平台 | 放置位置 | 插件目录 |
+|------|----------|----------|
+| Paper / Folia | `<server>/plugins/` | `plugins/McBridge/` |
+| Velocity | `<proxy>/plugins/` | `plugins/mc-bridge/` |
+
 ```bash
-cp build/libs/McBridge-1.0.0.jar <server>/plugins/
+# Paper / Folia
+cp build/libs/McBridge-0.0.1.jar <server>/plugins/
+
+# Velocity（同一个文件）
+cp build/libs/McBridge-0.0.1.jar <proxy>/plugins/
 ```
 
-启动一次服务器生成 `plugins/McBridge/config.yml`，或直接把仓库里的
+Folia 无需额外步骤：`plugin.yml` 已声明 `folia-supported: true`，插件会自动检测
+regionised 服务端并改用 Folia 的 `AsyncScheduler` / `GlobalRegionScheduler`。
+
+启动一次服务器生成 `plugins/<目录>/config.yml`，或直接把仓库里的
 `src/main/resources/config.yml` 复制过去。
+
+> **代理 + 后端一起装？** 可以，但请给它们**不同的 `server.key`**（例如
+> `proxy` 与 `survival`），否则两者会在论坛上互相覆盖同一条服务器记录。
+> 代理侧看不到死亡/成就事件，也不会执行远程指令。
 
 ### 2.3 填写配置
 
@@ -246,8 +269,9 @@ security:
 /mcbridge reload
 ```
 
-看到 `McBridge enabled as server 'survival' -> ...` 和随后的心跳成功日志即表示
-连通。
+看到 `McBridge enabled on paper as server 'survival' -> ...`（Velocity 上为
+`on velocity`）和随后的心跳成功日志即表示连通。`/mcbridge stats` 的第一行会显示
+当前运行平台。
 
 ## 3. 验证互通
 

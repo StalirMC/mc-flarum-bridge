@@ -1,11 +1,11 @@
 name: McBridge
 version: '${version}'
-main: cn.stalir.mcbridge.McBridgePlugin
+main: cn.stalir.mcbridge.paper.McBridgePlugin
 api-version: '1.21'
 authors: [Stalir]
 description: Reports server status to Flarum and relays forum announcements back into the game.
 website: https://forum.kxkl2024.cn
-folia-supported: false
+folia-supported: true
 
 commands:
   bind:

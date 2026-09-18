@@ -288,10 +288,37 @@ section('4. extend.php references');
 section('5. Java package layout');
 
 const javaRoot = join(PLUGIN, 'src/main/java');
-const javaFiles = walk(javaRoot, (file) => file.endsWith('.java'));
+
+// The plugin is a single jar assembled from three source sets: a platform
+// independent core plus one module per platform family. Each root is checked on
+// its own, and imports are only allowed in the direction the jar supports - a
+// reference from the shared core into a platform module would be resolved when
+// the *other* platform loads it and would fail with NoClassDefFoundError.
+const JAVA_MODULES = [
+  { name: 'main', dir: javaRoot },
+  { name: 'paper', dir: join(PLUGIN, 'src/paper/java') },
+  { name: 'velocity', dir: join(PLUGIN, 'src/velocity/java') },
+];
+
+const MODULE_DEPENDENCIES = {
+  main: ['main'],
+  paper: ['main', 'paper'],
+  velocity: ['main', 'velocity'],
+};
+
+const javaFiles = [];
+const javaModuleOf = new Map(); // file -> module name
 const javaTypes = new Map(); // FQCN -> file
 
+for (const module of JAVA_MODULES) {
+  for (const file of walk(module.dir, (candidate) => candidate.endsWith('.java'))) {
+    javaFiles.push(file);
+    javaModuleOf.set(file, module.name);
+  }
+}
+
 for (const file of javaFiles) {
+  const module = javaModuleOf.get(file);
   const source = read(file);
   const packageMatch = source.match(/^package\s+([A-Za-z0-9_.]+);/m);
   const typeMatch = source.match(/^(?:public\s+)?(?:final\s+|abstract\s+)?(?:class|interface|enum|record)\s+([A-Za-z0-9_]+)/m);
@@ -302,7 +329,7 @@ for (const file of javaFiles) {
   }
 
   const expectedPath = packageMatch[1].split('.').join('/');
-  const relativeDir = dirname(rel(file).split('/src/main/java/')[1]);
+  const relativeDir = dirname(rel(file).split(`/src/${module}/java/`)[1] ?? '');
 
   if (relativeDir !== expectedPath) {
     fail(`Java ${rel(file)}`, `package ${packageMatch[1]} does not match directory ${relativeDir}`);
@@ -318,13 +345,27 @@ for (const file of javaFiles) {
 section('6. Java project imports resolve');
 
 for (const file of javaFiles) {
+  const module = javaModuleOf.get(file);
   const imports = [...read(file).matchAll(/^import\s+(cn\.stalir\.mcbridge[A-Za-z0-9_.]*);/gm)].map((m) => m[1]);
 
   for (const imported of imports) {
-    if (javaTypes.has(imported)) {
+    const target = javaTypes.get(imported);
+
+    if (!target) {
+      fail(rel(file), `import ${imported} does not resolve to a class in the plugin sources`);
+      continue;
+    }
+
+    const targetModule = javaModuleOf.get(target);
+
+    if (MODULE_DEPENDENCIES[module].includes(targetModule)) {
       pass(`${rel(file)} imports ${imported}`);
     } else {
-      fail(`${rel(file)}`, `import ${imported} does not resolve to a class under src/main/java`);
+      fail(
+        rel(file),
+        `the ${module} module imports ${imported} from the ${targetModule} module, which does not exist on every ` +
+          'platform the jar supports'
+      );
     }
   }
 }
@@ -335,15 +376,26 @@ for (const file of javaFiles) {
 
 section('7. plugin.yml agreement');
 
-const pluginYml = parseYaml(read(join(PLUGIN, 'src/main/resources/plugin.yml')));
+const pluginYml = parseYaml(read(join(PLUGIN, 'src/paper/resources/plugin.yml')));
 const pluginSources = javaFiles.map(read).join('\n');
 
 if (!pluginYml.main) {
   fail('plugin.yml', 'no main class declared');
 } else if (!javaTypes.has(pluginYml.main)) {
   fail('plugin.yml', `main ${pluginYml.main} does not exist`);
+} else if (javaModuleOf.get(javaTypes.get(pluginYml.main)) !== 'paper') {
+  fail('plugin.yml', `main ${pluginYml.main} must live in the paper module (src/paper/java)`);
 } else {
-  pass(`plugin.yml main -> ${pluginYml.main}`);
+  pass(`plugin.yml main -> ${pluginYml.main} (paper module)`);
+}
+
+// Folia refuses to load a plugin that does not opt in, and Velocity reads its
+// own descriptor, so both have to be present for the universal jar to work.
+// The YAML subset reader used here returns scalars as strings.
+if (String(pluginYml['folia-supported']) === 'true') {
+  pass('plugin.yml declares folia-supported: true');
+} else {
+  fail('plugin.yml', 'folia-supported must be true, otherwise Folia refuses to load the plugin');
 }
 
 const declaredCommands = Object.keys(pluginYml.commands ?? {});
@@ -1331,6 +1383,35 @@ section('15. Java compile hazards');
     HttpResponse: 'java.net.http.HttpResponse',
   };
 
+  // A few simple names mean different classes on different platforms, because
+  // one jar serves both families. The Velocity module legitimately uses its own
+  // Player and SLF4J's Logger, for example.
+  const MODULE_TYPE_OVERRIDES = {
+    velocity: {
+      Player: 'com.velocitypowered.api.proxy.Player',
+      Logger: 'org.slf4j.Logger',
+      ProxyServer: 'com.velocitypowered.api.proxy.ProxyServer',
+      CommandSource: 'com.velocitypowered.api.command.CommandSource',
+      CommandManager: 'com.velocitypowered.api.command.CommandManager',
+      CommandMeta: 'com.velocitypowered.api.command.CommandMeta',
+      Scheduler: 'com.velocitypowered.api.scheduler.Scheduler',
+      ScheduledTask: 'com.velocitypowered.api.scheduler.ScheduledTask',
+      TaskStatus: 'com.velocitypowered.api.scheduler.TaskStatus',
+      Subscribe: 'com.velocitypowered.api.event.Subscribe',
+      PostLoginEvent: 'com.velocitypowered.api.event.connection.PostLoginEvent',
+      DisconnectEvent: 'com.velocitypowered.api.event.connection.DisconnectEvent',
+      ProxyInitializeEvent: 'com.velocitypowered.api.event.proxy.ProxyInitializeEvent',
+      ProxyShutdownEvent: 'com.velocitypowered.api.event.proxy.ProxyShutdownEvent',
+      SimpleCommand: 'com.velocitypowered.api.command.SimpleCommand',
+      Inject: 'com.google.inject.Inject',
+      DataDirectory: 'com.velocitypowered.api.plugin.annotation.DataDirectory',
+    },
+    paper: {
+      ScheduledTask: 'io.papermc.paper.threadedregions.scheduler.ScheduledTask',
+      TimeUnit: 'java.util.concurrent.TimeUnit',
+    },
+  };
+
   let missingImports = 0;
 
   // Type names inside comments must not count, so strip both comment styles
@@ -1346,8 +1427,10 @@ section('15. Java compile hazards');
     const packageMatch = raw.match(/^package\s+([A-Za-z0-9_.]+);/m);
     const filePackage = packageMatch ? packageMatch[1] : '';
     const name = basename(file);
+    const module = javaModuleOf.get(file);
+    const types = { ...KNOWN_TYPES, ...(MODULE_TYPE_OVERRIDES[module] ?? {}) };
 
-    for (const [simple, qualified] of Object.entries(KNOWN_TYPES)) {
+    for (const [simple, qualified] of Object.entries(types)) {
       // Word-boundary match on the simple name.
       if (!new RegExp(`\\b${simple}\\b`).test(source)) continue;
 
@@ -1574,6 +1657,243 @@ section('16. Flarum frontend bundle');
       } else {
         pass(`locale/${basename(file)} covers all ${usedKeys.size} forum.settings keys used by the frontend`);
       }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 17. Universal jar: Paper + Folia + Velocity
+// ---------------------------------------------------------------------------
+
+section('17. Universal jar (Paper + Folia + Velocity)');
+
+{
+  // --- version parity -----------------------------------------------------
+  const properties = read(join(PLUGIN, 'gradle.properties'));
+  const declaredVersion = (properties.match(/^version\s*=\s*(.+)$/m) ?? [])[1]?.trim();
+  const versionSource = read(join(javaRoot, 'cn/stalir/mcbridge/Version.java'));
+  const versionConstant = (versionSource.match(/VERSION\s*=\s*"([^"]+)"/) ?? [])[1];
+
+  if (!declaredVersion) {
+    fail('gradle.properties', 'version is not declared');
+  } else if (declaredVersion !== versionConstant) {
+    fail(
+      'Version.java',
+      `VERSION "${versionConstant}" does not match gradle.properties "${declaredVersion}"; the Velocity descriptor and ` +
+        'the HTTP User-Agent would advertise a different version than plugin.yml'
+    );
+  } else {
+    pass(`version ${declaredVersion} is declared in gradle.properties and Version.java`);
+  }
+
+  const paperPluginYml = read(join(PLUGIN, 'src/paper/resources/plugin.yml'));
+
+  if (/^version:\s*'\$\{version\}'$/m.test(paperPluginYml)) {
+    pass('plugin.yml takes its version from the Gradle project version');
+  } else {
+    fail('plugin.yml', "version must stay '${version}' so it follows the build");
+  }
+
+  // --- build wiring -------------------------------------------------------
+  const build = read(join(PLUGIN, 'build.gradle'));
+
+  const wiring = [
+    ['the paper source set compiles src/paper/java', /src\/paper\/java/],
+    ['the velocity source set compiles src/velocity/java', /src\/velocity\/java/],
+    ['paper-api is a compile-only dependency', /io\.papermc\.paper:paper-api/],
+    ['velocity-api is a compile-only dependency', /com\.velocitypowered:velocity-api/],
+    ['velocity-api runs as an annotation processor (generates velocity-plugin.json)', /velocityAnnotationProcessor/],
+    ['the jar merges the paper output', /from sourceSets\.paper\.output/],
+    ['the jar merges the velocity output', /from sourceSets\.velocity\.output/],
+    ['the jar contents are asserted before release', /tasks\.register\('verifyJar'\)/],
+    ['the bytecode targets Java 17 so Velocity on Java 17 still loads it', /options\.release\s*=\s*17/],
+    ['plugin.yml is filtered with the project version', /filesMatching\('plugin\.yml'\)/],
+  ];
+
+  for (const [label, pattern] of wiring) {
+    if (pattern.test(build)) {
+      pass(label);
+    } else {
+      fail('build.gradle', `missing from the universal jar wiring: ${label}`);
+    }
+  }
+
+  if (/dependsOn tasks\.named\('verifyJar'\)/.test(build)) {
+    pass('build depends on verifyJar, so a broken universal jar cannot be published');
+  } else {
+    fail('build.gradle', 'the build task must depend on verifyJar');
+  }
+
+  // --- platform isolation -------------------------------------------------
+  const FORBIDDEN_IN_MAIN = [
+    ['org.bukkit', 'Bukkit'],
+    ['com.velocitypowered', 'Velocity'],
+    ['io.papermc', 'Paper'],
+  ];
+
+  const mainSources = walk(javaRoot, (file) => file.endsWith('.java'));
+  let mainLeaks = 0;
+
+  for (const file of mainSources) {
+    const source = read(file);
+
+    for (const [needle, label] of FORBIDDEN_IN_MAIN) {
+      if (new RegExp(`^import\\s+(static\\s+)?${needle.replace(/\./g, '\\.')}`, 'm').test(source)) {
+        fail(rel(file), `the shared core must not import ${label} (${needle}): it is not present on every platform`);
+        mainLeaks++;
+      }
+    }
+  }
+
+  if (mainLeaks === 0) {
+    pass(`the shared core stays platform neutral across ${mainSources.length} sources`);
+  }
+
+  const paperSources = walk(join(PLUGIN, 'src/paper/java'), (file) => file.endsWith('.java'));
+  let paperLeaks = 0;
+
+  for (const file of paperSources) {
+    if (/^import\s+(static\s+)?com\.velocitypowered/m.test(read(file))) {
+      fail(rel(file), 'the Paper/Folia module must not import Velocity classes');
+      paperLeaks++;
+    }
+  }
+
+  if (paperLeaks === 0 && paperSources.length > 0) {
+    pass(`the Paper/Folia module is free of Velocity references (${paperSources.length} sources)`);
+  }
+
+  const velocitySources = walk(join(PLUGIN, 'src/velocity/java'), (file) => file.endsWith('.java'));
+  let velocityLeaks = 0;
+
+  for (const file of velocitySources) {
+    if (/^import\s+(static\s+)?org\.bukkit/m.test(read(file))) {
+      fail(rel(file), 'the Velocity module must not import Bukkit classes');
+      velocityLeaks++;
+    }
+  }
+
+  if (velocityLeaks === 0 && velocitySources.length > 0) {
+    pass(`the Velocity module is free of Bukkit references (${velocitySources.length} sources)`);
+  }
+
+  // --- Folia support ------------------------------------------------------
+  const platformPath = join(PLUGIN, 'src/paper/java/cn/stalir/mcbridge/paper/PaperPlatform.java');
+  const foliaSignals = [
+    ['detects a regionised server', /io\.papermc\.paper\.threadedregions\.RegionizedServer/],
+    ['schedules through the Folia AsyncScheduler', /getAsyncScheduler\(\)/],
+    ['schedules through the Folia GlobalRegionScheduler', /getGlobalRegionScheduler\(\)/],
+    ['keeps the classic BukkitScheduler path for plain Paper', /getScheduler\(\)/],
+  ];
+
+  if (!existsSync(platformPath)) {
+    fail('PaperPlatform.java', 'the Paper/Folia platform implementation is missing');
+  } else {
+    const platformSource = read(platformPath);
+
+    for (const [label, pattern] of foliaSignals) {
+      if (pattern.test(platformSource)) {
+        pass(`PaperPlatform ${label}`);
+      } else {
+        fail('PaperPlatform.java', `missing Folia support: it must ${label}`);
+      }
+    }
+  }
+
+  // --- Velocity descriptor -------------------------------------------------
+  const velocityMain = join(PLUGIN, 'src/velocity/java/cn/stalir/mcbridge/velocity/McBridgeVelocityPlugin.java');
+
+  if (!existsSync(velocityMain)) {
+    fail('velocity module', 'McBridgeVelocityPlugin.java is missing');
+  } else {
+    const source = read(velocityMain);
+
+    if (/@Plugin\(/.test(source) && /id\s*=\s*"mc-bridge"/.test(source)) {
+      pass('the Velocity entry point is annotated with @Plugin(id = "mc-bridge")');
+    } else {
+      fail('McBridgeVelocityPlugin.java', 'the @Plugin annotation must declare id = "mc-bridge"');
+    }
+
+    if (/version\s*=\s*Version\.VERSION/.test(source)) {
+      pass('the Velocity descriptor takes its version from Version.VERSION');
+    } else {
+      fail('McBridgeVelocityPlugin.java', 'the @Plugin annotation must use Version.VERSION, not a second literal');
+    }
+  }
+
+  for (const required of ['McBridgePlugin.java', 'PaperPlatform.java']) {
+    if (existsSync(join(PLUGIN, 'src/paper/java/cn/stalir/mcbridge/paper', required))) {
+      pass(`paper module provides ${required}`);
+    } else {
+      fail('paper module', `${required} is missing`);
+    }
+  }
+
+  // --- Java 17 compatibility ----------------------------------------------
+  // The toolchain is JDK 21 with `options.release = 17`, so Java 21-only APIs
+  // would compile locally and then fail on a proxy still running Java 17.
+  const JAVA_21_ONLY = [
+    [/\.getFirst\(\)/, 'List#getFirst (Java 21)'],
+    [/\.getLast\(\)/, 'List#getLast (Java 21)'],
+    [/\.reversed\(\)/, 'List#reversed (Java 21)'],
+    [/Thread\.ofVirtual/, 'Thread#ofVirtual (Java 21)'],
+    [/Thread\.startVirtualThread/, 'Thread#startVirtualThread (Java 21)'],
+    [/Math\.clamp\(/, 'Math#clamp (Java 21)'],
+    [/SequencedCollection|SequencedMap|SequencedSet/, 'sequenced collections (Java 21)'],
+    [/ScopedValue|StructuredTaskScope/, 'ScopedValue / StructuredTaskScope (Java 21 preview)'],
+  ];
+
+  let java21Usage = 0;
+
+  for (const file of javaFiles) {
+    const source = read(file).replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*\/\/[^\n]*$/gm, ' ');
+
+    for (const [pattern, label] of JAVA_21_ONLY) {
+      if (pattern.test(source)) {
+        fail(rel(file), `uses ${label}, which does not exist on Java 17; the jar targets Java 17`);
+        java21Usage++;
+      }
+    }
+  }
+
+  if (java21Usage === 0) {
+    pass('no Java 21-only API is used, so the Java 17 target holds');
+  }
+
+  // --- release automation --------------------------------------------------
+  const release = join(ROOT, '.github/workflows/release.yml');
+
+  if (!existsSync(release)) {
+    fail('.github/workflows/release.yml', 'the tag-driven release workflow is missing');
+  } else {
+    const source = read(release);
+
+    const releaseChecks = [
+      ['is triggered by v* tags', /tags:\s*\['v\*'\]/],
+      ['may create releases', /contents:\s*write/],
+      ['checks the tag against gradle.properties', /does not match version/],
+      ['uploads the built jar', /dist\/\*\.jar/],
+    ];
+
+    for (const [label, pattern] of releaseChecks) {
+      if (pattern.test(source)) {
+        pass(`release workflow ${label}`);
+      } else {
+        fail('release.yml', `the release workflow must ${label}`);
+      }
+    }
+  }
+
+  const ci = read(join(ROOT, '.github/workflows/ci.yml'));
+
+  for (const [label, pattern] of [
+    ['asserts folia-supported in the packaged jar', /folia-supported: true/],
+    ['asserts velocity-plugin.json in the packaged jar', /velocity-plugin\.json/],
+  ]) {
+    if (pattern.test(ci)) {
+      pass(`CI ${label}`);
+    } else {
+      fail('ci.yml', `CI must ${label}`);
     }
   }
 }

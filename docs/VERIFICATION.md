@@ -236,6 +236,75 @@ undefined (reading 'for')`，位置 `admin.js:8`（即 `app.extensionData.for(..
 `.FormControl` / `.FieldSet-label`、`Button` 的 `loading` 属性、
 `SelectFieldComponentOptions.options` 的「值 → 标签」映射形状。
 
+### 2.7 三平台合一 jar（Paper + Folia + Velocity）
+
+**目标**：一个 jar 同时能装到 Paper、Folia 和 Velocity 上。
+
+**可行性依据**（逐条取证，不是猜测）：
+
+| 事实 | 来源 | 说明 |
+|------|------|------|
+| 一个 jar 可以同时携带多个平台描述符 | ViaVersion / ViaBackwards / ViaRewind 的发行包 | `plugin.yml`（Bukkit 系）与 `velocity-plugin.json` 同放 jar 根，各平台只加载自己描述符里的入口类 |
+| Folia 的调度 API 就在 **paper-api** 里 | `jd.papermc.io/paper/1.21.1/io/papermc/paper/threadedregions/scheduler/AsyncScheduler.html`（标题即 “paper-api 1.21.1-R0.1-SNAPSHOT API”） | 因此**不需要**额外的 `folia-api` 依赖，也不需要反射；`getAsyncScheduler()`、`getGlobalRegionScheduler()`、`runAtFixedRate`、`execute`、`cancelTasks` 均已核对签名 |
+| Folia 只加载声明了 `folia-supported: true` 的插件 | `plugin.yml` 契约 | 构建断言 + CI shell 断言双重校验 |
+| Velocity 从 jar 根读取 `velocity-plugin.json` | Velocity 的 “Did not find a valid velocity-plugin.json” 报错机制 | 该文件由 `velocity-api` 的注解处理器从 `@Plugin` 生成，**不手写** |
+| Velocity 与 Paper 都自带 Adventure 与 Gson | 两端各自的依赖 | 共享层只 `compileOnly` 这两者，jar 内**零第三方代码**，不需要 Shadow/relocate |
+
+**结构**：三个 source set → 一个 jar。
+
+```
+src/main/java      共享核心：BridgeCore（心跳/事件/公告/远程指令/命令文案）、
+                   Platform（平台 SPI）、BridgeConfig、Yaml、Signature、
+                   HttpBridgeClient、EventQueue、Messages、Version
+src/paper/java     McBridgePlugin、PaperPlatform（Folia/Bukkit 双调度）、
+                   PlayerListener、BindCommand、BridgeCommand
+src/velocity/java  McBridgeVelocityPlugin（@Plugin）、VelocityPlatform、
+                   VelocityListener、VelocityBindCommand、VelocityBridgeCommand
+```
+
+**关键设计：协议只写一遍。** 心跳载荷、事件结构、outbox 处理、公告渲染、全部命令
+回复都由 `BridgeCore` 生成，平台模块只提供「调度 + 服务器状态 + 输出」三件事。
+因此三个平台发出的请求逐字节相同，论坛侧无需区分平台（平台名只出现在
+`/mcbridge stats` 与启动日志里）。
+
+**共享层禁止引用平台类**，否则另一平台加载时会 `NoClassDefFoundError`。这条由三处
+同时把关：
+
+1. Gradle `verifyJar`：扫描共享层 class 文件的常量池，出现 `org/bukkit/`、
+   `com/velocitypowered/`、`io/papermc/` 即构建失败
+2. `tools/verify.mjs` 第 17 节：源码级 import 检查（共享层不得 import 平台包，
+   paper 模块不得 import Velocity，velocity 模块不得 import Bukkit）
+3. `verify.mjs` 第 6 节：模块间依赖方向（`main` → 只能 `main`；`paper`/`velocity`
+   → 可依赖 `main`）
+
+**Folia 调度**：运行时用 `Class.forName("io.papermc.paper.threadedregions.RegionizedServer")`
+判断；regionised 时只用 Folia 调度器（此时 `Bukkit.getScheduler()` 会抛
+`UnsupportedOperationException`），普通 Paper 上仍走 `BukkitScheduler`。玩家消息在
+Folia 上通过 `Player#getScheduler()` 投递到该玩家所属的 region 线程。
+
+**Java 版本**：工具链 JDK 21，但 `options.release = 17`。Paper/Folia 1.21 要求 Java 21
+运行、执行 17 的字节码没有问题；而 Velocity 3.x 仍支持 Java 17，目标定 21 会把一部分
+代理服主挡在门外。第 17 节会拦截 Java 21 专有 API（`List#getFirst`、`Math#clamp` 等）
+以防回归。
+
+**构建期断言（`verifyJar`，CI 中真实执行）**：
+
+| 断言 | 为什么 |
+|------|--------|
+| 两份描述符 + 两个入口类 + `config.yml` + `lang/*.yml` 都在 | 通用 jar 最典型的失败方式是「能构建但某个平台装不上」 |
+| `plugin.yml` 的 `main:` 指向 paper 模块 | 重构后容易残留旧类名（本次就发生过） |
+| `plugin.yml` 声明 `folia-supported: true` | 否则 Folia 直接拒绝加载 |
+| 两份描述符的版本都等于项目版本 | 版本三处（`gradle.properties`、`Version.java`、描述符）容易漂移 |
+| 共享层常量池无平台引用 | 见上 |
+
+**发布**：`.github/workflows/release.yml` 由 tag 触发，先校验 tag 与
+`gradle.properties` 版本一致，再构建并上传**同一个通用 jar**。
+
+**仍未验证**：jar **从未在真实的 Folia 或 Velocity 上加载过**（本机没有 JDK，CI 只
+编译与静态断言）。首次实机验证请重点看：Folia 启动日志是否出现 `McBridge enabled on
+folia`、有无 `UnsupportedOperationException`；Velocity 是否成功加载并打印
+`on velocity`；两端 `/mcbridge stats` 的平台行是否正确。
+
 ## 3. 无法在本机验证的内容（现由 CI 覆盖）
 
 > 本机没有 PHP / JDK，这些检查**已全部由 CI 在带 PHP 8.3 / JDK 21 的真实环境中
@@ -248,7 +317,9 @@ undefined (reading 'for')`，位置 `admin.js:8`（即 `app.extensionData.for(..
 | Flarum 安装 | `composer require stalir/mc-bridge:'*'` | 扩展出现在管理后台 | ⬜ 需在真实论坛执行（CI 不安装 Flarum） |
 | 迁移执行 | `php flarum migrate` | 5 张表建立 | ⬜ 需真实数据库（CI 仅反射校验迁移契约） |
 | **桥接自检** | `php flarum mc-bridge:selftest --url=https://你的域名` | 全部 `OK` | ⬜ 需在真实论坛执行 |
-| 插件加载 | 放入 jar 后启动服务器 | 日志出现 `McBridge enabled as server ...` | ⬜ 需在真实服务器执行 |
+| 插件加载（Paper） | 放入 jar 后启动服务器 | 日志出现 `McBridge enabled on paper as server ...` | ⬜ 需在真实服务器执行 |
+| 插件加载（Folia） | 同一个 jar 放入 Folia 的 `plugins/` | 日志出现 `on folia`，且无 `UnsupportedOperationException` | ⬜ 需真实 Folia 服务端 |
+| 插件加载（Velocity） | 同一个 jar 放入代理的 `plugins/` | 代理日志出现 `on velocity`，`/mcbridge stats` 平台行为 velocity | ⬜ 需真实 Velocity 代理 |
 | 真实心跳 | 观察日志 / `GET /api/mc-bridge/status` | 服务器状态出现在论坛 | ⬜ 需在真实服务器执行 |
 
 其中 `mc-bridge:selftest` 是专为此设计的：它在**运行论坛的那台机器**上检查密钥

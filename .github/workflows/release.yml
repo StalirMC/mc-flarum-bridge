@@ -1,0 +1,94 @@
+name: Release
+
+# Publishing is driven by a tag, so the released jar is always the one the CI
+# workflow already validated for that exact commit:
+#
+#   git tag v0.0.1 && git push origin v0.0.1
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to publish (for example v0.0.1)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish the universal jar
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10'
+
+      # The tag and the version compiled into the jar have to agree, otherwise a
+      # release would advertise a version the artifact does not contain.
+      - name: Check the tag matches gradle.properties
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          declared=$(grep -E '^version=' mc-plugin/gradle.properties | cut -d= -f2 | tr -d '[:space:]')
+          expected="v${declared}"
+          echo "tag=$TAG declared=$declared"
+          if [ "$TAG" != "$expected" ]; then
+            echo "::error::tag $TAG does not match version $declared (expected $expected)"
+            exit 1
+          fi
+
+      - name: Build
+        working-directory: mc-plugin
+        run: |
+          set -euo pipefail
+          if command -v gradle >/dev/null 2>&1; then
+            gradle build --no-daemon --stacktrace
+          else
+            curl -sSL -o /tmp/gradle.zip https://services.gradle.org/distributions/gradle-8.10-bin.zip
+            unzip -q /tmp/gradle.zip -d /tmp
+            /tmp/gradle-8.10/bin/gradle build --no-daemon --stacktrace
+          fi
+
+      - name: Collect the jar
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          jar=$(find mc-plugin/build/libs -name '*.jar' ! -name '*-sources.jar' -print -quit)
+          test -n "$jar"
+          cp "$jar" dist/
+          ls -l dist
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: McBridge ${{ github.event.inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          body: |
+            Universal plugin jar: one file for **Paper**, **Folia** and **Velocity**.
+
+            | Platform | What works |
+            |----------|------------|
+            | Paper / Folia | heartbeat, join/quit/death/advancement events, forum announcements, remote commands (off by default), `/bind`, `/mcbridge` |
+            | Velocity | heartbeat, join/quit events, forum announcements, `/bind`, `/mcbridge` (no game console, so remote commands are rejected) |
+
+            The Flarum extension is installed from this repository with Composer, so
+            the tag also pins the matching extension revision.
+
+            Still work in progress: see the warning at the top of README.md.
+          files: dist/*.jar
+          fail_on_unmatched_files: true

@@ -39,6 +39,7 @@ broadcast-sent: "&aMessage queued on the forum; it will appear after the next po
 reloaded: "&aConfiguration reloaded."
 reload-problems: "&cThe configuration still has problems: &7{problems}"
 stats-header: "&8&m--------&r &2McBridge &8&m--------"
+stats-platform: "&7Platform: &f{platform}"
 stats-server-key: "&7Server key: &f{key}"
 stats-forum-url: "&7Forum URL: &f{url}"
 stats-locale: "&7Language: &f{locale}"
@@ -51,7 +52,7 @@ stats-config-bad: "&cproblems"
 
 # ---- console log ----
 log:
-  enabled: "McBridge enabled as server '{key}' -> {url}"
+  enabled: "McBridge enabled on {platform} as server '{key}' -> {url}"
   disabled: "McBridge disabled."
   idle: "The configuration has problems, so McBridge stays idle until they are fixed."
   heartbeat-failed: "Heartbeat failed ({count} in a row): {reason}"
