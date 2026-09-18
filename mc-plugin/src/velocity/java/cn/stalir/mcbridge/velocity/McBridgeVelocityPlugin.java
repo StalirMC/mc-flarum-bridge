@@ -28,7 +28,7 @@ import java.nio.file.Path;
     name = "McBridge",
     version = Version.VERSION,
     description = "Reports proxy status to Flarum and relays forum announcements into the game.",
-    authors = {"Stalir"},
+    authors = {"StalirMC"},
     url = "https://forum.kxkl2024.cn"
 )
 public final class McBridgeVelocityPlugin {

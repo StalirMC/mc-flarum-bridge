@@ -9,6 +9,12 @@
         "paper"
     ],
     "license": "MIT",
+    "authors": [
+        {
+            "name": "StalirMC",
+            "homepage": "https://github.com/StalirMC"
+        }
+    ],
     "require": {
         "php": "^8.3"
     },

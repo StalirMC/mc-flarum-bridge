@@ -47,7 +47,7 @@ CI（`.github/workflows/ci.yml`）同时会在 `main` 上跑静态检查、协�
 > 但**升版本时必须一起改**（verify.mjs 会拦住不一致）。
 >
 > 同一个文件的 `authors[].homepage` 决定管理页里作者名的链接：它的取值顺序是
-> `homepage` → `email` → **空串**，空串会被浏览器解析成当前页面，于是点「Stalir」只会
+> `homepage` → `email` → **空串**，空串会被浏览器解析成当前页面，于是点「StalirMC」只会
 > 回到 `/admin`。所以每个 author 都要有 `homepage` 或 `email`（verify.mjs 也会校验）。
 
 > 注意：`processPaperResources` 的 `expand(version: …)` 已声明为 task input，否则改了版本号
