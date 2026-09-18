@@ -305,6 +305,60 @@ Folia 上通过 `Player#getScheduler()` 投递到该玩家所属的 region 线�
 folia`、有无 `UnsupportedOperationException`；Velocity 是否成功加载并打印
 `on velocity`；两端 `/mcbridge stats` 的平台行是否正确。
 
+### 2.8 本地真实构建与共享核心自测（本轮新增）
+
+上文 2.4 之后，本机被确认**其实带有一个 JDK**（`C:\Program Files\Zulu\zulu-25`），
+只是没有 Gradle。于是把 Gradle 8.10 与 Temurin JDK 21 下载到仓库之外的 `.tools/`
+（不进版本库），第一次拿到了**真正的本地编译循环**——不必再靠 CI 往返猜错误。
+
+**这一步立刻抓到一个会让 CI 失败的缺陷**：
+
+| 现象 | 根因 | 处理 |
+|------|------|------|
+| `Could not resolve io.papermc.paper:paper-api:1.21.1-R0.1-SNAPSHOT`：*Dependency resolution is looking for a library compatible with JVM runtime version 17, but … is only compatible with JVM runtime version 21 or newer* | 为了让 Java 17 的 Velocity 也能加载，我把**整个工程**设成 `options.release = 17`；但 `paper-api` 1.21.1 本身是 Java 21 字节码，Gradle 的变体解析据此直接拒绝 | 改成**按模块**：`main`/`velocity`/`test` 保持 17，`paper` 单独提到 21（Paper/Folia 1.21 本来就必须 Java 21 运行，没有损失） |
+
+**本地 `gradle build` 结果**（JDK 21 + Gradle 8.10）：
+
+```
+> Task :compileJava          共享核心
+> Task :compilePaperJava     Paper/Folia（release 21）
+> Task :compileVelocityJava  Velocity（release 17）
+> Task :selfTest             共享核心在真实 JVM 上自测
+checks run: 51   failures: 0   SHARED CORE SELF TEST PASSED
+> Task :verifyJar
+verified McBridge-0.0.1.jar: 36 entries, loadable by Paper, Folia and Velocity
+BUILD SUCCESSFUL in 1m 4s
+```
+
+**新增的运行时自测（`gradle selfTest`，`build` 会执行它）** 覆盖的正是静态检查与模拟论坛
+都碰不到的代码路径——那些检查从不执行 Java：
+
+| 组 | 覆盖内容 |
+|----|----------|
+| 1. `config.yml` 解析 | 嵌套映射、引号、注释剥离、非 ASCII 值、布尔/整数、块列表（正则白名单两条）、缺键回退、把标量当 section 时回退 |
+| 2. 语言文件 | 两个语言的键集一致、`prefix`/`log.enabled`/新增 `stats-platform` 都在、`\"` 转义被正确反转义且不破坏引号状态 |
+| 3. 配置校验 | 出厂配置因空密钥而不可用、问题文案已本地化、`log.enabled` 的 `{platform}`/`{key}` 插值无残留占位符、`apiPath`/`endpoint` 拼接 |
+| 4. 完整配置 | 可用性、密钥与服务器标识、间隔值、`allow-remote-commands` 默认关闭且开启后正则白名单真正生效（`say hello` / `broadcast …` 通过，`op someone` 拒绝）、过短密钥与缺 scheme 的 URL 都判为不可用 |
+
+**产物实测**（`jar tf` + 直接读描述符与 class 头）：
+
+```
+36 个条目 / 64 KB，无任何第三方代码
+plugin.yml            version: '0.0.1'  main: cn.stalir.mcbridge.paper.McBridgePlugin  folia-supported: true
+velocity-plugin.json  {"id":"mc-bridge", …, "main":"cn.stalir.mcbridge.velocity.McBridgeVelocityPlugin"}
+字节码主版本           BridgeCore = 17   McBridgePlugin = 21   McBridgeVelocityPlugin = 17
+```
+
+最后一行正是设计意图：**一个 jar 里混用 class 文件版本是合法的**，每个 class 自己声明版本，
+JVM 只加载它支持的那些。
+
+**CI**：同一个提交 `dd28da7` 的
+[run #24](https://github.com/StalirMC/mc-flarum-bridge/actions) 三个 job
+（静态+协议 / PHP lint / Gradle 编译）全部通过，与本地结论一致。
+
+**仍然未经实机验证**：jar 依旧**没有在真实的 Paper / Folia / Velocity 上加载过**。
+以上全部结论都停留在「编译、静态断言、在真实 JVM 上执行共享核心」这一层，不能替代上机。
+
 ## 3. 无法在本机验证的内容（现由 CI 覆盖）
 
 > 本机没有 PHP / JDK，这些检查**已全部由 CI 在带 PHP 8.3 / JDK 21 的真实环境中

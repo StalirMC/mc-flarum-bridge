@@ -12,16 +12,19 @@
 >
 > **已经确认的部分**
 > - CI 全绿：`gradle build` 真机编译通过、`php -l` 全部通过、静态一致性检查 + 33 项协议一致性测试通过
+> - **本地真实构建也通过**（JDK 21 + Gradle 8.10）：三个模块编译成功、`verifyJar` 内容断言通过、
+>   **共享核心的 51 项运行时自测在真实 JVM 上全通过**（YAML 解析 / 语言回退 / 配置校验 / 正则白名单）
 > - 在真实论坛（Flarum 2.0.0-rc.8）上完成过：安装、`migrate`、启用扩展、自检命令运行
-> - 三平台合一 jar 的**构建产物与内容断言**在 CI 通过：`plugin.yml` + `velocity-plugin.json`
->   两个描述符、Paper/Folia 与 Velocity 两个入口类、共享层零平台引用（见 `verifyJar`）
+> - 三平台合一 jar 的**构建产物与内容断言**已实测：`plugin.yml` + `velocity-plugin.json`
+>   两个描述符、Paper/Folia 与 Velocity 两个入口类、共享层零平台引用、jar 内无第三方代码
 > - 已逐项打通并修复：CSRF 豁免（`Extend\Csrf`）、HMAC 签名链路、请求体读取、批量赋值、
 >   论坛端启动崩溃（设置页属于懒加载 chunk，必须按模块路径 `extend`）、
 >   后台端启动崩溃（2.x 用 `app.registry` 取代了 `app.extensionData`）——
->   详见 [VERIFICATION.md](docs/VERIFICATION.md) 2.5 / 2.6
+>   详见 [VERIFICATION.md](docs/VERIFICATION.md) 2.5 / 2.6 / 2.8
 >
 > **尚未验证的部分**
-> - **游戏侧插件从未在真实服务器上运行过**（Paper / Folia / Velocity 目前都只是编译通过，未加载测试）
+> - **游戏侧插件从未在真实服务器上运行过**（Paper / Folia / Velocity 都只到「编译 + 静态断言 +
+>   共享核心自测」为止，**从未真正加载过一次**）
 > - 公告推送、广播、`/bind` 账号绑定的**端到端效果未验证**
 > - 前端设置页区块（`js/dist`）**尚未在浏览器里确认可用**：导致启动崩溃的根因已定位并修复，
 >   但仍需刷新论坛页面实测绑定码输入框是否正常显示
