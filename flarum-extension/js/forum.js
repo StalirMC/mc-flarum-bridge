@@ -66,8 +66,21 @@ app.initializers.add(EXTENSION_ID, () => {
   // marker appear everywhere at once and lets the theme style it together with
   // the group badges - which is what the brown box in the screenshot was missing.
   //
-  // The grass block carries the player name as a tooltip; the profile page and
-  // the settings section spell it out in full.
+  // Follow the core badge convention exactly: the element's only child is the
+  // icon, and the label lives in aria-label.
+  //
+  // That is not a style preference. Flarum's own badges put the group name in
+  // aria-label and render just an icon, and themes build on it: avocado turns the
+  // round disc into a capsule as wide as its label with
+  //
+  //   .PostUser-badges .Badge::after { content: attr(aria-label); }
+  //
+  // for ANY badge that follows the convention, as its own source comment says.
+  // Putting visible text in the element *and* a label in aria-label therefore
+  // renders the name twice - which is exactly what happened.
+  //
+  // So: aria-label is the label a theme may draw (here, the player name), title
+  // is the fuller native tooltip, and the child is the grass block alone.
   extend('flarum/common/models/User', 'badges', function (items) {
     const playerName = this.attribute('mcBridgePlayerName');
 
@@ -80,17 +93,10 @@ app.initializers.add(EXTENSION_ID, () => {
       m(
         'span.Badge.McBridge-badge',
         {
-          // The tooltip and the accessible label spell the account out; the badge
-          // itself shows the grass block followed by the player name, without an
-          // "MC:" prefix.
+          'aria-label': app.translator.trans('stalirmc-mc-bridge.forum.badge.label', { name: playerName }),
           title: app.translator.trans('stalirmc-mc-bridge.forum.badge.title', { name: playerName }),
-          'aria-label': app.translator.trans('stalirmc-mc-bridge.forum.badge.title', { name: playerName }),
         },
-        [
-          grassBlock(14),
-          ' ',
-          app.translator.trans('stalirmc-mc-bridge.forum.badge.label', { name: playerName }),
-        ]
+        grassBlock(14)
       ),
       -5
     );
