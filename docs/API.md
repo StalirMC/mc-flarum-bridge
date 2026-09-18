@@ -341,6 +341,24 @@ php flarum mc-bridge:selftest --url=...    # 全链路自检
 
 ---
 
+## GET /api/mc-bridge/link
+
+**认证：论坛会话（需登录）** — 返回当前登录账号的 Minecraft 绑定，供论坛前端显示。
+
+响应 `200`：
+
+```json
+{ "ok": true, "bound": true, "binding": { "user_id": 5, "username": "Alice", "player_uuid": "…", "player_name": "Alice", "server_key": "survival", "linked_at": "…" } }
+```
+
+未绑定时 `bound` 为 `false`、`binding` 为 `null`。
+
+> 这个 GET 曾经漏注册：`LinkStatusController` 写好了却没挂路由，前端读状态拿到 404，
+> 于是「绑定成功但论坛仍显示未绑定」。`tools/verify.mjs` 现在会比对前端调用的每个
+> `/mc-bridge/*` 与 `extend.php` 里注册的方法+路径。
+
+---
+
 ## POST /api/mc-bridge/link
 
 **认证：论坛会话（需登录）** — 消费绑定码，把游戏账号关联到当前论坛账号。
@@ -373,6 +391,37 @@ php flarum mc-bridge:selftest --url=...    # 全链路自检
 **认证：论坛会话（需登录）** — 解除当前论坛账号的绑定。
 
 响应 `200`：`{ "ok": true }`；未绑定时 `404`。
+
+---
+
+## 用户资源附加字段（user resource）
+
+论坛前端要在**资料页**与**每篇帖子的作者名旁**显示 MC 账号，因此绑定信息被挂在 Flarum 的
+user 资源上（`Stalir\McBridge\Api\UserResourceFields`），而不是让前端为每个作者各发一次请求。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `mcBridgePlayerName` | string \| null | 已绑定的 MC 玩家名 |
+| `mcBridgeServerKey` | string \| null | 绑定时所在服务器的 `server.key` |
+| `mcBridgeLinkedAt` | datetime \| null | 绑定时间 |
+
+**可见性**：三个字段的 `visible` 回调都要求 `actor->isRegistered()`，即**只有登录用户**能在
+payload 里看到它们；游客的响应里根本不包含这些字段（不是前端隐藏）。
+
+**成本**：字段按用户逐个查询（一页约二十次索引查询）。之所以不一次性载入全部绑定，是为了
+避免扫一张随绑定数增长的表；之所以不做跨请求缓存，是为了避免解绑后仍显示旧值。
+
+---
+
+## 论坛页面（服务端渲染，无需前端构建）
+
+| 路径 | 认证 | 用途 |
+|------|------|------|
+| `GET /mc-bridge/link` | 需登录 | 输入绑定码 / 解除绑定（`POST` 同一路径，带 CSRF token） |
+| `GET /mc-bridge/status` | 公开 | 服务器状态页：在线人数、TPS/MSPT、版本、MOTD、最后心跳、最近事件 |
+
+两者都由 PHP 直接渲染 HTML（`LinkPageController`、`StatusPageController`），因此不依赖 npm 构建；
+论坛侧边栏的「服务器状态」入口由前端 bundle 以普通 `<a>` 链接加入。
 
 ---
 

@@ -137,6 +137,17 @@ stalir-mc-bridge:
       unlink_ok: "The link has been removed."
       code_too_short: "A binding code is 8 characters; please check it."
       generic_error: "Something went wrong, please try again."
+    profile:
+      heading: "Minecraft account"
+      bound_to: "Linked: {name}"
+      server: "from server {key}"
+      not_bound: "No Minecraft account linked"
+    badge:
+      label: "MC: {name}"
+      title: "Minecraft account: {name}"
+    status:
+      nav: "Server status"
+      heading: "Server status"
   admin:
     settings:
       title: MC Bridge
@@ -163,3 +174,25 @@ stalir-mc-bridge:
     success_unbound: "The link has been removed."
     not_logged_in: "Please log in to the forum first."
     back: "Back to the forum"
+    status:
+      title: "Server status"
+      intro: "Reported by each game server's most recent heartbeat, so it can lag one interval behind."
+      empty: "No server has reported a status yet."
+      online: "Online"
+      offline: "Offline"
+      players: "Players"
+      tps: "TPS"
+      mspt: "MSPT"
+      version: "Version"
+      motd: "MOTD"
+      last_heartbeat: "Last heartbeat"
+      never: "never"
+      seconds_ago: "%s seconds ago"
+      minutes_ago: "%s minutes ago"
+      hours_ago: "%s hours ago"
+      names: "Players online"
+      names_none: "(none)"
+      recent_events: "Recent events"
+      events_none: "No events yet."
+      back: "Back to the forum"
+      refresh_hint: "Reload the page for the latest status."

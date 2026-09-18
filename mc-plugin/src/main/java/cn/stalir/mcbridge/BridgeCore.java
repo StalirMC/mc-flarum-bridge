@@ -3,6 +3,7 @@ package cn.stalir.mcbridge;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
 import net.kyori.adventure.text.Component;
 
 import java.time.Duration;
@@ -516,6 +517,44 @@ public final class BridgeCore {
     }
 
     /**
+     * Tell a player how to link an account, unless the account is already linked.
+     *
+     * The lookup runs off-thread and the prompt comes from the language file, so
+     * Paper, Folia and Velocity tell the player the same thing. A failed lookup
+     * stays silent on purpose: a slow or unreachable forum must not turn into a
+     * nagging message on every join.
+     */
+    public void promptBindingIfNeeded(UUID uuid, String playerName) {
+        BridgeConfig current = this.config;
+
+        if (current == null || !current.isUsable() || !current.promptUnbound() || uuid == null) {
+            return;
+        }
+
+        platform.runAsync(() -> {
+            JsonObject response;
+
+            try {
+                response = client.bindStatus(uuid);
+            } catch (BridgeException exception) {
+                platform.log().fine(
+                        "Could not check the binding status of " + playerName + ": " + exception.getMessage());
+                return;
+            }
+
+            if (optBoolean(response, "bound")) {
+                return;
+            }
+
+            String url = current.forumUrl() + "/mc-bridge/link";
+            String pending = optString(response, "pending_code", "");
+
+            platform.sendToPlayer(uuid, pending.isBlank()
+                    ? messages.prefixed("bind-prompt", "url", url)
+                    : messages.prefixed("bind-prompt-code", "code", pending, "url", url));
+        });
+    }
+    /**
      * Fetch the public status snapshot and render one line about it.
      *
      * Blocking: call it off the main thread.
@@ -637,6 +676,15 @@ public final class BridgeCore {
         return List.of("status", "outbox", "broadcast", "stats", "reload");
     }
 
+    private static boolean optBoolean(JsonObject object, String key) {
+        if (object == null || !object.has(key) || !object.get(key).isJsonPrimitive()) {
+            return false;
+        }
+
+        JsonPrimitive primitive = object.getAsJsonPrimitive(key);
+
+        return primitive.isBoolean() && primitive.getAsBoolean();
+    }
     private static String optString(JsonObject object, String key, String fallback) {
         if (object != null && object.has(key) && object.get(key).isJsonPrimitive()) {
             return object.get(key).getAsString();

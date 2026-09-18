@@ -14,6 +14,7 @@ import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -315,6 +316,25 @@ public final class PaperPlatform implements Platform {
         };
 
         Bukkit.getScheduler().runTask(plugin, delivery);
+    }
+
+    @Override
+    public void sendToPlayer(UUID uuid, Component message) {
+        Player player = Bukkit.getPlayer(uuid);
+
+        if (player == null) {
+            // The player left between the event and the reply from the forum.
+            return;
+        }
+
+        if (FOLIA) {
+            // Regionised: the message must be delivered on the thread that owns
+            // the player, so it goes through that player's own scheduler.
+            player.getScheduler().run(plugin, scheduled -> player.sendMessage(message), null);
+            return;
+        }
+
+        Bukkit.getScheduler().runTask(plugin, () -> player.sendMessage(message));
     }
 
     @Override

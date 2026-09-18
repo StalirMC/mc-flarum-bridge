@@ -136,6 +136,17 @@ stalir-mc-bridge:
       unlink_ok: "已解除绑定。"
       code_too_short: "绑定码是 8 位字符，请检查后重试。"
       generic_error: "操作失败，请稍后再试。"
+    profile:
+      heading: "Minecraft 账号"
+      bound_to: "已绑定：{name}"
+      server: "来自服务器 {key}"
+      not_bound: "尚未绑定 Minecraft 账号"
+    badge:
+      label: "MC：{name}"
+      title: "Minecraft 账号：{name}"
+    status:
+      nav: "服务器状态"
+      heading: "服务器状态"
   admin:
     settings:
       title: MC Bridge
@@ -162,3 +173,25 @@ stalir-mc-bridge:
     success_unbound: "已解除绑定。"
     not_logged_in: "请先登录论坛后再访问此页面。"
     back: "返回论坛"
+    status:
+      title: "服务器状态"
+      intro: "数据来自各游戏服务端的最近一次心跳，最多延迟一个心跳周期。"
+      empty: "还没有任何服务器上报过状态。"
+      online: "在线"
+      offline: "离线"
+      players: "在线玩家"
+      tps: "TPS"
+      mspt: "MSPT"
+      version: "版本"
+      motd: "MOTD"
+      last_heartbeat: "最后心跳"
+      never: "从未上报"
+      seconds_ago: "%s 秒前"
+      minutes_ago: "%s 分钟前"
+      hours_ago: "%s 小时前"
+      names: "在线名单"
+      names_none: "（无）"
+      recent_events: "最近事件"
+      events_none: "暂无事件。"
+      back: "返回论坛"
+      refresh_hint: "刷新页面即可看到最新状态。"

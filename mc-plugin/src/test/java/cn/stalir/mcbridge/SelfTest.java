@@ -334,6 +334,10 @@ public final class SelfTest {
         }
 
         @Override
+        public void sendToPlayer(java.util.UUID uuid, net.kyori.adventure.text.Component message) {
+        }
+
+        @Override
         public void logToConsole(net.kyori.adventure.text.Component message) {
         }
 

@@ -258,6 +258,9 @@ server:
 
 security:
   secret: "<第 1.3 步生成的密钥>"
+
+game:
+  prompt-unbound: true                  # 未绑定玩家进服时提示一次怎么绑定
 ```
 
 > 若 Flarum 装在子目录（如 `https://example.com/forum`），把 `url` 写全即可，
@@ -297,6 +300,10 @@ php flarum mc-bridge:selftest --url=https://forum.kxkl2024.cn
 ```bash
 curl -s https://forum.kxkl2024.cn/api/mc-bridge/status | jq
 ```
+
+**论坛侧的展示**：浏览器打开 `https://forum.kxkl2024.cn/mc-bridge/status`
+（论坛侧边栏也有「服务器状态」入口），页面会列出每个服的在线人数、TPS/MSPT、版本、MOTD、
+最后心跳时间与最近事件。该页是公开的，游客也能看。
 
 ### 3.2 公告推送
 

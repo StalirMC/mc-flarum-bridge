@@ -33,13 +33,17 @@ public final class PlayerListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onJoin(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
         BridgeConfig config = core.config();
+
+        // Independent of the event switch below: a player who has not linked yet
+        // is told how to do it even when join events are not reported.
+        core.promptBindingIfNeeded(player.getUniqueId(), player.getName());
 
         if (config == null || !config.reportJoins()) {
             return;
         }
 
-        Player player = event.getPlayer();
         core.enqueuePlayerEvent("join", player.getUniqueId(), player.getName(), null);
     }
 

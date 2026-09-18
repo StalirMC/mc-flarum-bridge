@@ -86,6 +86,9 @@ server:
   name: "Stalir 生存服"
 security:
   secret: "<至少 32 字符的共享密钥>"
+
+game:
+  prompt-unbound: true          # 未绑定玩家进服时提示一次怎么绑定（论坛不可达时保持沉默）
 ```
 
 ## 平台能力对照

@@ -25,11 +25,19 @@ public final class VelocityListener {
     public void onPostLogin(PostLoginEvent event) {
         BridgeCore core = activeCore();
 
-        if (core == null || !core.config().reportJoins()) {
+        if (core == null) {
             return;
         }
 
         Player player = event.getPlayer();
+
+        // Independent of the event switch below: a player who has not linked yet
+        // is told how to do it even when join events are not reported.
+        core.promptBindingIfNeeded(player.getUniqueId(), player.getUsername());
+
+        if (!core.config().reportJoins()) {
+            return;
+        }
 
         core.enqueuePlayerEvent("join", player.getUniqueId(), player.getUsername(), null);
     }

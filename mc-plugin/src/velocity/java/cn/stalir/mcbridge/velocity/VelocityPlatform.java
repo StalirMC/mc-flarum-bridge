@@ -20,6 +20,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
@@ -222,6 +223,12 @@ public final class VelocityPlatform implements Platform {
     public void broadcast(Component message) {
         // Thread-safe, so the outbox poller can broadcast without a thread hop.
         proxy.getAllPlayers().forEach(player -> player.sendMessage(message));
+    }
+
+    @Override
+    public void sendToPlayer(UUID uuid, Component message) {
+        // Thread-safe, and empty when the player already disconnected.
+        proxy.getPlayer(uuid).ifPresent(player -> player.sendMessage(message));
     }
 
     @Override

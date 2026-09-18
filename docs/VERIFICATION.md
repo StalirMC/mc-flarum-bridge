@@ -435,6 +435,60 @@ errors: 1
 与 `verifyJar` 全部通过，版本 0.0.2 已发版。**但请注意**：缺陷 2 是由用户在真实环境里用出来的，
 不是我们的检查发现的——这正是 2.8 节那句「不能替代上机」的含义。
 
+### 2.10 四项联动功能（0.0.3）
+
+在 2.9 修完缺陷后，按用户点名实现了四项功能。全部按「能被静态检查覆盖」的方式写，
+因为这台机器没有 Flarum 环境，浏览器里的效果只能靠人工确认。
+
+| 功能 | 实现位置 | 关键点 |
+|------|----------|--------|
+| 资料页显示已绑定的 MC 账号 | `Api\UserResourceFields.php` + `js/forum.js`（`UserPage.sidebarItems`） | 字段挂在 **user 资源**上，随帖子已有的作者数据一起到达，不必为每个作者多打一次请求 |
+| 帖子/回复作者名旁的 MC 徽章 | 同上 + `PostUser.userViewItems`（优先级 95，紧跟在名字 100 之后、群组徽章 90 之前） | 同一份字段，所以资料页与徽章不可能出现不一致 |
+| 进服绑定引导 | `BridgeCore.promptBindingIfNeeded` + 平台 `sendToPlayer` + 两端监听器 | 查询走异步、回复走主线程（Folia 走该玩家的 region）；论坛不可达时**保持沉默**，只在日志记 fine |
+| 论坛服务器状态页 | `Api\Controller\StatusPageController`（`GET /mc-bridge/status`）+ 侧边栏入口 | 服务端渲染、无需前端构建；只展示公开 status 端点已有的聚合数据，因此游客可见 |
+
+几个刻意的取舍：
+
+- **可见性**：`mcBridge*` 字段的 `visible` 回调要求 `$context->getActor()->isRegistered()`，
+  游客的 payload 里根本没有这些字段（不是前端隐藏，是后端不下发）。
+- **查询成本**：字段按用户逐个查（一页约二十次索引查询）。不做「一次载入全部绑定」是为了
+  避免扫一张随绑定数增长的表，也不做跨请求缓存是为了避免解绑后仍显示旧值。这段取舍写在了
+  `UserResourceFields` 的类注释里。
+- **进服引导的触发**：与 `report-joins` 开关**无关**——不记录进服事件也会引导；反过来，
+  `game.prompt-unbound: false` 可以整体关掉。
+- **状态页链接用普通 `<a>`**：该页由 PHP 渲染，用 Mithril 的 Link 会被前端路由拦截并要求一个
+  并不存在的 JS 组件。
+
+#### 新增的静态检查（`tools/verify.mjs` 第 18 节）
+
+这一轮新增的失败模式是「前端读的字段/键名与 PHP 声明的对不上」——两边都合法，界面却什么都没有。
+因此加了跨语言契约检查：
+
+| 检查 | 做法 |
+|------|------|
+| 前端读的 user 属性必须被 PHP 声明 | 从 JS 收集 `.attribute('mcBridge*')`，与 `UserResourceFields.php` 的 `Schema\*::make('...')` 比对 |
+| 前端要的翻译键必须在每个 locale 里存在 | 从 JS 收集 `translator.trans('stalir-mc-bridge.*')`，与两个 locale 文件的键集比对 |
+
+为此把前端里的翻译键从模板字符串改成**字面量**（`` trans(`${EXTENSION_ID}.…`) `` → `trans('stalir-mc-bridge.…')`），
+否则键名对静态工具不可见。
+
+同样做了反向验证——故意把 `mcBridgePlayerName` 拼错成 `mcBridgePlayerNam`：
+
+```
+FAIL frontend attributes
+     the frontend reads mcBridgePlayerNam but UserResourceFields does not declare it
+errors: 1
+（恢复后）errors: 0，ALL CHECKS PASSED
+```
+
+#### 本轮验证结果
+
+- `tools/verify.mjs` **318 项**、协议 33 项全部通过
+- 本地 `gradle build`（JDK 21 + Gradle 8.10）通过，`verifyJar` 报告 36 个条目
+- 前端 `npm run build` 通过（forum.js 4.56 KiB）
+- **仍未验证**：资料页区块、作者徽章、状态页、进服引导都**没有在真实浏览器/服务端上看过一次**。
+  静态检查能保证「字段和键名对得上、路由存在、版本一致」，但保证不了「看起来对、位置合适」。
+
 ## 3. 无法在本机验证的内容（现由 CI 覆盖）
 
 > 本机没有 PHP / JDK，这些检查**已全部由 CI 在带 PHP 8.3 / JDK 21 的真实环境中

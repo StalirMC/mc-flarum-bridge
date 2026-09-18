@@ -4,6 +4,7 @@ import net.kyori.adventure.text.Component;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Everything the shared core needs from the server it is running on.
@@ -102,6 +103,14 @@ public interface Platform {
     // ------------------------------------------------------------------
 
     void broadcast(Component message);
+
+    /**
+     * Send one message to a single player, or do nothing when they are offline.
+     *
+     * Safe to call from any thread: the Paper/Folia implementation hops to the
+     * thread that owns the player when the server is regionised.
+     */
+    void sendToPlayer(UUID uuid, Component message);
 
     void logToConsole(Component message);
 

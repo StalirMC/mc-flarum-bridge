@@ -1961,6 +1961,86 @@ section('17. Universal jar (Paper + Folia + Velocity)');
 }
 
 // ---------------------------------------------------------------------------
+// 18. Forum frontend <-> PHP contracts
+// ---------------------------------------------------------------------------
+
+section('18. Forum frontend <-> PHP contracts');
+
+{
+  // The profile section and the badge next to a post author read attributes that
+  // Api\UserResourceFields has to declare. A typo on either side renders nothing
+  // at all, silently, which is exactly the failure mode that is hardest to
+  // notice in a browser.
+  const fieldsPath = join(EXT, 'src/Api/UserResourceFields.php');
+  const declaredAttributes = new Set();
+
+  if (!existsSync(fieldsPath)) {
+    fail('UserResourceFields.php', 'the user resource fields are missing');
+  } else {
+    for (const match of read(fieldsPath).matchAll(/Schema\\[A-Za-z]+::make\(\s*'([A-Za-z0-9_]+)'/g)) {
+      declaredAttributes.add(match[1]);
+    }
+  }
+
+  const frontendFiles = walk(join(EXT, 'js/src'), (file) => file.endsWith('.js'));
+  const forumEntry = join(EXT, 'js/forum.js');
+
+  if (existsSync(forumEntry)) {
+    frontendFiles.push(forumEntry);
+  }
+
+  const readAttributes = new Set();
+  const readTranslations = new Set();
+
+  for (const file of frontendFiles) {
+    const source = read(file);
+
+    for (const match of source.matchAll(/\.attribute\(\s*'(mcBridge[A-Za-z0-9_]*)'/g)) {
+      readAttributes.add(match[1]);
+    }
+
+    // Translation keys are written as plain literals so they can be checked:
+    // a template literal would hide the key from every static tool.
+    for (const match of source.matchAll(/translator\.trans\(\s*'stalir-mc-bridge\.([A-Za-z0-9_.]+)'/g)) {
+      readTranslations.add(match[1]);
+    }
+  }
+
+  if (declaredAttributes.size === 0) {
+    fail('UserResourceFields.php', 'no user resource field is declared');
+  } else if (readAttributes.size === 0) {
+    fail('frontend', 'no mcBridge* user attribute is read, so the profile section and the badge cannot work');
+  } else {
+    const undeclared = [...readAttributes].filter((name) => !declaredAttributes.has(name));
+
+    if (undeclared.length > 0) {
+      for (const name of undeclared) {
+        fail('frontend attributes', `the frontend reads ${name} but UserResourceFields does not declare it`);
+      }
+    } else {
+      pass(`all ${readAttributes.size} user attributes read by the frontend are declared in UserResourceFields`);
+    }
+  }
+
+  const localeDir = join(EXT, 'locale');
+
+  if (readTranslations.size === 0) {
+    fail('frontend translations', 'no stalir-mc-bridge.* translation key was found in the frontend sources');
+  } else {
+    for (const file of walk(localeDir, (candidate) => candidate.endsWith('.yml'))) {
+      const keys = flattenKeys(parseYaml(read(file)));
+      const absent = [...readTranslations].filter((key) => !keys.has(`stalir-mc-bridge.${key}`));
+
+      if (absent.length > 0) {
+        fail(rel(file), `the frontend asks for keys that are missing here: [${absent.join(', ')}]`);
+      } else {
+        pass(`locale/${basename(file)} covers all ${readTranslations.size} keys the frontend asks for`);
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Summary
 // ---------------------------------------------------------------------------
 

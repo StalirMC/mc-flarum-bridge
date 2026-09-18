@@ -34,6 +34,7 @@ public final class BridgeConfig {
     private final boolean reportAdvancements;
     private final String announceFormat;
     private final String announceBodyFormat;
+    private final boolean promptUnbound;
     private final boolean allowRemoteCommands;
     private final List<Pattern> remoteCommandWhitelist;
     private final List<String> problems;
@@ -56,6 +57,7 @@ public final class BridgeConfig {
             boolean reportAdvancements,
             String announceFormat,
             String announceBodyFormat,
+            boolean promptUnbound,
             boolean allowRemoteCommands,
             List<Pattern> remoteCommandWhitelist,
             List<String> problems
@@ -77,6 +79,7 @@ public final class BridgeConfig {
         this.reportAdvancements = reportAdvancements;
         this.announceFormat = announceFormat;
         this.announceBodyFormat = announceBodyFormat;
+        this.promptUnbound = promptUnbound;
         this.allowRemoteCommands = allowRemoteCommands;
         this.remoteCommandWhitelist = remoteCommandWhitelist;
         this.problems = problems;
@@ -162,6 +165,7 @@ public final class BridgeConfig {
                 config.getBoolean("sync.report-advancements", false),
                 config.getString("game.announce-format", "&e[论坛] &f{title}"),
                 config.getString("game.announce-body-format", "&7{body}"),
+                config.getBoolean("game.prompt-unbound", true),
                 allowRemoteCommands,
                 Collections.unmodifiableList(whitelist),
                 Collections.unmodifiableList(problems)
@@ -258,6 +262,11 @@ public final class BridgeConfig {
 
     public String announceBodyFormat() {
         return announceBodyFormat;
+    }
+
+    /** Whether an unlinked player is told how to link an account when they join. */
+    public boolean promptUnbound() {
+        return promptUnbound;
     }
 
     public boolean allowRemoteCommands() {
