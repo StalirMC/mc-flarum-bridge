@@ -1,4 +1,5 @@
 import app from 'flarum/forum/app';
+import extractText from 'flarum/common/utils/extractText';
 import Alert from 'flarum/common/components/Alert';
 import Button from 'flarum/common/components/Button';
 import Component from 'flarum/common/Component';
@@ -204,7 +205,7 @@ export default class McBridgeSection extends Component {
             type: 'text',
             value: this.code,
             maxlength: 8,
-            placeholder: this.t('code_placeholder'),
+            placeholder: extractText(this.t('code_placeholder')),
             oninput: (event) => {
               this.code = event.target.value;
             },
@@ -226,7 +227,7 @@ export default class McBridgeSection extends Component {
       FieldSet,
       {
         className: 'Settings-mcBridge FieldSet--min',
-        label: this.t('title'),
+        label: extractText(this.t('title')),
         description: this.description(),
       },
       this.loading ? m(LoadingIndicator) : this.controls()

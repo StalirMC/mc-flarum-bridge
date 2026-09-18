@@ -1,4 +1,5 @@
 import app from 'flarum/admin/app';
+import extractText from 'flarum/common/utils/extractText';
 
 const EXTENSION_ID = 'stalirmc-mc-bridge';
 
@@ -22,19 +23,19 @@ app.initializers.add(EXTENSION_ID, () => {
         'zh-Hans': app.translator.trans(`${EXTENSION_ID}.admin.settings.locale_zh`),
         en: app.translator.trans(`${EXTENSION_ID}.admin.settings.locale_en`),
       },
-      label: app.translator.trans(`${EXTENSION_ID}.admin.settings.locale_label`),
+      label: extractText(app.translator.trans(`${EXTENSION_ID}.admin.settings.locale_label`)),
       help: app.translator.trans(`${EXTENSION_ID}.admin.settings.locale_help`),
     })
     .registerSetting({
       setting: 'mc-bridge.announcement_tag_ids',
       type: 'text',
-      label: app.translator.trans(`${EXTENSION_ID}.admin.settings.tags_label`),
+      label: extractText(app.translator.trans(`${EXTENSION_ID}.admin.settings.tags_label`)),
       help: app.translator.trans(`${EXTENSION_ID}.admin.settings.tags_help`),
     })
     .registerSetting({
       setting: 'mc-bridge.sync_replies',
       type: 'checkbox',
-      label: app.translator.trans(`${EXTENSION_ID}.admin.settings.sync_replies_label`),
+      label: extractText(app.translator.trans(`${EXTENSION_ID}.admin.settings.sync_replies_label`)),
       help: app.translator.trans(`${EXTENSION_ID}.admin.settings.sync_replies_help`),
     });
 });

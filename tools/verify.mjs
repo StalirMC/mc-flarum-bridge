@@ -1655,6 +1655,37 @@ section('16. Flarum frontend bundle');
       }
     }
 
+    // A translation can only be used as an attribute value through extractText().
+    // trans() hands back a vnode (or an array of parts), and String() on that
+    // joins the parts with commas, so a two-part message such as
+    // "Minecraft account: {name}" reached the DOM as "Minecraft account: ,name" -
+    // which is what the badge tooltip displayed. extractText() joins with ''.
+    let unwrappedAttributes = 0;
+
+    for (const file of frontendSources) {
+      const source = stripJsComments(read(file));
+
+      for (const match of source.matchAll(/(?:'aria-label'|title|placeholder|label|alt)\s*:\s*([^\n]*)/g)) {
+        const value = match[1].trim();
+
+        // Check the start of the value rather than a lookahead: an anchored
+        // lookahead can be satisfied at the whitespace before extractText().
+        if (value.startsWith('extractText')) continue;
+        if (!/(?:translator\.trans|this\.t)\(/.test(value)) continue;
+
+        fail(
+          rel(file),
+          `a translation is passed straight into an attribute (${match[0].split(':')[0].trim()}); ` +
+            "wrap it in extractText(), otherwise multi-part messages reach the DOM with commas"
+        );
+        unwrappedAttributes++;
+      }
+    }
+
+    if (unwrappedAttributes === 0) {
+      pass('every translation used as an attribute value goes through extractText()');
+    }
+
     const calls = new Set();
 
     for (const file of frontendSources) {

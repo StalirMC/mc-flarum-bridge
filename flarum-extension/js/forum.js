@@ -1,5 +1,6 @@
 import app from 'flarum/forum/app';
 import { extend } from 'flarum/common/extend';
+import extractText from 'flarum/common/utils/extractText';
 import McBridgeSection from './src/forum/components/McBridgeSection';
 import grassBlock from './src/forum/grassBlock';
 
@@ -93,8 +94,8 @@ app.initializers.add(EXTENSION_ID, () => {
       m(
         'span.Badge.McBridge-badge',
         {
-          'aria-label': app.translator.trans('stalirmc-mc-bridge.forum.badge.label', { name: playerName }),
-          title: app.translator.trans('stalirmc-mc-bridge.forum.badge.title', { name: playerName }),
+          'aria-label': extractText(app.translator.trans('stalirmc-mc-bridge.forum.badge.label', { name: playerName })),
+          title: extractText(app.translator.trans('stalirmc-mc-bridge.forum.badge.title', { name: playerName })),
         },
         grassBlock(14)
       ),
