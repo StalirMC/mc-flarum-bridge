@@ -71,9 +71,15 @@ dependencies {
 // ---------------------------------------------------------------------------
 // Compilation
 //
-// The toolchain is JDK 21 but the bytecode targets Java 17 on purpose: Paper and
-// Folia 1.21 need Java 21 to run and execute Java 17 bytecode fine, while
-// Velocity 3.x still supports Java 17. Targeting 21 would lock proxy owners out.
+// The toolchain is JDK 21 and the bytecode target differs per module:
+//
+//   main / velocity / test   Java 17
+//   paper                    Java 21
+//
+// Staying on 17 wherever possible means a Velocity proxy still running Java 17
+// can load the shared core and the proxy module instead of locking those owners
+// out. One jar may mix class file versions: each class declares its own, and the
+// JVM loads whatever version it supports.
 // ---------------------------------------------------------------------------
 
 java {
@@ -86,6 +92,14 @@ tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
     options.release = 17
     options.compilerArgs << '-Xlint:deprecation' << '-Xlint:unchecked'
+}
+
+// paper-api 1.21.1 is itself compiled for Java 21, and Gradle refuses to resolve
+// it for a Java 17 target. Paper and Folia 1.21 require Java 21 at runtime
+// anyway, so only this module is raised; the shared core, the proxy module and
+// the self test stay on 17 and keep working on a Velocity running Java 17.
+tasks.named('compilePaperJava') {
+    options.release = 21
 }
 
 // config.yml and lang/*.yml are copied verbatim: they contain {placeholders},

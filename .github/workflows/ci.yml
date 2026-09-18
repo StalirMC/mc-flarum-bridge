@@ -127,18 +127,39 @@ jobs:
         with:
           gradle-version: '8.10'
 
+      # A failed Gradle build is otherwise only readable from the raw job log,
+      # which needs an authenticated API call. Publishing the compiler errors as
+      # the check-run summary keeps them visible to anyone (and to tooling).
       - name: Build
         working-directory: mc-plugin
         run: |
           set -euo pipefail
-          if command -v gradle >/dev/null 2>&1; then
-            gradle build --no-daemon --stacktrace
-          else
-            echo "::warning::gradle is not on PATH; bootstrapping the distribution manually"
-            curl -sSL -o /tmp/gradle.zip https://services.gradle.org/distributions/gradle-8.10-bin.zip
-            unzip -q /tmp/gradle.zip -d /tmp
-            /tmp/gradle-8.10/bin/gradle build --no-daemon --stacktrace
+
+          build() {
+            if command -v gradle >/dev/null 2>&1; then
+              gradle build --no-daemon --stacktrace
+            else
+              echo "::warning::gradle is not on PATH; bootstrapping the distribution manually"
+              curl -sSL -o /tmp/gradle.zip https://services.gradle.org/distributions/gradle-8.10-bin.zip
+              unzip -q /tmp/gradle.zip -d /tmp
+              /tmp/gradle-8.10/bin/gradle build --no-daemon --stacktrace
+            fi
+          }
+
+          if build 2>&1 | tee build.log; then
+            exit 0
           fi
+
+          {
+            echo '## Gradle build failed'
+            echo
+            echo '```'
+            grep -nE 'error:|\.java:[0-9]+:|FAILURE:|What went wrong|Execution failed|Could not (resolve|find)|> Task .* FAILED' build.log | tail -n 150 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "::error::the Gradle build failed; the compiler errors are in the job summary"
+          exit 1
 
       - name: Confirm the plugin jar was produced
         run: |

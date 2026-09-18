@@ -1706,7 +1706,11 @@ section('17. Universal jar (Paper + Folia + Velocity)');
     ['the jar merges the paper output', /from sourceSets\.paper\.output/],
     ['the jar merges the velocity output', /from sourceSets\.velocity\.output/],
     ['the jar contents are asserted before release', /tasks\.register\('verifyJar'\)/],
-    ['the bytecode targets Java 17 so Velocity on Java 17 still loads it', /options\.release\s*=\s*17/],
+    ['the bytecode targets Java 17 so Velocity on Java 17 still loads the core', /options\.release\s*=\s*17/],
+    [
+      'the paper module is raised to Java 21, because paper-api 1.21.1 itself requires it',
+      /tasks\.named\('compilePaperJava'\)\s*\{[^}]*options\.release\s*=\s*21/,
+    ],
     ['plugin.yml is filtered with the project version', /filesMatching\('plugin\.yml'\)/],
   ];
 
@@ -1830,8 +1834,10 @@ section('17. Universal jar (Paper + Folia + Velocity)');
   }
 
   // --- Java 17 compatibility ----------------------------------------------
-  // The toolchain is JDK 21 with `options.release = 17`, so Java 21-only APIs
-  // would compile locally and then fail on a proxy still running Java 17.
+  // The toolchain is JDK 21 with `options.release = 17` for the shared core and
+  // the proxy module, so a Java 21-only API there would compile and then fail on
+  // a proxy still running Java 17. The paper module targets 21 on purpose
+  // (paper-api 1.21.1 requires it) and is therefore exempt.
   const JAVA_21_ONLY = [
     [/\.getFirst\(\)/, 'List#getFirst (Java 21)'],
     [/\.getLast\(\)/, 'List#getLast (Java 21)'],
@@ -1843,21 +1849,22 @@ section('17. Universal jar (Paper + Folia + Velocity)');
     [/ScopedValue|StructuredTaskScope/, 'ScopedValue / StructuredTaskScope (Java 21 preview)'],
   ];
 
+  const java17Files = javaFiles.filter((file) => javaModuleOf.get(file) !== 'paper');
   let java21Usage = 0;
 
-  for (const file of javaFiles) {
+  for (const file of java17Files) {
     const source = read(file).replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*\/\/[^\n]*$/gm, ' ');
 
     for (const [pattern, label] of JAVA_21_ONLY) {
       if (pattern.test(source)) {
-        fail(rel(file), `uses ${label}, which does not exist on Java 17; the jar targets Java 17`);
+        fail(rel(file), `uses ${label}, which does not exist on Java 17; this module targets Java 17`);
         java21Usage++;
       }
     }
   }
 
   if (java21Usage === 0) {
-    pass('no Java 21-only API is used, so the Java 17 target holds');
+    pass(`no Java 21-only API in the ${java17Files.length} Java 17 sources (the paper module may use them)`);
   }
 
   // --- release automation --------------------------------------------------
