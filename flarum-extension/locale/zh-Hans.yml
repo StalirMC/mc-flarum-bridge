@@ -142,7 +142,7 @@ stalirmc-mc-bridge:
       server: "来自服务器 {key}"
       not_bound: "尚未绑定 Minecraft 账号"
     badge:
-      label: "MC：{name}"
+      label: "{name}"
       title: "Minecraft 账号：{name}"
   admin:
     settings:

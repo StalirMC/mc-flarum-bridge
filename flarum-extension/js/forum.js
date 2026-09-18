@@ -80,10 +80,17 @@ app.initializers.add(EXTENSION_ID, () => {
       m(
         'span.Badge.McBridge-badge',
         {
+          // The tooltip and the accessible label spell the account out; the badge
+          // itself shows the grass block followed by the player name, without an
+          // "MC:" prefix.
           title: app.translator.trans('stalirmc-mc-bridge.forum.badge.title', { name: playerName }),
-          'aria-label': app.translator.trans('stalirmc-mc-bridge.forum.badge.label', { name: playerName }),
+          'aria-label': app.translator.trans('stalirmc-mc-bridge.forum.badge.title', { name: playerName }),
         },
-        grassBlock(14)
+        [
+          grassBlock(14),
+          ' ',
+          app.translator.trans('stalirmc-mc-bridge.forum.badge.label', { name: playerName }),
+        ]
       ),
       -5
     );

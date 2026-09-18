@@ -143,7 +143,7 @@ stalirmc-mc-bridge:
       server: "from server {key}"
       not_bound: "No Minecraft account linked"
     badge:
-      label: "MC: {name}"
+      label: "{name}"
       title: "Minecraft account: {name}"
   admin:
     settings:
