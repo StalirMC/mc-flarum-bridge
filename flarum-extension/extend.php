@@ -70,6 +70,11 @@ return [
     // ---------------------------------------------------------------------
     (new Extend\Routes('api'))
         ->get('/mc-bridge/status', 'mc-bridge.status', StatusController::class)
+        // GET is what the forum's settings section reads to show whether the
+        // account is already linked. Without it the frontend asked for a route
+        // that did not exist, received a 404, and rendered "not linked" even
+        // after a successful binding.
+        ->get('/mc-bridge/link', 'mc-bridge.linkStatus', LinkStatusController::class)
         ->post('/mc-bridge/link', 'mc-bridge.link', LinkController::class)
         ->delete('/mc-bridge/link', 'mc-bridge.unlink', LinkController::class),
 

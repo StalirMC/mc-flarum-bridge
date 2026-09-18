@@ -212,7 +212,7 @@ gradle wrapper --gradle-version 8.10   # 可选：生成 gradlew / gradlew.bat
 
 需要 **JDK 21**（编译目标字节码为 Java 17，因此 Java 17 的 Velocity 也能加载）。
 首次构建会从 PaperMC 仓库拉取 `velocity-api`，需要网络。
-产物：`build/libs/McBridge-0.0.1.jar`
+产物：`build/libs/McBridge-0.0.2.jar`
 
 如果服务器不是 1.21.1，可覆盖 Paper API 版本：
 
@@ -229,10 +229,10 @@ gradle wrapper --gradle-version 8.10   # 可选：生成 gradlew / gradlew.bat
 
 ```bash
 # Paper / Folia
-cp build/libs/McBridge-0.0.1.jar <server>/plugins/
+cp build/libs/McBridge-0.0.2.jar <server>/plugins/
 
 # Velocity（同一个文件）
-cp build/libs/McBridge-0.0.1.jar <proxy>/plugins/
+cp build/libs/McBridge-0.0.2.jar <proxy>/plugins/
 ```
 
 Folia 无需额外步骤：`plugin.yml` 已声明 `folia-supported: true`，插件会自动检测

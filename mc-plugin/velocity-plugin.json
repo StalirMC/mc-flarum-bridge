@@ -1,0 +1,1 @@
+{"id":"mc-bridge","name":"McBridge","version":"0.0.2","description":"Reports proxy status to Flarum and relays forum announcements into the game.","url":"https://forum.kxkl2024.cn","authors":["Stalir"],"dependencies":[],"main":"cn.stalir.mcbridge.velocity.McBridgeVelocityPlugin"}

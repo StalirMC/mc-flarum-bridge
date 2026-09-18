@@ -11,21 +11,25 @@
 > **可用性尚未验证，请勿直接用于生产环境。** 接口、配置项与数据表结构都可能随时变动。
 >
 > **已经确认的部分**
-> - CI 全绿：`gradle build` 真机编译通过、`php -l` 全部通过、静态一致性检查 + 33 项协议一致性测试通过
+> - CI 全绿：`gradle build` 真机编译通过、`php -l` 全部通过、303 项静态一致性检查 + 33 项协议一致性测试通过
 > - **本地真实构建也通过**（JDK 21 + Gradle 8.10）：三个模块编译成功、`verifyJar` 内容断言通过、
 >   **共享核心的 51 项运行时自测在真实 JVM 上全通过**（YAML 解析 / 语言回退 / 配置校验 / 正则白名单）
+> - **插件已在真实 Paper 服务端成功启用**：数据目录 `plugins\McBridge\`、`config.yml` 与
+>   `lang/*.yml` 的解压路径都由服务端日志证实
 > - 在真实论坛（Flarum 2.0.0-rc.8）上完成过：安装、`migrate`、启用扩展、自检命令运行
 > - 三平台合一 jar 的**构建产物与内容断言**已实测：`plugin.yml` + `velocity-plugin.json`
 >   两个描述符、Paper/Folia 与 Velocity 两个入口类、共享层零平台引用、jar 内无第三方代码
 > - 已逐项打通并修复：CSRF 豁免（`Extend\Csrf`）、HMAC 签名链路、请求体读取、批量赋值、
 >   论坛端启动崩溃（设置页属于懒加载 chunk，必须按模块路径 `extend`）、
->   后台端启动崩溃（2.x 用 `app.registry` 取代了 `app.extensionData`）——
->   详见 [VERIFICATION.md](docs/VERIFICATION.md) 2.5 / 2.6 / 2.8
+>   后台端启动崩溃（2.x 用 `app.registry` 取代了 `app.extensionData`）、
+>   每次启动的无意义警告、**绑定后论坛仍显示「未绑定」（GET 路由漏注册）、
+>   版本号提升后打进 jar 的仍是旧版本**（`expand` 未声明为 task input）——
+>   详见 [VERIFICATION.md](docs/VERIFICATION.md) 2.5 / 2.6 / 2.8 / 2.9
 >
 > **尚未验证的部分**
-> - **游戏侧插件从未在真实服务器上运行过**（Paper / Folia / Velocity 都只到「编译 + 静态断言 +
->   共享核心自测」为止，**从未真正加载过一次**）
-> - 公告推送、广播、`/bind` 账号绑定的**端到端效果未验证**
+> - **只有 Paper 被真实加载过**：Folia 与 Velocity 仍只到「编译 + 静态断言」为止，从未实机启动
+> - **心跳、事件上报、公告推送、广播的端到端效果未验证**（插件能启用，但没有观察到数据真正
+>   出现在论坛上）；账号绑定此前因缺陷 2 不可见，0.0.2 修复后需重新实测
 > - 前端设置页区块（`js/dist`）**尚未在浏览器里确认可用**：导致启动崩溃的根因已定位并修复，
 >   但仍需刷新论坛页面实测绑定码输入框是否正常显示
 > - 长期稳定性、并发与多服务器场景均未验证
@@ -85,7 +89,7 @@ php flarum mc-bridge:selftest --url=https://forum.kxkl2024.cn   # 论坛侧全�
 # 2) 游戏侧（同一个 jar 适用于 Paper / Folia / Velocity）
 cd mc-plugin && gradle wrapper --gradle-version 8.10   # 首次需生成 wrapper
 ./gradlew build
-#    Paper/Folia：复制 build/libs/McBridge-0.0.1.jar 到 server/plugins/
+#    Paper/Folia：复制 build/libs/McBridge-0.0.2.jar 到 server/plugins/
 #    Velocity   ：复制同一个 jar 到 proxy/plugins/
 #    编辑 plugins/McBridge/config.yml（Velocity 为 plugins/mc-bridge/config.yml）
 #    填入论坛地址与密钥，然后 /mcbridge reload（Velocity 端为 /mcbridge reload）
@@ -98,7 +102,7 @@ cd mc-plugin && gradle wrapper --gradle-version 8.10   # 首次需生成 wrapper
 `mc-plugin` 由三个 source set 编成**一个 jar**，jar 根同时放两份平台描述符：
 
 ```
-McBridge-0.0.1.jar
+McBridge-0.0.2.jar
 ├── plugin.yml                 ← Paper / Folia 读它，folia-supported: true
 ├── velocity-plugin.json       ← Velocity 读它（由 @Plugin 注解的处理器生成）
 ├── config.yml, lang/*.yml

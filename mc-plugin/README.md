@@ -61,7 +61,7 @@ gradle build
 需要 **JDK 21**（`java.toolchain` 会自动寻找；找不到时请设置 `JAVA_HOME`）。
 首次构建会从 PaperMC 仓库拉取 `velocity-api`，需要网络。
 
-产物：`build/libs/McBridge-0.0.1.jar`（`build` 依赖 `verifyJar`，内容不达标会直接失败）
+产物：`build/libs/McBridge-0.0.2.jar`（`build` 依赖 `verifyJar`，内容不达标会直接失败）
 
 ## 安装
 

@@ -9,6 +9,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitTask;
 
+import java.io.File;
 import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -86,10 +87,18 @@ public final class PaperPlatform implements Platform {
 
     @Override
     public void saveResource(String resourcePath) {
+        // JavaPlugin#saveResource(path, false) logs its own warning ("Could not
+        // save config.yml to ... because config.yml already exists") whenever the
+        // target exists, so the call is skipped entirely in that case: an
+        // existing file is the normal state after the first start, not something
+        // worth warning about on every boot.
+        if (new File(plugin.getDataFolder(), resourcePath).exists()) {
+            return;
+        }
+
         try {
-            // Existing (possibly edited) files are never overwritten. A build
-            // that does not bundle the resource must not abort startup, hence
-            // the IllegalArgumentException catch.
+            // A build that does not bundle this resource must not abort startup,
+            // hence the IllegalArgumentException catch.
             plugin.saveResource(resourcePath, false);
         } catch (IllegalArgumentException ignored) {
             // The embedded resource is not part of this jar.

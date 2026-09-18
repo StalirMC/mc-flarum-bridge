@@ -45,11 +45,28 @@ export default class McBridgeSection extends Component {
     return fetch(`${this.apiUrl()}/mc-bridge/link`, {
       headers: { Accept: 'application/json' },
     })
-      .then((response) => response.json())
-      .then((body) => {
+      .then((response) =>
+        response
+          .json()
+          .catch(() => ({}))
+          .then((body) => ({ ok: response.ok, body }))
+      )
+      .then(({ ok, body }) => {
         this.loading = false;
-        this.bound = body.bound === true;
-        this.binding = body.binding || null;
+
+        // Anything the bridge did not produce (a route that is not registered, a
+        // Flarum error document, a 500) has to be reported. Reading the body and
+        // treating a missing "bound" as false would render the not-linked state
+        // instead, which is exactly how an unregistered GET route stayed
+        // invisible while the account really was linked.
+        if (!ok || body.ok !== true) {
+          this.error = body.error || this.t('load_error');
+        } else {
+          this.error = null;
+          this.bound = body.bound === true;
+          this.binding = body.binding || null;
+        }
+
         m.redraw();
       })
       .catch(() => {

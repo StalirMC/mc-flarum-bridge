@@ -1635,6 +1635,57 @@ section('16. Flarum frontend bundle');
     pass('no FieldSet legend children (Flarum 2.x expects the label attribute)');
   }
 
+  // Every endpoint the frontend calls must be registered for the matching HTTP
+  // method. A GET that nobody registered returns Flarum's 404 error document,
+  // and a frontend that reads a missing field from it renders the "not linked"
+  // state instead of failing loudly - which is exactly how a real binding stayed
+  // invisible in the settings section.
+  {
+    const extendSource = read(join(EXT, 'extend.php'));
+    const apiRoutes = new Set();
+
+    for (const part of extendSource.split('(new Extend').slice(1)) {
+      if (!part.startsWith("\\Routes('api')")) continue;
+
+      const end = part.indexOf('(new Extend');
+      const body = end === -1 ? part : part.slice(0, end);
+
+      for (const match of body.matchAll(/->(get|post|delete|patch|put)\(\s*'([^']+)'/g)) {
+        apiRoutes.add(`${match[1].toUpperCase()} ${match[2]}`);
+      }
+    }
+
+    const calls = new Set();
+
+    for (const file of frontendSources) {
+      const source = stripJsComments(read(file));
+
+      // fetch(`${...}/mc-bridge/x`) is a GET unless the init overrides it;
+      // this.request('METHOD', '/mc-bridge/x') states the method.
+      for (const match of source.matchAll(/fetch\(\s*`[^`]*?(\/mc-bridge\/[a-z/]+)`/g)) {
+        calls.add(`GET ${match[1]}`);
+      }
+
+      for (const match of source.matchAll(/request\(\s*'([A-Z]+)'\s*,\s*'(\/mc-bridge\/[a-z/]+)'/g)) {
+        calls.add(`${match[1]} ${match[2]}`);
+      }
+    }
+
+    if (calls.size === 0) {
+      fail('frontend endpoints', 'no /mc-bridge/* call could be detected in the frontend sources');
+    } else {
+      const unregistered = [...calls].filter((call) => !apiRoutes.has(call));
+
+      if (unregistered.length > 0) {
+        for (const call of unregistered) {
+          fail('frontend endpoints', `the frontend calls ${call} but extend.php registers no such API route`);
+        }
+      } else {
+        pass(`all ${calls.size} frontend endpoints are registered as API routes`);
+      }
+    }
+  }
+
   // Every key the section asks the translator for must exist in every locale.
   const sectionSource = join(JS_DIR, 'src/forum/components/McBridgeSection.js');
   const usedKeys = new Set();
@@ -1712,6 +1763,10 @@ section('17. Universal jar (Paper + Folia + Velocity)');
       /tasks\.named\('compilePaperJava'\)\s*\{[^}]*options\.release\s*=\s*21/,
     ],
     ['plugin.yml is filtered with the project version', /filesMatching\('plugin\.yml'\)/],
+    [
+      'the plugin.yml expansion is a declared input, so a version bump rebuilds it',
+      /inputs\.property\('version'/,
+    ],
   ];
 
   for (const [label, pattern] of wiring) {

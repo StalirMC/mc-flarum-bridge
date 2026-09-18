@@ -112,6 +112,14 @@ processResources {
 // version and the result has to sit at the jar root.
 processPaperResources {
     filteringCharset = 'UTF-8'
+
+    // expand() runs as a task action, so Gradle does not treat the expansion
+    // value as an input by itself. Without this line a version bump leaves the
+    // previously expanded plugin.yml in build/resources/paper, the task stays
+    // UP-TO-DATE and the jar ships the old version - which verifyJar then
+    // rejects, but only after a confusing failure.
+    inputs.property('version', project.version)
+
     filesMatching('plugin.yml') {
         expand(version: project.version)
     }

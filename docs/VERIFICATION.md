@@ -359,6 +359,82 @@ JVM 只加载它支持的那些。
 **仍然未经实机验证**：jar 依旧**没有在真实的 Paper / Folia / Velocity 上加载过**。
 以上全部结论都停留在「编译、静态断言、在真实 JVM 上执行共享核心」这一层，不能替代上机。
 
+### 2.9 首次实机启动，以及它暴露的三个缺陷（0.0.2 修复）
+
+用户把 0.0.1 装进了真实的 Paper 服务端，首次启动的日志是这套代码第一次真正跑在服务端上：
+
+```
+[17:13:49 WARN]: [McBridge] Could not save config.yml to plugins\McBridge\config.yml because config.yml already exists.
+[17:13:49 WARN]: [McBridge] Could not save zh_CN.yml to plugins\McBridge\lang\zh_CN.yml because zh_CN.yml already exists.
+[17:13:49 WARN]: [McBridge] Could not save en.yml to plugins\McBridge\lang\en.yml because en.yml already exists.
+```
+
+**这条日志同时是证据和缺陷报告**：
+
+- 它是证据：`[McBridge]` 前缀、`plugins\McBridge\` 数据目录、`lang/` 子目录全部出现，
+  说明**插件在真实 Paper 上成功启用**，`onEnable → BridgeCore.start() → Messages.load()`
+  这条链路真的执行了，没有 `NoClassDefFoundError`、没有崩溃。2.8 节里「从未在真实服务端加载过」
+  这句话到此作废。
+- 它是缺陷：这三行警告来自 **Bukkit 自己**——`JavaPlugin#saveResource(path, false)` 在目标文件
+  已存在时会主动打这条 WARN。也就是说文件「已存在」是**每次启动的正常状态**，却被报成了警告。
+
+#### 缺陷 1：每次启动都刷三条无意义警告
+
+| | |
+|---|---|
+| 根因 | `PaperPlatform.saveResource()` 无条件调用 `plugin.saveResource(path, false)`；Bukkit 在该文件已存在且 `replace=false` 时自己打 WARN |
+| 修复 | 先判断目标文件是否存在，存在就直接返回，根本不去调 Bukkit 那个方法（`PaperPlatform.java`） |
+| 为什么值得修 | 这三行会永久污染控制台日志，把真正的告警淹掉；而「不覆盖用户改过的文件」这个意图本来就已经由 `replace=false` 保证了，不需要靠一条警告来表达 |
+
+#### 缺陷 2：绑定了账号，论坛却一直显示「未绑定」（用户实际反馈）
+
+这是本轮真正影响功能的问题，根因是一条**没接上的路由**：
+
+| 步骤 | 实际发生的事 |
+|------|--------------|
+| 游戏内 `/bind` 拿码 → 论坛输入 | ✅ 正常 |
+| `POST /api/mc-bridge/link` 落库 | ✅ 正常（`mc_bindings` 里确实有记录） |
+| 论坛前端读状态 `GET /api/mc-bridge/link` | ❌ **该路由从未注册**：`LinkStatusController` 写好了、也 `use` 进来了，却漏了 `->get(...)` 那一行 |
+| 前端拿到 Flarum 的 404 错误文档 | ❌ 代码读 `body.bound` → `undefined` → **当成「未绑定」渲染** |
+
+前端「读不到就把 falsy 当 false」的写法，让一个 404 变成了一个看起来正常的「未绑定」界面——
+错误被吞掉了，所以表现成「绑定成功但论坛不显示」。
+
+修复三处：
+
+1. `extend.php` 补上 `->get('/mc-bridge/link', 'mc-bridge.linkStatus', LinkStatusController::class)`
+2. 前端 `refresh()` 改为先看 HTTP 状态与 `body.ok === true`，**任何不是本扩展产生的响应都报错**
+   （显示论坛返回的 `error`，否则显示本地化的 `load_error`），不再静默降级
+3. 新增 `tools/verify.mjs` 检查：**前端调用的每个 `/mc-bridge/*` 都必须有匹配 HTTP 方法的路由注册**
+   （从 `extend.php` 的 `Extend\Routes('api')` 块里解析方法+路径，与 JS 里的 `fetch`/`request` 调用比对）
+
+第 3 条做过**反向验证**，确认它真的能抓到这类 bug，而不是一条永远绿的装饰：
+
+```
+（临时删掉 GET 路由）
+FAIL frontend endpoints
+     the frontend calls GET /mc-bridge/link but extend.php registers no such API route
+errors: 1
+（恢复后）errors: 0，ALL CHECKS PASSED
+```
+
+#### 缺陷 3：版本号升了，打进 jar 的却还是旧版本
+
+把版本从 0.0.1 提到 0.0.2 后重新构建，`verifyJar` 直接失败，中间产物
+`build/resources/paper/plugin.yml` 还停在上一轮的时间戳与 `0.0.1`。
+
+| | |
+|---|---|
+| 根因 | `expand(version: project.version)` 是**任务动作**，不是任务输入；Gradle 判定 `processPaperResources` UP-TO-DATE，不重新展开，于是 jar 里仍是旧版本号。CI 因为每次都是干净构建所以不会暴露，本地反复构建才会 |
+| 修复 | 在 `processPaperResources` 上声明 `inputs.property('version', project.version)` |
+| 防护 | `verifyJar` 本来就断言「两份描述符都带上项目版本」，所以它抓到了这次错误——这条断言值得保留；`verify.mjs` 另加一条检查确认 `inputs.property('version'` 存在 |
+
+#### 本轮结论
+
+`tools/verify.mjs` 303 项、协议 33 项、本地 `gradle build`（含 51 项共享核心自测）
+与 `verifyJar` 全部通过，版本 0.0.2 已发版。**但请注意**：缺陷 2 是由用户在真实环境里用出来的，
+不是我们的检查发现的——这正是 2.8 节那句「不能替代上机」的含义。
+
 ## 3. 无法在本机验证的内容（现由 CI 覆盖）
 
 > 本机没有 PHP / JDK，这些检查**已全部由 CI 在带 PHP 8.3 / JDK 21 的真实环境中
