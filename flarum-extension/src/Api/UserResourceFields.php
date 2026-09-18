@@ -27,7 +27,18 @@ class UserResourceFields
 {
     public function __invoke(): array
     {
-        $visibleToMembers = fn (User $user, Context $context) => $context->getActor()->isRegistered();
+        // Only signed-in members may see the binding, and the test has to work for
+        // both actor classes Flarum passes in.
+        //
+        // Two traps, both learned the hard way on 2.0.0-rc.8: Flarum's Guest
+        // *extends* User, so an instanceof test would let guests through; and the
+        // isRegistered() helper does not exist there at all (it is a later 2.x
+        // addition), where calling it threw BadMethodCallException for guests and
+        // members alike and took the entire forum down with a 500.
+        //
+        // A guest carries id 0 (see Flarum\User\Guest) while a real account has a
+        // positive id, and that holds on every version.
+        $visibleToMembers = fn (User $user, Context $context): bool => (int) ($context->getActor()?->id ?? 0) > 0;
 
         return [
             Schema\Str::make('mcBridgePlayerName')

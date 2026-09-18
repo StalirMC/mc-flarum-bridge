@@ -219,7 +219,9 @@ HTML;
             return $e($t('never'));
         }
 
-        $seconds = max(0, $moment->diffInSeconds(Carbon::now()));
+        // Carbon 3 returns a float from diffInSeconds and intdiv() takes ints, so
+        // the value is cast once here rather than at three call sites.
+        $seconds = (int) max(0, $moment->diffInSeconds(Carbon::now()));
 
         if ($seconds < 60) {
             return $e(sprintf($t('seconds_ago'), $seconds));

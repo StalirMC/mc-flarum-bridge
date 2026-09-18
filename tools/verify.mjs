@@ -2041,6 +2041,59 @@ section('18. Forum frontend <-> PHP contracts');
 }
 
 // ---------------------------------------------------------------------------
+// 19. Flarum API surface actually available on the audited release
+// ---------------------------------------------------------------------------
+
+section('19. Flarum API surface of the audited release');
+
+{
+  // The extension targets 2.0.0-rc.8, which is what the deployment runs. A local
+  // framework checkout can be *newer* than that release, and APIs added after it
+  // compile nowhere and fail only at runtime - which is how
+  // $actor->isRegistered() took the whole forum down:
+  //
+  //   BadMethodCallException: Call to undefined method Flarum\User\Guest::isRegistered()
+  //
+  // Two things make that specific call a trap: the helper does not exist in
+  // rc.8 at all, and Flarum's Guest *extends* User, so an instanceof check is not
+  // a substitute either. The portable test is the actor id, since a guest
+  // carries 0 (Flarum\User\Guest) and a real account a positive one.
+  const phpFiles = walk(EXT, (file) => file.endsWith('.php'));
+  let rc8Incompatible = 0;
+
+  for (const file of phpFiles) {
+    const source = read(file);
+
+    if (/->isRegistered\s*\(/.test(source)) {
+      fail(
+        rel(file),
+        'isRegistered() does not exist on Flarum 2.0.0-rc.8 (and Guest does not define it either); ' +
+          'test the actor id instead - guests carry 0'
+      );
+      rc8Incompatible++;
+    }
+  }
+
+  if (rc8Incompatible === 0) {
+    pass(`no call to an API that the audited release does not provide, across ${phpFiles.length} PHP files`);
+  }
+
+  // The audited release has to stay inside what composer.json allows, otherwise
+  // the checks above describe a version the deployment cannot install.
+  const manifest = JSON.parse(read(join(EXT, 'composer.json')));
+  const constraint = manifest.require?.['flarum/core'] ?? '';
+  const audited = '2.0.0-rc.8';
+
+  if (constraint === '') {
+    fail('composer.json', 'require.flarum/core is missing');
+  } else if (!/^\^?2\./.test(constraint)) {
+    fail('composer.json', `flarum/core is constrained to "${constraint}", which does not cover the audited ${audited}`);
+  } else {
+    pass(`flarum/core ${constraint} covers the audited release ${audited}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Summary
 // ---------------------------------------------------------------------------
 
