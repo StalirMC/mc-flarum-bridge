@@ -547,6 +547,30 @@ API。更糟的是它写在 `visible` 回调里，**每个会序列化用户的�
 **仍未验证**：0.0.5 的前端改动没有在浏览器里看过（需要先 `assets:publish`），
 草方块的实际观感与挂件在侧边栏的位置都需要用户确认。
 
+### 2.13 上架 Packagist（0.0.6 之后）
+
+用户把包提交到了 <https://packagist.org/packages/stalirmc/mc-flarum-bridge>。抓取
+Packagist API 核对到的实际情况：
+
+| 核对项 | 结果 |
+|--------|------|
+| 收录的版本 | `v0.0.1` … `v0.0.6` 全部在列，`dev-main` 指向 `b94dfbe`（改名那次提交） |
+| 默认分支 / 类型 | `main` / `library`，`extra.flarum-subextensions: ["flarum-extension"]` 正确 |
+| **最高稳定版** | **`v0.0.6`** ← 因此 `composer require stalirmc/mc-flarum-bridge` 会装到当前版本 |
+
+最后一行本来有风险：仓库里存在一个**临时留下的 `v1.0.0` tag**（指向很早的提交），一旦推到远端，
+Packagist 会认为最高版本是 1.0.0，于是不带约束的 `composer require` 会装回**几个月前的代码**。
+核对 `git ls-remote --tags origin` 确认它**从未推送到远端**（Packagist 只读远端 tag），
+随后把本地那个 tag 也删掉了，避免以后误推。
+
+文档相应改成 Packagist 直装：不再需要 `composer config repositories... vcs`，
+后台安装也只要在「安装一个新的扩展程序」里填 `stalirmc/mc-flarum-bridge`；
+`vcs` 方式保留为「装尚未发布版本」时的退路。同时修掉文档里一处改名之前就存在的笔误——
+`php flarum extension:enable` 后面要填**扩展 ID**（`stalirmc-mc-bridge`），不是包名。
+
+**注意**：Packagist 的自动同步依赖 GitHub webhook；无法从公开 API 确认是否已配置，
+因此文档里写了「更新不到就去点一次 Update」的兜底办法。
+
 ## 3. 无法在本机验证的内容（现由 CI 覆盖）
 
 > 本机没有 PHP / JDK，这些检查**已全部由 CI 在带 PHP 8.3 / JDK 21 的真实环境中

@@ -58,22 +58,20 @@ if (Arr::get($package, 'type') === 'flarum-extension' && str_contains($name, '/'
 
 ### 方式 A：后台安装（推荐，不需要 SSH）
 
-前提：仓库已推送到 GitHub（公开可读，Composer 读取无需凭据）。
+该扩展**已上架 Packagist**：<https://packagist.org/packages/stalirmc/mc-flarum-bridge>
 
-1. 管理后台 → **Extension Manager** → 拉到 **仓库** 区域 → **添加仓库**
-   - 类型：`vcs`
-   - URL：`https://github.com/StalirMC/mc-flarum-bridge`
-   - 保存
-2. 同页 → **安装一个新的扩展程序** → 填：
+1. 管理后台 → **Extension Manager** → **安装一个新的扩展程序** → 填：
    ```
-   stalirmc/mc-flarum-bridge:dev-main
+   stalirmc/mc-flarum-bridge
    ```
-   （仓库打过 `v1.0.0` 之类的标签后，直接填 `stalirmc/mc-flarum-bridge` 即可）
-3. 装好后到扩展列表**启用**「MC Bridge」
-4. 生成共享密钥（见 1.3）；如果后台没有终端，用方式 B/C 或在服务器上执行
+   Packagist 是 Composer 的默认源，所以**不需要**再手动添加 `vcs` 仓库。
+2. 装好后到扩展列表**启用**「MC Bridge」
+3. 生成共享密钥（见 1.3）；如果后台没有终端，用方式 B 或在服务器上执行
 
-> Extension Manager 的仓库类型只接受 `composer`、`vcs`、`path` 三种
-> （`ConfigureComposerValidator` 中的校验规则），`vcs` 正是上面用的。
+想跟最新开发版而不是稳定版时，填 `stalirmc/mc-flarum-bridge:dev-main`。
+
+> 只有在 Packagist 尚未同步到某个提交、或要装尚未发布的版本时，才需要退回 `vcs` 方式：
+> 后台 → 仓库 → 添加仓库（类型 `vcs`，URL `https://github.com/StalirMC/mc-flarum-bridge`）。
 
 ### ⚠️ 从旧包名 `stalir/*` 迁移过来
 
@@ -83,8 +81,7 @@ if (Arr::get($package, 'type') === 'flarum-extension' && str_contains($name, '/'
 ```bash
 cd /path/to/flarum
 composer remove stalir/mc-flarum-bridge      # 若走方式 C 装的是 stalir/mc-bridge
-composer config repositories.mc-bridge vcs https://github.com/StalirMC/mc-flarum-bridge
-composer require stalirmc/mc-flarum-bridge:dev-main
+composer require stalirmc/mc-flarum-bridge
 php flarum migrate
 php flarum extension:enable stalirmc-mc-bridge
 php flarum cache:clear
@@ -99,21 +96,25 @@ php flarum assets:publish
 | 共享密钥（`mc-bridge.secret`）、语言、公告标签、同步开关 | ✅ 保留 | 设置键与包名无关 |
 | 扩展的启用状态 | ⚠️ 需重新启用 | Flarum 按扩展 ID 记录启用列表，ID 变了就是新扩展 |
 
-如果上面那条 `composer remove` 之后论坛报「扩展不存在」，说明 Composer 还在用缓存的旧包名，
-在 `composer.json` 里确认 `repositories` 没变、再执行一次 `composer update stalirmc/mc-flarum-bridge` 即可。
+迁移是**必须**的：旧包名从来没有上架 Packagist，而仓库里的 `composer.json` 现在已经改名，
+所以 `stalir/mc-flarum-bridge` 无法再安装。如果 `composer remove` 之后论坛报「扩展不存在」，
+执行一次 `composer update stalirmc/mc-flarum-bridge` 让 Composer 重新解析即可。
 
-### 方式 B：SSH / Composer（从 GitHub 装）
+### 方式 B：SSH / Composer
 
 ```bash
 cd /path/to/flarum
 
-composer config repositories.mc-bridge vcs https://github.com/StalirMC/mc-flarum-bridge
-composer require stalirmc/mc-flarum-bridge:dev-main
+composer require stalirmc/mc-flarum-bridge
 
 php flarum migrate
 php flarum extension:enable stalirmc-mc-bridge   # 用 php flarum extension:list 核对确切 ID
 php flarum cache:clear
+php flarum assets:publish
 ```
+
+加 `:dev-main` 可以装开发版。**扩展更新后一定要跑 `assets:publish`**（前端 bundle 变了，
+不跑的话浏览器拿到的还是旧脚本，见 1.2.1）。
 
 ### 方式 C：不经过 GitHub，直接用本地文件装
 
@@ -154,6 +155,11 @@ php flarum assets:publish                    # 扩展的前端 JS 会复制进 p
 > 在管理后台点「清除缓存」会顺带执行 `assets:publish`——`ClearCacheController`
 > 内部直接调用 `AssetsPublishCommand`，所以两种做法等价。
 > 另外浏览器可能仍缓存旧脚本，建议 `Ctrl+F5` 强制刷新一次。
+
+> **Packagist 同步**：新版本要先被 Packagist 抓到才能 `composer update` 到。
+> 如果刚推完 tag 却更新不到，去 <https://packagist.org/packages/stalirmc/mc-flarum-bridge>
+> 点一次 **Update**；想以后自动同步，就在 GitHub 仓库 → Settings → Webhooks 里加上
+> Packagist 给出的 webhook（Payload URL 与 secret 都在该页面上）。
 
 ### 1.3 生成共享密钥
 

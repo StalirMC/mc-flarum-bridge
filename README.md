@@ -1,6 +1,8 @@
 # MC  Flarum Bridge
 
 [![CI](https://github.com/StalirMC/mc-flarum-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/StalirMC/mc-flarum-bridge/actions/workflows/ci.yml)
+[![Packagist](https://img.shields.io/packagist/v/stalirmc/mc-flarum-bridge.svg)](https://packagist.org/packages/stalirmc/mc-flarum-bridge)
+[![Downloads](https://img.shields.io/packagist/dt/stalirmc/mc-flarum-bridge.svg)](https://packagist.org/packages/stalirmc/mc-flarum-bridge)
 
 一套把 Minecraft 服务器与 Flarum 论坛双向打通的开源方案。
 
@@ -82,15 +84,16 @@
 # 1) 论坛侧
 #    Flarum 2.x 没有 extensions/ 目录，扩展必须经 Composer 安装。
 #    仓库根的 composer.json 用 flarum-subextensions 把 flarum-extension/
-#    声明为扩展，因此整个仓库可作为单个包安装：
+#    声明为扩展，因此整个仓库可作为单个包安装，且已上架 Packagist：
+#    https://packagist.org/packages/stalirmc/mc-flarum-bridge
 cd /path/to/flarum
-composer config repositories.mc-bridge vcs https://github.com/StalirMC/mc-flarum-bridge
-composer require stalirmc/mc-flarum-bridge:dev-main
-#    没有 SSH？后台 Extension Manager → 仓库 → 添加 vcs 仓库后，
-#    在「安装一个新的扩展程序」填 stalirmc/mc-flarum-bridge:dev-main
+composer require stalirmc/mc-flarum-bridge
+#    没有 SSH？后台 Extension Manager → 安装一个新的扩展程序 →
+#    填 stalirmc/mc-flarum-bridge 即可（Packagist 是默认源，无需加仓库）
 php flarum migrate
-php flarum extension:enable stalirmc/mc-bridge   # 用 php flarum extension:list 核对确切 ID
+php flarum extension:enable stalirmc-mc-bridge   # 用 php flarum extension:list 核对确切 ID
 php flarum cache:clear
+php flarum assets:publish            # 扩展前端 bundle 变了就要跑这一步
 php flarum mc-bridge:secret          # 生成共享密钥，填到插件配置里
 php flarum mc-bridge:selftest --url=https://forum.kxkl2024.cn   # 论坛侧全链路自检
 
