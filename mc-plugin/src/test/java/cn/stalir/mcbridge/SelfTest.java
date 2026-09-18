@@ -78,16 +78,7 @@ public final class SelfTest {
         check("sync.max-queued-events", 200, config.getInt("sync.max-queued-events", 0));
         check("sync.report-joins", true, config.getBoolean("sync.report-joins", false));
         check("sync.report-advancements", false, config.getBoolean("sync.report-advancements", true));
-        check("game.allow-remote-commands", false, config.getBoolean("game.allow-remote-commands", true));
         check("game.announce-format", "&e[论坛] &f{title}", config.getString("game.announce-format", ""));
-
-        List<String> whitelist = config.getStringList("game.remote-command-whitelist");
-        check("remote-command-whitelist size", 2, whitelist.size());
-
-        if (whitelist.size() == 2) {
-            check("remote-command-whitelist[0]", "^broadcast .+", whitelist.get(0));
-            check("remote-command-whitelist[1]", "^say .+", whitelist.get(1));
-        }
 
         // Unknown keys must come back as the caller's fallback, never as null.
         check("missing key falls back", "fallback", config.getString("nope.nothing", "fallback"));
@@ -182,22 +173,6 @@ public final class SelfTest {
         check("server key is read", "survival", config.serverKey());
         check("heartbeat interval", 30, config.heartbeatIntervalSeconds());
         check("announce body format", "&7{body}", config.announceBodyFormat());
-
-        // Remote commands stay off by default, and the whitelist matches what it should.
-        check("remote commands are off by default", false, config.allowRemoteCommands());
-        check("a whitelisted command is still rejected while disabled", false, config.isRemoteCommandAllowed("say hi"));
-        check("an arbitrary command is rejected", false, config.isRemoteCommandAllowed("op someone"));
-
-        // The same config with remote commands enabled honours the regexes.
-        Yaml enabled = Yaml.parse(text
-                .replace("secret: \"\"", "secret: \"" + secret + "\"")
-                .replace("allow-remote-commands: false", "allow-remote-commands: true"));
-
-        BridgeConfig permissive = BridgeConfig.from(enabled, platform.log(), messages);
-        check("remote commands can be enabled", true, permissive.allowRemoteCommands());
-        check("matching the whitelist is allowed", true, permissive.isRemoteCommandAllowed("say hello"));
-        check("broadcast matches the whitelist", true, permissive.isRemoteCommandAllowed("broadcast server restart"));
-        check("non-matching commands stay rejected", false, permissive.isRemoteCommandAllowed("op someone"));
 
         // A too short secret must be reported.
         Yaml shortSecret = Yaml.parse(text.replace("secret: \"\"", "secret: \"tooshort\""));
@@ -341,10 +316,6 @@ public final class SelfTest {
         public void logToConsole(net.kyori.adventure.text.Component message) {
         }
 
-        @Override
-        public boolean dispatchConsoleCommand(String command) {
-            return false;
-        }
     }
 
     /** Captures log lines so a crash inside the core would surface in the output. */

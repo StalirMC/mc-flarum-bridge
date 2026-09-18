@@ -293,9 +293,9 @@ php flarum mc-bridge:selftest --url=...    # 全链路自检
 ```
 
 - `server_key` 省略（或 `null`）时投递给**所有**服务器。
-- `type` 可为 `broadcast` / `announcement` / `command`。
+- `type` 可为 `broadcast` / `announcement`。
 - `title` 与 `body` 至少提供一个。
-- `type=command` 时，指令放在 `payload.command`；接收端需在白名单内才会执行。
+- 插件只**展示**这些消息，不会执行任何指令。
 
 响应 `201`：
 
@@ -418,7 +418,6 @@ payload 里看到它们；游客的响应里根本不包含这些字段（不是
 | 路径 | 认证 | 用途 |
 |------|------|------|
 | `GET /mc-bridge/link` | 需登录 | 输入绑定码 / 解除绑定（`POST` 同一路径，带 CSRF token） |
-| `GET /mc-bridge/status` | 公开 | 服务器状态页：在线人数、TPS/MSPT、版本、MOTD、最后心跳、最近事件 |
 
 两者都由 PHP 直接渲染 HTML（`LinkPageController`、`StatusPageController`），因此不依赖 npm 构建；
 论坛侧边栏的「服务器状态」入口由前端 bundle 以普通 `<a>` 链接加入。

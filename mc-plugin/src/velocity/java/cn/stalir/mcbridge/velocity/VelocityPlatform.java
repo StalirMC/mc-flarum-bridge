@@ -236,10 +236,4 @@ public final class VelocityPlatform implements Platform {
         log.info(PlainTextComponentSerializer.plainText().serialize(message));
     }
 
-    @Override
-    public boolean dispatchConsoleCommand(String command) {
-        // A proxy has no game console. The shared core turns this false into a
-        // rejection log line instead of executing anything.
-        return false;
-    }
 }

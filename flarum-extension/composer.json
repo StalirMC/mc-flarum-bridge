@@ -9,9 +9,16 @@
         "server status"
     ],
     "license": "MIT",
+    "version": "0.0.7",
+    "homepage": "https://github.com/StalirMC/mc-flarum-bridge",
+    "support": {
+        "source": "https://github.com/StalirMC/mc-flarum-bridge",
+        "issues": "https://github.com/StalirMC/mc-flarum-bridge/issues"
+    },
     "authors": [
         {
-            "name": "Stalir"
+            "name": "Stalir",
+            "homepage": "https://github.com/StalirMC"
         }
     ],
     "require": {

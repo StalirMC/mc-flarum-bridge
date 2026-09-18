@@ -343,11 +343,6 @@ public final class PaperPlatform implements Platform {
         Bukkit.getConsoleSender().sendMessage(message);
     }
 
-    @Override
-    public boolean dispatchConsoleCommand(String command) {
-        return Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command);
-    }
-
     // ------------------------------------------------------------------
     // Detection
     // ------------------------------------------------------------------

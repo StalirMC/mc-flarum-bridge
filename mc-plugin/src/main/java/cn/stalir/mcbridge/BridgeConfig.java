@@ -4,8 +4,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 
 /**
  * Immutable view of config.yml, validated once at load time.
@@ -35,8 +33,6 @@ public final class BridgeConfig {
     private final String announceFormat;
     private final String announceBodyFormat;
     private final boolean promptUnbound;
-    private final boolean allowRemoteCommands;
-    private final List<Pattern> remoteCommandWhitelist;
     private final List<String> problems;
 
     private BridgeConfig(
@@ -58,8 +54,6 @@ public final class BridgeConfig {
             String announceFormat,
             String announceBodyFormat,
             boolean promptUnbound,
-            boolean allowRemoteCommands,
-            List<Pattern> remoteCommandWhitelist,
             List<String> problems
     ) {
         this.language = language;
@@ -80,8 +74,6 @@ public final class BridgeConfig {
         this.announceFormat = announceFormat;
         this.announceBodyFormat = announceBodyFormat;
         this.promptUnbound = promptUnbound;
-        this.allowRemoteCommands = allowRemoteCommands;
-        this.remoteCommandWhitelist = remoteCommandWhitelist;
         this.problems = problems;
     }
 
@@ -130,23 +122,6 @@ public final class BridgeConfig {
         int eventFlush = Math.max(2, config.getInt("sync.event-flush-interval-seconds", 10));
         int maxQueued = Math.max(10, config.getInt("sync.max-queued-events", 200));
 
-        boolean allowRemoteCommands = config.getBoolean("game.allow-remote-commands", false);
-        List<Pattern> whitelist = new ArrayList<>();
-
-        for (String raw : config.getStringList("game.remote-command-whitelist")) {
-            if (raw == null || raw.isBlank()) {
-                continue;
-            }
-
-            try {
-                whitelist.add(Pattern.compile(raw));
-            } catch (PatternSyntaxException exception) {
-                problems.add(messages.plain("config.problem.whitelist",
-                        "pattern", raw,
-                        "reason", exception.getDescription()));
-            }
-        }
-
         BridgeConfig built = new BridgeConfig(
                 language,
                 forumUrl,
@@ -166,8 +141,6 @@ public final class BridgeConfig {
                 config.getString("game.announce-format", "&e[论坛] &f{title}"),
                 config.getString("game.announce-body-format", "&7{body}"),
                 config.getBoolean("game.prompt-unbound", true),
-                allowRemoteCommands,
-                Collections.unmodifiableList(whitelist),
                 Collections.unmodifiableList(problems)
         );
 
@@ -269,28 +242,4 @@ public final class BridgeConfig {
         return promptUnbound;
     }
 
-    public boolean allowRemoteCommands() {
-        return allowRemoteCommands;
-    }
-
-    public List<Pattern> remoteCommandWhitelist() {
-        return remoteCommandWhitelist;
-    }
-
-    /** True when a command pushed from the forum is allowed to run. */
-    public boolean isRemoteCommandAllowed(String command) {
-        if (!allowRemoteCommands || command == null || command.isBlank()) {
-            return false;
-        }
-
-        String trimmed = command.trim();
-
-        for (Pattern pattern : remoteCommandWhitelist) {
-            if (pattern.matcher(trimmed).matches()) {
-                return true;
-            }
-        }
-
-        return false;
-    }
 }

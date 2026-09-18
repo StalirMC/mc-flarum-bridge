@@ -1,7 +1,6 @@
 import app from 'flarum/forum/app';
 import { extend } from 'flarum/common/extend';
 import McBridgeSection from './src/forum/components/McBridgeSection';
-import McBridgeStatus from './src/forum/components/McBridgeStatus';
 import grassBlock from './src/forum/grassBlock';
 
 const EXTENSION_ID = 'stalirmc-mc-bridge';
@@ -88,15 +87,5 @@ app.initializers.add(EXTENSION_ID, () => {
       ),
       -5
     );
-  });
-
-  // The server status card in the index sidebar.
-  //
-  // IndexSidebar is the component Flarum renders as the sidebar of the index
-  // page, and themes that keep the sidebar - avocado does, its discussion page
-  // renders <IndexSidebar /> directly - get the card without knowing about this
-  // extension. The card links to the full status page, which is rendered by PHP.
-  extend('flarum/forum/components/IndexSidebar', 'items', function (items) {
-    items.add('mcBridgeStatus', m(McBridgeStatus), -100);
   });
 });

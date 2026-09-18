@@ -100,7 +100,6 @@ game:
 | 进服 / 退服事件 | ✅ | ✅ |
 | 死亡 / 成就事件 | ✅ | — 代理看不到 |
 | 论坛公告广播 | ✅ | ✅ |
-| 从论坛执行远程指令 | ✅（默认关闭 + 正则白名单） | ❌ 代理没有游戏控制台，会被拒绝并记日志 |
 | `/bind`、`/mcbridge` | ✅ | ✅ |
 
 心跳的 JSON 字段在三个平台上完全一致（由共享核心生成），因此论坛侧无需区分平台；
@@ -158,16 +157,13 @@ Velocity 端权限同样使用 `mcbridge.bind` / `mcbridge.admin`（由代理的
 ## 安全
 
 - 每个请求都用 HMAC-SHA256 签名，包含时间戳与一次性 nonce。
-- `game.allow-remote-commands` **默认关闭**；开启后只有匹配
-  `game.remote-command-whitelist` 正则的指令会被执行。
-- 打开远程指令等于把游戏控制台交给任何持有 secret 的人，请谨慎。
-- Velocity 不支持远程指令，相关消息一律拒绝。
+- 插件**不会执行**来自论坛的任何指令：论坛只负责把公告/广播推给游戏，游戏侧只做展示。
 
 ## 源码结构
 
 ```
 src/main/java/cn/stalir/mcbridge/           共享核心（零平台引用）
-├── BridgeCore.java        心跳/事件/公告/远程指令编排 + 全部命令文案渲染
+├── BridgeCore.java        心跳/事件/公告编排 + 全部命令文案渲染
 ├── Platform.java          平台 SPI（调度、服务器状态、输出）
 ├── BridgeConfig.java      配置读取与校验
 ├── Yaml.java              极简 YAML 读取器（避免在通用 jar 里塞第三方库）

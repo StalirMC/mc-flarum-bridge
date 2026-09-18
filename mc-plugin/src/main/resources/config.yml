@@ -51,11 +51,3 @@ game:
   announce-body-format: "&7{body}"
   # Tell a player who has not linked a forum account how to do it when they join.
   prompt-unbound: true
-  # Whether the plugin may execute commands pushed from the forum.
-  # Keep this disabled unless you are deliberately using Flarum as a remote
-  # console: anyone who obtains the secret can then run these commands.
-  allow-remote-commands: false
-  # Java regular expressions; only matching commands are executed.
-  remote-command-whitelist:
-    - "^broadcast .+"
-    - "^say .+"

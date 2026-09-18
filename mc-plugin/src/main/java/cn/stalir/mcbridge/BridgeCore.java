@@ -390,11 +390,6 @@ public final class BridgeCore {
         String body = optString(message, "body", "");
         String url = optString(message, "url", "");
 
-        if ("command".equals(type)) {
-            handleRemoteCommand(message, body);
-            return;
-        }
-
         String rendered = config.announceFormat()
                 .replace("{title}", title)
                 .replace("{body}", body)
@@ -423,27 +418,6 @@ public final class BridgeCore {
         if (receivedMessages.get() <= OUTBOX_BATCH_LOG_LIMIT) {
             platform.log().info(logText("log.relayed", "type", type, "title", title));
         }
-    }
-
-    private void handleRemoteCommand(JsonObject message, String fallbackCommand) {
-        JsonObject payload = message.has("payload") && message.get("payload").isJsonObject()
-                ? message.getAsJsonObject("payload")
-                : new JsonObject();
-
-        String command = optString(payload, "command", fallbackCommand);
-
-        if (!config.isRemoteCommandAllowed(command)) {
-            platform.log().warn(logText("log.remote-rejected", "command", command));
-            return;
-        }
-
-        // The proxy has no game console, so it reports the rejection instead.
-        if (!platform.dispatchConsoleCommand(command)) {
-            platform.log().warn(logText("log.remote-rejected", "command", command));
-            return;
-        }
-
-        platform.log().info(logText("log.remote-executing", "command", command));
     }
 
     public void broadcast(Component component) {

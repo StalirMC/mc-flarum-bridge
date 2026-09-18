@@ -113,12 +113,4 @@ public interface Platform {
     void sendToPlayer(UUID uuid, Component message);
 
     void logToConsole(Component message);
-
-    /**
-     * Run a command as the console.
-     *
-     * Only Paper/Folia can do this; the proxy has no game console and returns
-     * {@code false} so the caller can report the rejection.
-     */
-    boolean dispatchConsoleCommand(String command);
 }

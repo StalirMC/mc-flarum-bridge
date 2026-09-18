@@ -61,8 +61,6 @@ log:
   outbox-failed: "Outbox poll failed ({count} in a row): {reason}"
   events-failed: "Could not deliver {count} event(s): {reason}"
   relayed: "Relayed {type} from the forum: {title}"
-  remote-rejected: "Rejected remote command from the forum (not whitelisted): {command}"
-  remote-executing: "Executing remote command from the forum: {command}"
   outbox-handle-failed: "Failed to handle an outbox message"
 
 # ---- configuration validation ----
@@ -73,5 +71,4 @@ config:
     server-key: "server.key must match [A-Za-z0-9._-] and be 1-100 characters long"
     secret-empty: "security.secret is empty - run \"php flarum mc-bridge:secret\" and paste the value"
     secret-short: "security.secret must be at least 32 characters long"
-    whitelist: "Invalid regex in game.remote-command-whitelist: {pattern} ({reason})"
     summary: "Configuration problem: {message}"

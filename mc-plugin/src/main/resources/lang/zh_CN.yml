@@ -60,8 +60,6 @@ log:
   outbox-failed: "拉取公告失败（连续 {count} 次）：{reason}"
   events-failed: "有 {count} 条事件投递失败：{reason}"
   relayed: "已投递来自论坛的 {type}：{title}"
-  remote-rejected: "已拒绝来自论坛的远程指令（不在白名单内）：{command}"
-  remote-executing: "正在执行来自论坛的远程指令：{command}"
   outbox-handle-failed: "处理公告消息时出错"
 
 # ---- 配置校验提示 ----
@@ -72,5 +70,4 @@ config:
     server-key: "server.key 必须匹配 [A-Za-z0-9._-] 且长度为 1-100"
     secret-empty: "security.secret 未填写 —— 请先在论坛执行 php flarum mc-bridge:secret，把结果填进来"
     secret-short: "security.secret 长度不足 32 个字符"
-    whitelist: "game.remote-command-whitelist 中的正则无效：{pattern}（{reason}）"
     summary: "配置问题：{message}"

@@ -253,7 +253,7 @@ undefined (reading 'for')`，位置 `admin.js:8`（即 `app.extensionData.for(..
 **结构**：三个 source set → 一个 jar。
 
 ```
-src/main/java      共享核心：BridgeCore（心跳/事件/公告/远程指令/命令文案）、
+src/main/java      共享核心：BridgeCore（心跳/事件/公告/命令文案）、
                    Platform（平台 SPI）、BridgeConfig、Yaml、Signature、
                    HttpBridgeClient、EventQueue、Messages、Version
 src/paper/java     McBridgePlugin、PaperPlatform（Folia/Bukkit 双调度）、
@@ -577,6 +577,37 @@ Packagist 会认为最高版本是 1.0.0，于是不带约束的 `composer requi
 这类**发布者的运维信息**随后被移出了给安装者看的部署指南，集中到
 [`RELEASING.md`](RELEASING.md)（发布流程，维护者）：部署指南只讲安装者要做的事
 （`composer require` / `composer update` / `assets:publish`）。
+
+### 2.14 删掉两项功能，并修掉管理页的两处显示（0.0.7）
+
+维护者要求移除两项功能，理由是「远程指令没必要」「状态页在 avocado 主题里不生效」。两项都
+**整套删除**，没有留下半截实现：
+
+| 删除项 | 涉及位置 |
+|--------|----------|
+| 远程指令 | `BridgeConfig`（开关、白名单、校验、`isRemoteCommandAllowed`）、`BridgeCore.handleRemoteCommand` 与 outbox 的 `command` 分支、`Platform.dispatchConsoleCommand` 及两端实现、`config.yml` 两个键、两端语言文件的日志键与白名单校验键、`SelfTest` 的 14 处断言、README/插件文档/API 文档 |
+| 状态页 + 侧边栏挂件 | `StatusPageController`（整文件）、`extend.php` 的论坛路由与 `use`、`McBridgeStatus.js`（整文件）、`forum.js` 里的 `IndexSidebar.items` 扩展、两个 locale 的 `forum.status` 与 `page.status` 键组、文档里的入口与说明 |
+
+**保留**的是 `GET /api/mc-bridge/status` 这个公开只读接口：游戏内 `/mcbridge status` 仍在用它，
+所以插件与论坛之间的状态数据链路没有断，只是不再有论坛侧的展示页面。
+
+改动后自测从 51 项降到 40 项（远程指令的断言随功能一起删除），`verify.mjs` 从 320 项降到 311 项
+（少了一个白名单键与相关断言），全部为 0 错误。删除过程中 verify.mjs 报了一次**未使用语言键**
+警告（`config.problem.whitelist` 已无代码引用），随后一并删除。
+
+#### 管理页的两处显示问题（来自维护者截图）
+
+后台扩展页显示 `版本 0.0`、作者名「Stalir」的链接指向 `/admin`。两处都在 Flarum 读取
+**子扩展自己的 `composer.json`** 时产生，源码依据：
+
+| 现象 | 代码依据 | 修法 |
+|------|----------|------|
+| 版本显示 `0.0` | `ExtensionManager::extensionFromJson()` → `Arr::get($package, 'version', '0.0')`；`subExtensionConfsFromJson()` 读的是 `flarum-extension/composer.json`，而它当时没有 `version` | 给子包加 `"version": "0.0.7"` |
+| 作者链接回 `/admin` | `Extension::getLinks()` → `authors[].link = homepage ?? (email ? mailto: : '')`；空串被浏览器解析成当前页面 | 给每个 author 加 `homepage` |
+
+两处都加进了 `verify.mjs` 第 17 节：**子包的 `version` 必须与 `gradle.properties` 一致**（否则
+管理页会显示与发布版本不符的号），**每个 author 必须带 `homepage` 或 `email`**（否则又是一个
+只会刷新 `/admin` 的死链）。`RELEASING.md` 同步记录：版本号现在是**四处**一致，升级时都要改。
 
 ## 3. 无法在本机验证的内容（现由 CI 覆盖）
 

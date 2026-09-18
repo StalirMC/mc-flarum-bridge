@@ -36,8 +36,19 @@ CI（`.github/workflows/ci.yml`）同时会在 `main` 上跑静态检查、协�
 | `mc-plugin/gradle.properties` 的 `version` | Gradle 注入 `plugin.yml`、决定 jar 名 |
 | `Version.java` 的 `VERSION` | Velocity 的 `@Plugin(version = …)` 与 HTTP User-Agent（注解只能取编译期常量） |
 | git tag `vX.Y.Z` | 触发发版、决定 Release 标题 |
+| `flarum-extension/composer.json` 的 `version` | **Flarum 管理页显示的版本号**（见下方说明） |
 
-`tools/verify.mjs` 第 17 节校验前两者一致，`release.yml` 校验它们与 tag 一致。
+`tools/verify.mjs` 第 17 节校验这几处一致，`release.yml` 校验它们与 tag 一致。
+
+> **为什么子包也要写 `version`**：Flarum 对 `flarum-subextensions` 读的是**子扩展自己的**
+> `composer.json`（`ExtensionManager::extensionFromJson` →
+> `Arr::get($package, 'version', '0.0')`）。这个字段缺失时管理页会显示一个写死的 **`0.0`**，
+> 与真实版本无关。这个文件不会单独发到 Packagist，所以在这里写 `version` 没有副作用，
+> 但**升版本时必须一起改**（verify.mjs 会拦住不一致）。
+>
+> 同一个文件的 `authors[].homepage` 决定管理页里作者名的链接：它的取值顺序是
+> `homepage` → `email` → **空串**，空串会被浏览器解析成当前页面，于是点「Stalir」只会
+> 回到 `/admin`。所以每个 author 都要有 `homepage` 或 `email`（verify.mjs 也会校验）。
 
 > 注意：`processPaperResources` 的 `expand(version: …)` 已声明为 task input，否则改了版本号
 > Gradle 仍会判定该任务 UP-TO-DATE，把旧版本号打进 jar（0.0.2 发版时踩过）。

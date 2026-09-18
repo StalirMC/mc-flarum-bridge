@@ -271,7 +271,7 @@ regionised 服务端并改用 Folia 的 `AsyncScheduler` / `GlobalRegionSchedule
 
 > **代理 + 后端一起装？** 可以，但请给它们**不同的 `server.key`**（例如
 > `proxy` 与 `survival`），否则两者会在论坛上互相覆盖同一条服务器记录。
-> 代理侧看不到死亡/成就事件，也不会执行远程指令。
+> 代理侧看不到死亡/成就事件，心跳也只按代理维度上报（没有 TPS/MSPT）。
 
 ### 2.3 填写配置
 
@@ -329,9 +329,8 @@ php flarum mc-bridge:selftest --url=https://forum.kxkl2024.cn
 curl -s https://forum.kxkl2024.cn/api/mc-bridge/status | jq
 ```
 
-**论坛侧的展示**：浏览器打开 `https://forum.kxkl2024.cn/mc-bridge/status`
-（论坛侧边栏也有「服务器状态」入口），页面会列出每个服的在线人数、TPS/MSPT、版本、MOTD、
-最后心跳时间与最近事件。该页是公开的，游客也能看。
+这个端点是公开只读的，返回每台服务器的在线人数、TPS/MSPT、版本、MOTD、最后心跳与最近事件，
+方便脚本或其他系统接入；扩展本身不再提供论坛侧的展示页面。
 
 ### 3.2 公告推送
 
@@ -386,27 +385,6 @@ curl -s -X POST https://forum.kxkl2024.cn/api/mc-bridge/broadcast \
 
 游戏在下一次 outbox 轮询（默认 20 秒）后全员显示。
 
-### 4.2 远程指令（默认关闭）
-
-若确实需要从论坛下发指令，先在 `config.yml` 打开白名单：
-
-```yaml
-game:
-  allow-remote-commands: true
-  remote-command-whitelist:
-    - "^broadcast .+"
-    - "^say .+"
-```
-
-再提交一条 `type=command` 的消息：
-
-```json
-{ "type": "command", "payload": { "command": "say hello from the forum" } }
-```
-
-> ⚠️ 打开后，任何拿到 secret 的人都能执行白名单内的指令。除非你完全信任
-> secret 的保管，否则不要开启。
-
 ## 5. 多服务器
 
 每台服务器用不同的 `server.key`（同一个 secret 即可）。消息的
@@ -416,6 +394,7 @@ game:
 
 | 现象 | 排查方向 |
 |------|---------|
+| `composer require` 报 *is fixed to … (lock file version) by a partial update but that version is rejected by your minimum-stability* | 与扩展无关：论坛 lock 里锁着 `fof/*`、`ianm/*` 等 **beta 版本**，而 `minimum-stability` 不允许，于是**任何**新包的部分更新都会被拒。见下方专条 |
 | `503 The MC Bridge secret is not configured` | 论坛侧还没执行 `mc-bridge:secret` |
 | `401 Signature verification failed` | 两端 secret 不一致，或 `api-prefix` 被改过 |
 | `401 Request timestamp is outside the allowed window` | 服务器时间不同步，配置 NTP |

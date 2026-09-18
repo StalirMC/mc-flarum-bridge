@@ -13,7 +13,6 @@ use Stalir\McBridge\Api\Controller\LinkController;
 use Stalir\McBridge\Api\Controller\LinkPageController;
 use Stalir\McBridge\Api\Controller\LinkStatusController;
 use Stalir\McBridge\Api\Controller\StatusController;
-use Stalir\McBridge\Api\Controller\StatusPageController;
 use Stalir\McBridge\Api\UserResourceFields;
 use Stalir\McBridge\Console\ConfigCommand;
 use Stalir\McBridge\Console\SecretCommand;
@@ -101,15 +100,6 @@ return [
     (new Extend\Routes('forum'))
         ->get('/mc-bridge/link', 'mc-bridge.linkPage', LinkPageController::class)
         ->post('/mc-bridge/link', 'mc-bridge.linkPage.submit', LinkPageController::class),
-
-    // ---------------------------------------------------------------------
-    // Public server status page: what the plugins reported with their last
-    // heartbeat, plus the most recent gameplay events. Also build-free, and safe
-    // for guests because it only shows the aggregate data the public status
-    // endpoint already exposes.
-    // ---------------------------------------------------------------------
-    (new Extend\Routes('forum'))
-        ->get('/mc-bridge/status', 'mc-bridge.statusPage', StatusPageController::class),
 
     // ---------------------------------------------------------------------
     // Frontend JS. Only registered when the bundle has actually been built

@@ -1737,6 +1737,41 @@ section('17. Universal jar (Paper + Folia + Velocity)');
     pass(`version ${declaredVersion} is declared in gradle.properties and Version.java`);
   }
 
+  // Flarum shows the version of a flarum-subextension straight from that
+  // sub-extension's own composer.json
+  // (ExtensionManager::extensionFromJson -> Arr::get($package, 'version', '0.0')),
+  // so without this field the admin page displays a hard-coded "0.0".
+  const extensionManifest = JSON.parse(read(join(EXT, 'composer.json')));
+
+  if (!declaredVersion) {
+    // Already reported above.
+  } else if (extensionManifest.version !== declaredVersion) {
+    fail(
+      'flarum-extension/composer.json',
+      `version "${extensionManifest.version}" does not match gradle.properties "${declaredVersion}"; ` +
+        "Flarum's admin page shows this field, and an empty one falls back to \"0.0\""
+    );
+  } else {
+    pass(`flarum-extension/composer.json declares version ${declaredVersion}`);
+  }
+
+  // The author link on the admin page is built from authors[].homepage, then
+  // their email, and otherwise an empty string - which the browser resolves
+  // against the current page and lands back on /admin.
+  const authors = Array.isArray(extensionManifest.authors) ? extensionManifest.authors : [];
+  const linkedAuthors = authors.filter((author) => author?.homepage || author?.email);
+
+  if (authors.length === 0) {
+    fail('flarum-extension/composer.json', 'no author is declared');
+  } else if (linkedAuthors.length !== authors.length) {
+    fail(
+      'flarum-extension/composer.json',
+      'every author needs a homepage or email, otherwise the admin page renders a link that just reloads /admin'
+    );
+  } else {
+    pass(`${authors.length} author(s) carry a homepage or email for the admin page link`);
+  }
+
   const paperPluginYml = read(join(PLUGIN, 'src/paper/resources/plugin.yml'));
 
   if (/^version:\s*'\$\{version\}'$/m.test(paperPluginYml)) {
