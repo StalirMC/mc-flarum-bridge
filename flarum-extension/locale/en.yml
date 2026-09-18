@@ -148,6 +148,10 @@ stalir-mc-bridge:
     status:
       nav: "Server status"
       heading: "Server status"
+      summary: "Online {online}/{total} · {players} players"
+      empty: "No server reported yet"
+      error: "Could not read the server status"
+      detail: "View details →"
   admin:
     settings:
       title: MC Bridge

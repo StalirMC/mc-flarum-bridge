@@ -147,6 +147,10 @@ stalir-mc-bridge:
     status:
       nav: "服务器状态"
       heading: "服务器状态"
+      summary: "在线 {online}/{total} · 玩家 {players}"
+      empty: "暂无服务器上报"
+      error: "无法读取服务器状态"
+      detail: "查看详情 →"
   admin:
     settings:
       title: MC Bridge

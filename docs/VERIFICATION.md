@@ -489,6 +489,64 @@ errors: 1
 - **仍未验证**：资料页区块、作者徽章、状态页、进服引导都**没有在真实浏览器/服务端上看过一次**。
   静态检查能保证「字段和键名对得上、路由存在、版本一致」，但保证不了「看起来对、位置合适」。
 
+### 2.11 一次把论坛打挂的事故（0.0.4 修复）
+
+**现象**：更新到 0.0.3 之后整个论坛 500，线上抓到的异常是：
+
+```
+BadMethodCallException: Call to undefined method Flarum\User\Guest::isRegistered()
+  .../vendor/stalir/mc-flarum-bridge/flarum-extension/src/Api/UserResourceFields.php:30
+```
+
+日志里 `Flarum\User\Guest` 与 `Flarum\User\User` **两种都报**，说明这个方法在部署的版本上对任何 actor 都不存在。
+
+**根因**：`isRegistered()` 是 2.x 分支后来才加的辅助方法，**2.0.0-rc.8 没有**。写这段代码时
+我对照的是本地那份 framework 检出，而它来自 2.x 分支、**比线上新**——于是用了一个线上不存在的
+API。更糟的是它写在 `visible` 回调里，**每个会序列化用户的请求都会命中**，首页首当其冲。
+
+**修法**：改用 `(int) ($context->getActor()?->id ?? 0) > 0`。按 rc.8 源码核对：游客是
+`Flarum\User\Guest` 且 `public int $id = 0`，并且 **`Guest extends User`**，所以
+`instanceof User` 这种直觉写法挡不住游客；真实账号 id 恒为正。该判断在任意版本都成立。
+
+顺带修掉一个尚未爆发的同类问题：`intdiv()` 收到 Carbon 3 返回的 float，已改为先取整。
+
+**流程性修复**：`tools/verify.mjs` 第 19 节禁止 `isRegistered()`，并把**审计基准版本
+`2.0.0-rc.8` 写进检查**，同时校验 `composer.json` 的 `flarum/core` 约束覆盖该版本。
+写在检查里的教训是：**对照本地 framework 副本写代码不算核对，必须以部署的那个 release 为准。**
+
+### 2.12 草方块徽章与主题内嵌的状态挂件（0.0.5）
+
+用户反馈两点：作者名旁的 MC 徽章显示成一个「黑块」；希望服务器状态**嵌进 avocado 主题**。
+两件事都先在**真实站点上用浏览器核对过 API 存在性**，而不是照本地副本推断：
+
+| 核对项 | 结果（线上 `flarum.reg`） |
+|--------|--------------------------|
+| `core / common/models/User`，且原型上有 `badges()` | ✅ 存在 |
+| `core / forum/components/IndexSidebar`，且原型上有 `items()` | ✅ 存在 |
+| `core / forum/components/PostUser#userViewItems`、`UserPage#sidebarItems` | ✅ 存在 |
+| `core / forum/components/SettingsPage` | 懒加载 chunk，`reg.get` 取不到（符合预期，字符串形式 `extend` 会等它） |
+| 扩展命名空间 | `stalir-mc-bridge`、`ramon-avocado` |
+
+**徽章为什么是黑块**：之前把 `span.Badge` 加在 `PostUser-badges` 列表**外面**，主题的
+`PostBadges.less` 管不到它，于是一个没有图标、没有主题样式的暗色胶囊。
+改为挂 **`User.badges()`**：该列表正是 `<ul class="PostUser-badges badges badges--packed">`
+的内容来源，于是徽章进入主题的样式上下文，并且**同时出现在帖子作者、用户卡片、资料页侧栏**
+——这就是「统一」的正确落点。图标是按用户要求画的**内联草方块 SVG**（无图片资源、无 CSS 构建、
+不会 404），玩家名放在 `title`/`aria-label` 里。
+
+**状态挂件**：`IndexSidebar.items()` 挂入一个自包含组件（`McBridgeStatus`），读公开的
+`/api/mc-bridge/status`，60 秒自刷新，样式只用 Flarum 的 CSS 变量，因此**不依赖任何主题**。
+选择这个挂点的依据是 avocado 的 `AllDiscussionsPage` 源码里直接渲染了
+`<IndexSidebar />`（见其 `js/src/forum/components/AllDiscussionsPage.tsx`），所以挂件会出现在
+该主题的侧边栏里；换成别的主题也一样有效。
+
+**线上已确认可用**（这一轮真的跑通了）：
+`GET /mc-bridge/status` 渲染正常，内容为 `survival` 在线、玩家 1/20、TPS 20.00、MSPT 5.3 ms、
+版本、MOTD、在线名单与最近事件（join/start/stop）——**心跳、事件上报、状态页这条链路是真通的**。
+
+**仍未验证**：0.0.5 的前端改动没有在浏览器里看过（需要先 `assets:publish`），
+草方块的实际观感与挂件在侧边栏的位置都需要用户确认。
+
 ## 3. 无法在本机验证的内容（现由 CI 覆盖）
 
 > 本机没有 PHP / JDK，这些检查**已全部由 CI 在带 PHP 8.3 / JDK 21 的真实环境中

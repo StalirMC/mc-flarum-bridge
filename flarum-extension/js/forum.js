@@ -1,6 +1,8 @@
 import app from 'flarum/forum/app';
 import { extend } from 'flarum/common/extend';
 import McBridgeSection from './src/forum/components/McBridgeSection';
+import McBridgeStatus from './src/forum/components/McBridgeStatus';
+import grassBlock from './src/forum/grassBlock';
 
 const EXTENSION_ID = 'stalir-mc-bridge';
 
@@ -57,45 +59,44 @@ app.initializers.add(EXTENSION_ID, () => {
     );
   });
 
-  // A badge next to the author of every post and reply.
+  // A grass-block badge for every linked account, added to the user's badge list
+  // rather than to one component.
   //
-  // userViewItems() is the item list PostUser builds for a post that has an
-  // author; 95 puts the badge right after the name (100) and before the group
-  // badges (90).
-  extend('flarum/forum/components/PostUser', 'userViewItems', function (items, user) {
-    const playerName = user && user.attribute('mcBridgePlayerName');
+  // User#badges() is what every place that shows badges reads (the author area of
+  // a post, the user card, the profile sidebar), so hooking it here makes the
+  // marker appear everywhere at once and lets the theme style it together with
+  // the group badges - which is what the brown box in the screenshot was missing.
+  //
+  // The grass block carries the player name as a tooltip; the profile page and
+  // the settings section spell it out in full.
+  extend('flarum/common/models/User', 'badges', function (items) {
+    const playerName = this.attribute('mcBridgePlayerName');
 
     if (!playerName) {
       return;
     }
 
     items.add(
-      'mcBridgeName',
+      'mcBridgeAccount',
       m(
         'span.Badge.McBridge-badge',
-        { title: app.translator.trans('stalir-mc-bridge.forum.badge.title', { name: playerName }) },
-        app.translator.trans('stalir-mc-bridge.forum.badge.label', { name: playerName })
+        {
+          title: app.translator.trans('stalir-mc-bridge.forum.badge.title', { name: playerName }),
+          'aria-label': app.translator.trans('stalir-mc-bridge.forum.badge.label', { name: playerName }),
+        },
+        grassBlock(14)
       ),
-      95
+      -5
     );
   });
 
-  // The sidebar entry linking to the public server status page.
+  // The server status card in the index sidebar.
   //
-  // That page is rendered by PHP (StatusPageController), so this is a plain
-  // anchor on purpose: a Mithril Link would intercept the click and ask the
-  // frontend router for a component that does not exist.
-  extend('flarum/forum/components/IndexSidebar', 'navItems', function (items) {
-    const baseUrl = String(app.forum.attribute('baseUrl') || '').replace(/\/$/, '');
-
-    items.add(
-      'mcBridgeStatus',
-      m('a.Button.Button--link', { href: `${baseUrl}/mc-bridge/status` }, [
-        m('i.icon.fas.fa-server'),
-        ' ',
-        app.translator.trans('stalir-mc-bridge.forum.status.nav'),
-      ]),
-      50
-    );
+  // IndexSidebar is the component Flarum renders as the sidebar of the index
+  // page, and themes that keep the sidebar - avocado does, its discussion page
+  // renders <IndexSidebar /> directly - get the card without knowing about this
+  // extension. The card links to the full status page, which is rendered by PHP.
+  extend('flarum/forum/components/IndexSidebar', 'items', function (items) {
+    items.add('mcBridgeStatus', m(McBridgeStatus), -100);
   });
 });
