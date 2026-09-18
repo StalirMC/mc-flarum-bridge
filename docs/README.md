@@ -156,10 +156,6 @@ php flarum assets:publish                    # 扩展的前端 JS 会复制进 p
 > 内部直接调用 `AssetsPublishCommand`，所以两种做法等价。
 > 另外浏览器可能仍缓存旧脚本，建议 `Ctrl+F5` 强制刷新一次。
 
-> **Packagist 同步**：新版本要先被 Packagist 抓到才能 `composer update` 到。
-> 去 <https://packagist.org/packages/stalirmc/mc-flarum-bridge> 点一次 **Update** 即可。
-> （也可以在 Packagist 页面上按它给出的 URL 自配一个 GitHub webhook，让抓取自动发生。）
-
 ### 1.3 生成共享密钥
 
 ```bash

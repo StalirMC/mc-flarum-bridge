@@ -48,7 +48,7 @@
 | `flarum-extension/` | Flarum 扩展：安全 REST API、数据存储、公告推送队列 | PHP 8.1+ / Flarum 2.x |
 | `mc-plugin/` | 通用插件（**一个 jar 同时支持三个平台**）：状态上报、事件上报、公告拉取、账号绑定 | Java 17 字节码 / Paper 1.21.x · Folia · Velocity 3.x |
 | `protocol/` | 双方共享的线上协议契约与 JSON Schema | Markdown / JSON Schema |
-| `docs/` | 部署指南、API 参考与[验证报告](docs/VERIFICATION.md) | Markdown |
+| `docs/` | [部署指南](docs/README.md)、[API 参考](docs/API.md)、[验证报告](docs/VERIFICATION.md)、[发布流程](docs/RELEASING.md)（维护者） | Markdown |
 | `tools/` | 静态一致性校验、模拟论坛、协议一致性测试 | Node.js |
 
 ## 功能
@@ -183,6 +183,7 @@ cd mc-plugin && ./gradlew build                            # Java 编译（首�
 - Flarum：2.x（PHP 8.1+）
 - Java：插件字节码目标为 **17**（Paper/Folia 跑在 Java 21 上照常加载，Velocity 仍可用 Java 17）；构建工具链为 JDK 21
 
-发版由 tag 驱动：`git tag v0.0.1 && git push origin v0.0.1` 会触发
+发版由 tag 驱动：`git tag v0.0.6 && git push origin v0.0.6` 会触发
 [`release.yml`](.github/workflows/release.yml)，先校验 tag 与 `gradle.properties`
 中的版本一致，再构建并把**同一个通用 jar** 上传到 GitHub Release。
+完整步骤（含 Packagist 同步与改名注意事项）见 [发布流程](docs/RELEASING.md)（维护者）。

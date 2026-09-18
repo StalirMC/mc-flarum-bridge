@@ -569,12 +569,14 @@ Packagist 会认为最高版本是 1.0.0，于是不带约束的 `composer requi
 `php flarum extension:enable` 后面要填**扩展 ID**（`stalirmc-mc-bridge`），不是包名。
 
 **实测到的同步行为**：提交后过了几分钟再去抓 Packagist API，`dev-main` 仍停在 `b94dfbe`、
-抓取时间也还是包提交那一刻，说明**当前没有任何东西在自动触发抓取**。文档因此只保留
-「更新不到就去点一次 Update」这一条（自配 GitHub webhook 的办法附在旁边）。
+抓取时间也还是包提交那一刻，说明**当前没有任何东西在自动触发抓取**。
 
-曾试过在发版工作流里调 Packagist 的 update API（用两个 secret 触发），已按维护者要求移除：
-发版流程保持简单，同步交给 Packagist 页面那一次点击。若日后想省这一步，把 webhook 配在
-Packagist 侧即可，不需要改本仓库。
+曾试过在发版工作流里调 Packagist 的 update API（用两个 secret 触发），**已按维护者要求移除**：
+发版流程保持简单，同步交给 Packagist 页面那一次点击；想省这一步就在 Packagist 侧配 webhook。
+
+这类**发布者的运维信息**随后被移出了给安装者看的部署指南，集中到
+[`RELEASING.md`](RELEASING.md)（发布流程，维护者）：部署指南只讲安装者要做的事
+（`composer require` / `composer update` / `assets:publish`）。
 
 ## 3. 无法在本机验证的内容（现由 CI 覆盖）
 
