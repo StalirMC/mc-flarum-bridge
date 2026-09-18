@@ -96,30 +96,3 @@ jobs:
             Still work in progress: see the warning at the top of README.md.
           files: dist/*.jar
           fail_on_unmatched_files: true
-
-      # Packagist only re-crawls a repository when its GitHub webhook fires, and
-      # that webhook has to be configured on the Packagist side. This asks
-      # Packagist to refresh the package right after the release is published, so
-      # a new tag becomes installable without anyone clicking Update.
-      #
-      # It does nothing until the two secrets exist, so the release still works
-      # for anyone who has not set them up:
-      #   PACKAGIST_USERNAME  the Packagist account name
-      #   PACKAGIST_TOKEN     the API token from https://packagist.org/profile/
-      - name: Ask Packagist to refresh the package
-        env:
-          PACKAGIST_USERNAME: ${{ secrets.PACKAGIST_USERNAME }}
-          PACKAGIST_TOKEN: ${{ secrets.PACKAGIST_TOKEN }}
-        run: |
-          if [ -z "${PACKAGIST_USERNAME}" ] || [ -z "${PACKAGIST_TOKEN}" ]; then
-            echo "PACKAGIST_USERNAME / PACKAGIST_TOKEN are not set; skipping the refresh."
-            echo "Either add those secrets or press Update on the Packagist page."
-            exit 0
-          fi
-
-          response=$(curl -sS -X POST \
-            -H 'Content-Type: application/json' \
-            "https://packagist.org/api/update-package?username=${PACKAGIST_USERNAME}&apiToken=${PACKAGIST_TOKEN}" \
-            -d '{"repository":{"url":"https://github.com/StalirMC/mc-flarum-bridge"}}')
-
-          echo "Packagist answered: ${response}"

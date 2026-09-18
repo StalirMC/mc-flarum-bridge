@@ -568,8 +568,13 @@ Packagist 会认为最高版本是 1.0.0，于是不带约束的 `composer requi
 `vcs` 方式保留为「装尚未发布版本」时的退路。同时修掉文档里一处改名之前就存在的笔误——
 `php flarum extension:enable` 后面要填**扩展 ID**（`stalirmc-mc-bridge`），不是包名。
 
-**注意**：Packagist 的自动同步依赖 GitHub webhook；无法从公开 API 确认是否已配置，
-因此文档里写了「更新不到就去点一次 Update」的兜底办法。
+**实测到的同步行为**：提交后过了几分钟再去抓 Packagist API，`dev-main` 仍停在 `b94dfbe`、
+抓取时间也还是包提交那一刻，说明**当前没有任何东西在自动触发抓取**。文档因此只保留
+「更新不到就去点一次 Update」这一条（自配 GitHub webhook 的办法附在旁边）。
+
+曾试过在发版工作流里调 Packagist 的 update API（用两个 secret 触发），已按维护者要求移除：
+发版流程保持简单，同步交给 Packagist 页面那一次点击。若日后想省这一步，把 webhook 配在
+Packagist 侧即可，不需要改本仓库。
 
 ## 3. 无法在本机验证的内容（现由 CI 覆盖）
 
@@ -580,7 +585,7 @@ Packagist 会认为最高版本是 1.0.0，于是不带约束的 `composer requi
 |------|------|------|---------|
 | PHP 语法 | `find flarum-extension -name '*.php' -exec php -l {} \;` | 无 `Parse error` | ✅ CI 已执行通过 |
 | Java 编译 | `cd mc-plugin && gradle wrapper --gradle-version 8.10 && ./gradlew build` | `BUILD SUCCESSFUL` | ✅ CI 已执行通过，jar 已上传为 artifact |
-| Flarum 安装 | `composer require stalirmc/mc-bridge:'*'` | 扩展出现在管理后台 | ⬜ 需在真实论坛执行（CI 不安装 Flarum） |
+| Flarum 安装 | `composer require stalirmc/mc-flarum-bridge` | 扩展出现在管理后台 | ⬜ 需在真实论坛执行（CI 不安装 Flarum） |
 | 迁移执行 | `php flarum migrate` | 5 张表建立 | ⬜ 需真实数据库（CI 仅反射校验迁移契约） |
 | **桥接自检** | `php flarum mc-bridge:selftest --url=https://你的域名` | 全部 `OK` | ⬜ 需在真实论坛执行 |
 | 插件加载（Paper） | 放入 jar 后启动服务器 | 日志出现 `McBridge enabled on paper as server ...` | ⬜ 需在真实服务器执行 |
