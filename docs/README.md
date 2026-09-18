@@ -157,9 +157,13 @@ php flarum assets:publish                    # 扩展的前端 JS 会复制进 p
 > 另外浏览器可能仍缓存旧脚本，建议 `Ctrl+F5` 强制刷新一次。
 
 > **Packagist 同步**：新版本要先被 Packagist 抓到才能 `composer update` 到。
-> 如果刚推完 tag 却更新不到，去 <https://packagist.org/packages/stalirmc/mc-flarum-bridge>
-> 点一次 **Update**；想以后自动同步，就在 GitHub 仓库 → Settings → Webhooks 里加上
-> Packagist 给出的 webhook（Payload URL 与 secret 都在该页面上）。
+> 两条路任选：
+> 1. **自动（推荐）**：在 GitHub 仓库 → Settings → Secrets 里加
+>    `PACKAGIST_USERNAME` 与 `PACKAGIST_TOKEN`（token 在 <https://packagist.org/profile/> 取），
+>    发版工作流会在发布后主动通知 Packagist 抓取；
+> 2. **手动**：去 <https://packagist.org/packages/stalirmc/mc-flarum-bridge> 点一次 **Update**。
+>
+> 也可以按 Packagist 页面给出的 URL 自己配一个 GitHub webhook，效果与第 1 条相同。
 
 ### 1.3 生成共享密钥
 
