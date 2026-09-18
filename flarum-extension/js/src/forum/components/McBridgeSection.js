@@ -8,7 +8,7 @@ import LoadingIndicator from 'flarum/common/components/LoadingIndicator';
 // m is the global Mithril hyperscript function that Flarum's own bundle
 // exposes (via expose-loader), so JSX/hyperscript calls need no import.
 
-const EXTENSION_ID = 'stalir-mc-bridge';
+const EXTENSION_ID = 'stalirmc-mc-bridge';
 
 /**
  * The "Minecraft account" section on the user's settings page.

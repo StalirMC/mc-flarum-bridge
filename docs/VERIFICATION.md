@@ -167,7 +167,7 @@ run #2 的三个 job：
 
 ### 2.5 前端 bundle 初始化崩溃 —— 懒加载 chunk 陷阱（已修复）
 
-**现象**：装上扩展后论坛前端报 `stalir-mc-bridge failed to initialize /
+**现象**：装上扩展后论坛前端报 `stalirmc-mc-bridge failed to initialize /
 TypeError: Cannot read properties of undefined (reading 'prototype')`，「个人设置」里
 根本看不到绑定码输入框。
 
@@ -205,8 +205,8 @@ PostStream / PostStreamScrubber / DiscussionsUserPage / UserSecurityPage）、�
 
 ### 2.6 管理后台启动崩溃 —— 2.x 移除了 `app.extensionData`（已修复）
 
-**现象**：打开 `admin#/extension/stalir-mc-bridge` 后控制台报
-`stalir-mc-bridge failed to initialize / TypeError: Cannot read properties of
+**现象**：打开 `admin#/extension/stalirmc-mc-bridge` 后控制台报
+`stalirmc-mc-bridge failed to initialize / TypeError: Cannot read properties of
 undefined (reading 'for')`，位置 `admin.js:8`（即 `app.extensionData.for(...)`）。
 
 **排查**：
@@ -467,9 +467,9 @@ errors: 1
 | 检查 | 做法 |
 |------|------|
 | 前端读的 user 属性必须被 PHP 声明 | 从 JS 收集 `.attribute('mcBridge*')`，与 `UserResourceFields.php` 的 `Schema\*::make('...')` 比对 |
-| 前端要的翻译键必须在每个 locale 里存在 | 从 JS 收集 `translator.trans('stalir-mc-bridge.*')`，与两个 locale 文件的键集比对 |
+| 前端要的翻译键必须在每个 locale 里存在 | 从 JS 收集 `translator.trans('stalirmc-mc-bridge.*')`，与两个 locale 文件的键集比对 |
 
-为此把前端里的翻译键从模板字符串改成**字面量**（`` trans(`${EXTENSION_ID}.…`) `` → `trans('stalir-mc-bridge.…')`），
+为此把前端里的翻译键从模板字符串改成**字面量**（`` trans(`${EXTENSION_ID}.…`) `` → `trans('stalirmc-mc-bridge.…')`），
 否则键名对静态工具不可见。
 
 同样做了反向验证——故意把 `mcBridgePlayerName` 拼错成 `mcBridgePlayerNam`：
@@ -495,7 +495,7 @@ errors: 1
 
 ```
 BadMethodCallException: Call to undefined method Flarum\User\Guest::isRegistered()
-  .../vendor/stalir/mc-flarum-bridge/flarum-extension/src/Api/UserResourceFields.php:30
+  .../vendor/stalirmc/mc-flarum-bridge/flarum-extension/src/Api/UserResourceFields.php:30
 ```
 
 日志里 `Flarum\User\Guest` 与 `Flarum\User\User` **两种都报**，说明这个方法在部署的版本上对任何 actor 都不存在。
@@ -525,7 +525,7 @@ API。更糟的是它写在 `visible` 回调里，**每个会序列化用户的�
 | `core / forum/components/IndexSidebar`，且原型上有 `items()` | ✅ 存在 |
 | `core / forum/components/PostUser#userViewItems`、`UserPage#sidebarItems` | ✅ 存在 |
 | `core / forum/components/SettingsPage` | 懒加载 chunk，`reg.get` 取不到（符合预期，字符串形式 `extend` 会等它） |
-| 扩展命名空间 | `stalir-mc-bridge`、`ramon-avocado` |
+| 扩展命名空间 | `stalirmc-mc-bridge`、`ramon-avocado` |
 
 **徽章为什么是黑块**：之前把 `span.Badge` 加在 `PostUser-badges` 列表**外面**，主题的
 `PostBadges.less` 管不到它，于是一个没有图标、没有主题样式的暗色胶囊。
@@ -556,7 +556,7 @@ API。更糟的是它写在 `visible` 回调里，**每个会序列化用户的�
 |------|------|------|---------|
 | PHP 语法 | `find flarum-extension -name '*.php' -exec php -l {} \;` | 无 `Parse error` | ✅ CI 已执行通过 |
 | Java 编译 | `cd mc-plugin && gradle wrapper --gradle-version 8.10 && ./gradlew build` | `BUILD SUCCESSFUL` | ✅ CI 已执行通过，jar 已上传为 artifact |
-| Flarum 安装 | `composer require stalir/mc-bridge:'*'` | 扩展出现在管理后台 | ⬜ 需在真实论坛执行（CI 不安装 Flarum） |
+| Flarum 安装 | `composer require stalirmc/mc-bridge:'*'` | 扩展出现在管理后台 | ⬜ 需在真实论坛执行（CI 不安装 Flarum） |
 | 迁移执行 | `php flarum migrate` | 5 张表建立 | ⬜ 需真实数据库（CI 仅反射校验迁移契约） |
 | **桥接自检** | `php flarum mc-bridge:selftest --url=https://你的域名` | 全部 `OK` | ⬜ 需在真实论坛执行 |
 | 插件加载（Paper） | 放入 jar 后启动服务器 | 日志出现 `McBridge enabled on paper as server ...` | ⬜ 需在真实服务器执行 |

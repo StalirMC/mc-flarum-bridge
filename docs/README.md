@@ -49,7 +49,7 @@ if (Arr::get($package, 'type') === 'flarum-extension' && str_contains($name, '/'
 
 `ExtensionManager::subExtensionConfsFromJson()` 会读取这个字段，把子目录里的
 `composer.json` 识别为扩展。因此**整个仓库可以作为单个 Composer 包安装**，
-扩展 ID 是子目录里声明的 `stalir-mc-bridge`。
+扩展 ID 是子目录里声明的 `stalirmc-mc-bridge`。
 
 > 注意 autoload 必须写在根 `composer.json` 里：Composer 不会处理子包自己的
 > `autoload`，而 Flarum 也不会替扩展注册命名空间。
@@ -66,14 +66,41 @@ if (Arr::get($package, 'type') === 'flarum-extension' && str_contains($name, '/'
    - 保存
 2. 同页 → **安装一个新的扩展程序** → 填：
    ```
-   stalir/mc-flarum-bridge:dev-main
+   stalirmc/mc-flarum-bridge:dev-main
    ```
-   （仓库打过 `v1.0.0` 之类的标签后，直接填 `stalir/mc-flarum-bridge` 即可）
+   （仓库打过 `v1.0.0` 之类的标签后，直接填 `stalirmc/mc-flarum-bridge` 即可）
 3. 装好后到扩展列表**启用**「MC Bridge」
 4. 生成共享密钥（见 1.3）；如果后台没有终端，用方式 B/C 或在服务器上执行
 
 > Extension Manager 的仓库类型只接受 `composer`、`vcs`、`path` 三种
 > （`ConfigureComposerValidator` 中的校验规则），`vcs` 正是上面用的。
+
+### ⚠️ 从旧包名 `stalir/*` 迁移过来
+
+包名改成了组织名（Composer 要求全小写，所以是 `stalirmc/*`），**扩展 ID 也随之从
+`stalir-mc-bridge` 变成 `stalirmc-mc-bridge`**。对已装过的论坛，替换一次即可：
+
+```bash
+cd /path/to/flarum
+composer remove stalir/mc-flarum-bridge      # 若走方式 C 装的是 stalir/mc-bridge
+composer config repositories.mc-bridge vcs https://github.com/StalirMC/mc-flarum-bridge
+composer require stalirmc/mc-flarum-bridge:dev-main
+php flarum migrate
+php flarum extension:enable stalirmc-mc-bridge
+php flarum cache:clear
+php flarum assets:publish
+```
+
+**数据与配置都会保留**，因为表名与设置键都没变：
+
+| 内容 | 是否保留 | 原因 |
+|------|----------|------|
+| 5 张数据表（服务器/事件/公告/绑定/绑定码） | ✅ 保留 | 迁移里有 `hasTable` 守卫，重跑不会重建也不会报错 |
+| 共享密钥（`mc-bridge.secret`）、语言、公告标签、同步开关 | ✅ 保留 | 设置键与包名无关 |
+| 扩展的启用状态 | ⚠️ 需重新启用 | Flarum 按扩展 ID 记录启用列表，ID 变了就是新扩展 |
+
+如果上面那条 `composer remove` 之后论坛报「扩展不存在」，说明 Composer 还在用缓存的旧包名，
+在 `composer.json` 里确认 `repositories` 没变、再执行一次 `composer update stalirmc/mc-flarum-bridge` 即可。
 
 ### 方式 B：SSH / Composer（从 GitHub 装）
 
@@ -81,10 +108,10 @@ if (Arr::get($package, 'type') === 'flarum-extension' && str_contains($name, '/'
 cd /path/to/flarum
 
 composer config repositories.mc-bridge vcs https://github.com/StalirMC/mc-flarum-bridge
-composer require stalir/mc-flarum-bridge:dev-main
+composer require stalirmc/mc-flarum-bridge:dev-main
 
 php flarum migrate
-php flarum extension:enable stalir-mc-bridge   # 用 php flarum extension:list 核对确切 ID
+php flarum extension:enable stalirmc-mc-bridge   # 用 php flarum extension:list 核对确切 ID
 php flarum cache:clear
 ```
 
@@ -102,15 +129,15 @@ php flarum cache:clear
 ```
 
 ```bash
-composer require stalir/mc-bridge:dev-main
+composer require stalirmc/mc-bridge:dev-main
 php flarum migrate
-php flarum extension:enable stalir-mc-bridge
+php flarum extension:enable stalirmc-mc-bridge
 php flarum cache:clear
 ```
 
 > 方式 C 指向的是 `flarum-extension/` 本身（它自带的 `composer.json` 已经是
-> `type: flarum-extension`），所以包名是 **`stalir/mc-bridge`**，与方式 A/B 的
-> `stalir/mc-flarum-bridge` 不同。走这条路**不需要** `flarum-subextensions`。
+> `type: flarum-extension`），所以包名是 **`stalirmc/mc-bridge`**，与方式 A/B 的
+> `stalirmc/mc-flarum-bridge` 不同。走这条路**不需要** `flarum-subextensions`。
 
 ### 1.2.1 更新到最新代码（前端资源必须重新发布）
 
@@ -119,7 +146,7 @@ php flarum cache:clear
 
 ```bash
 cd <flarum>
-composer update stalir/mc-flarum-bridge      # 走方式 C 安装的则是 stalir/mc-bridge
+composer update stalirmc/mc-flarum-bridge      # 走方式 C 安装的则是 stalirmc/mc-bridge
 php flarum cache:clear
 php flarum assets:publish                    # 扩展的前端 JS 会复制进 public/assets
 ```

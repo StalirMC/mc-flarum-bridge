@@ -4,7 +4,7 @@ import McBridgeSection from './src/forum/components/McBridgeSection';
 import McBridgeStatus from './src/forum/components/McBridgeStatus';
 import grassBlock from './src/forum/grassBlock';
 
-const EXTENSION_ID = 'stalir-mc-bridge';
+const EXTENSION_ID = 'stalirmc-mc-bridge';
 
 app.initializers.add(EXTENSION_ID, () => {
   // Adds a "Minecraft account" section to the user's settings page, where the
@@ -46,12 +46,12 @@ app.initializers.add(EXTENSION_ID, () => {
     items.add(
       'mcBridgeAccount',
       m('div.McBridge-profileAccount', [
-        m('label', app.translator.trans('stalir-mc-bridge.forum.profile.heading')),
-        m('p', app.translator.trans('stalir-mc-bridge.forum.profile.bound_to', { name: playerName })),
+        m('label', app.translator.trans('stalirmc-mc-bridge.forum.profile.heading')),
+        m('p', app.translator.trans('stalirmc-mc-bridge.forum.profile.bound_to', { name: playerName })),
         serverKey
           ? m(
               'p.helpText',
-              app.translator.trans('stalir-mc-bridge.forum.profile.server', { key: serverKey })
+              app.translator.trans('stalirmc-mc-bridge.forum.profile.server', { key: serverKey })
             )
           : null,
       ]),
@@ -81,8 +81,8 @@ app.initializers.add(EXTENSION_ID, () => {
       m(
         'span.Badge.McBridge-badge',
         {
-          title: app.translator.trans('stalir-mc-bridge.forum.badge.title', { name: playerName }),
-          'aria-label': app.translator.trans('stalir-mc-bridge.forum.badge.label', { name: playerName }),
+          title: app.translator.trans('stalirmc-mc-bridge.forum.badge.title', { name: playerName }),
+          'aria-label': app.translator.trans('stalirmc-mc-bridge.forum.badge.label', { name: playerName }),
         },
         grassBlock(14)
       ),

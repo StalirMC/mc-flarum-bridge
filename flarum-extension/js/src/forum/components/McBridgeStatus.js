@@ -3,7 +3,7 @@ import Component from 'flarum/common/Component';
 import LoadingIndicator from 'flarum/common/components/LoadingIndicator';
 import grassBlock from '../grassBlock';
 
-const EXTENSION_ID = 'stalir-mc-bridge';
+const EXTENSION_ID = 'stalirmc-mc-bridge';
 
 /** How often the widget re-reads the public status endpoint. */
 const REFRESH_MS = 60_000;

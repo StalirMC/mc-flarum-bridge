@@ -85,11 +85,11 @@
 #    声明为扩展，因此整个仓库可作为单个包安装：
 cd /path/to/flarum
 composer config repositories.mc-bridge vcs https://github.com/StalirMC/mc-flarum-bridge
-composer require stalir/mc-flarum-bridge:dev-main
+composer require stalirmc/mc-flarum-bridge:dev-main
 #    没有 SSH？后台 Extension Manager → 仓库 → 添加 vcs 仓库后，
-#    在「安装一个新的扩展程序」填 stalir/mc-flarum-bridge:dev-main
+#    在「安装一个新的扩展程序」填 stalirmc/mc-flarum-bridge:dev-main
 php flarum migrate
-php flarum extension:enable stalir/mc-bridge   # 用 php flarum extension:list 核对确切 ID
+php flarum extension:enable stalirmc/mc-bridge   # 用 php flarum extension:list 核对确切 ID
 php flarum cache:clear
 php flarum mc-bridge:secret          # 生成共享密钥，填到插件配置里
 php flarum mc-bridge:selftest --url=https://forum.kxkl2024.cn   # 论坛侧全链路自检

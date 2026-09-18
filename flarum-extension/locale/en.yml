@@ -1,9 +1,9 @@
 # English
 #
 # The namespace is the extension ID (derived from the composer package name
-# stalir/mc-bridge), so keys are used as:
-#   $messages->get('console.secret.stored')  ->  stalir-mc-bridge.console.secret.stored
-stalir-mc-bridge:
+# stalirmc/mc-bridge), so keys are used as:
+#   $messages->get('console.secret.stored')  ->  stalirmc-mc-bridge.console.secret.stored
+stalirmc-mc-bridge:
   console:
     secret:
       missing: "No secret is configured yet."

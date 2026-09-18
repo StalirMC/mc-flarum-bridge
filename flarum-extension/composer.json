@@ -1,5 +1,5 @@
 {
-    "name": "stalir/mc-bridge",
+    "name": "stalirmc/mc-bridge",
     "description": "Bidirectional bridge between Minecraft servers and your Flarum forum.",
     "type": "flarum-extension",
     "keywords": [

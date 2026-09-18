@@ -20,7 +20,7 @@ use Symfony\Component\Translation\MessageCatalogueInterface;
 final class BridgeMessages
 {
     /** Top level key used by locale/*.yml, and the translation key prefix. */
-    public const PACKAGE = 'stalir-mc-bridge';
+    public const PACKAGE = 'stalirmc-mc-bridge';
 
     /** Language used when nothing else is configured. */
     public const DEFAULT_LOCALE = 'zh-Hans';

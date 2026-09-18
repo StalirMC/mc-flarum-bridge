@@ -1,5 +1,5 @@
 {
-    "name": "stalir/mc-flarum-bridge",
+    "name": "stalirmc/mc-flarum-bridge",
     "description": "Bidirectional bridge between Minecraft servers and a Flarum forum. Monorepo: the Flarum extension lives in flarum-extension/, the Paper plugin in mc-plugin/.",
     "type": "library",
     "keywords": [

@@ -4,7 +4,7 @@
 公告、广播和（可选）指令投递给游戏。
 
 - 目标 Flarum：**2.x**（PHP 8.1+）
-- 包名：`stalir/mc-bridge`
+- 包名：`stalirmc/mc-bridge`
 - 认证：HMAC-SHA256 + 时间戳 + 一次性 nonce（见 [`../protocol/README.md`](../protocol/README.md)）
 
 ## 安装
@@ -15,21 +15,21 @@
 
 **方式 A — 后台安装（推荐）**：Extension Manager → 仓库 → 添加 `vcs` 仓库
 `https://github.com/StalirMC/mc-flarum-bridge` → 安装
-`stalir/mc-flarum-bridge:dev-main` → 启用「MC Bridge」。
+`stalirmc/mc-flarum-bridge:dev-main` → 启用「MC Bridge」。
 
 **方式 B — SSH / Composer**：
 
 ```bash
 cd /path/to/flarum
 composer config repositories.mc-bridge vcs https://github.com/StalirMC/mc-flarum-bridge
-composer require stalir/mc-flarum-bridge:dev-main
+composer require stalirmc/mc-flarum-bridge:dev-main
 php flarum migrate
-php flarum extension:enable stalir-mc-bridge   # 用 php flarum extension:list 核对确切 ID
+php flarum extension:enable stalirmc-mc-bridge   # 用 php flarum extension:list 核对确切 ID
 php flarum cache:clear
 ```
 
 **方式 C — 不上 GitHub**：把**本目录**（`flarum-extension/`）上传到
-`<flarum>/packages/mc-bridge/`，加 `path` 仓库后安装 `stalir/mc-bridge:dev-main`。
+`<flarum>/packages/mc-bridge/`，加 `path` 仓库后安装 `stalirmc/mc-bridge:dev-main`。
 
 装好后：
 

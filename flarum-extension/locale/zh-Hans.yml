@@ -1,8 +1,8 @@
 # 简体中文（默认语言）
 #
-# 命名空间取扩展 ID（由包名 stalir/mc-bridge 推导），键用法：
-#   $messages->get('console.secret.stored')  ->  stalir-mc-bridge.console.secret.stored
-stalir-mc-bridge:
+# 命名空间取扩展 ID（由包名 stalirmc/mc-bridge 推导），键用法：
+#   $messages->get('console.secret.stored')  ->  stalirmc-mc-bridge.console.secret.stored
+stalirmc-mc-bridge:
   console:
     secret:
       missing: "当前还没有配置共享密钥。"

@@ -1701,7 +1701,7 @@ section('16. Flarum frontend bundle');
   } else {
     for (const file of walk(join(EXT, 'locale'), (candidate) => candidate.endsWith('.yml'))) {
       const keys = flattenKeys(parseYaml(read(file)));
-      const absent = [...usedKeys].filter((key) => !keys.has(`stalir-mc-bridge.forum.settings.${key}`));
+      const absent = [...usedKeys].filter((key) => !keys.has(`stalirmc-mc-bridge.forum.settings.${key}`));
 
       if (absent.length > 0) {
         fail(rel(file), `missing forum.settings keys used by the settings section: [${absent.join(', ')}]`);
@@ -2001,7 +2001,7 @@ section('18. Forum frontend <-> PHP contracts');
 
     // Translation keys are written as plain literals so they can be checked:
     // a template literal would hide the key from every static tool.
-    for (const match of source.matchAll(/translator\.trans\(\s*'stalir-mc-bridge\.([A-Za-z0-9_.]+)'/g)) {
+    for (const match of source.matchAll(/translator\.trans\(\s*'stalirmc-mc-bridge\.([A-Za-z0-9_.]+)'/g)) {
       readTranslations.add(match[1]);
     }
   }
@@ -2025,11 +2025,11 @@ section('18. Forum frontend <-> PHP contracts');
   const localeDir = join(EXT, 'locale');
 
   if (readTranslations.size === 0) {
-    fail('frontend translations', 'no stalir-mc-bridge.* translation key was found in the frontend sources');
+    fail('frontend translations', 'no stalirmc-mc-bridge.* translation key was found in the frontend sources');
   } else {
     for (const file of walk(localeDir, (candidate) => candidate.endsWith('.yml'))) {
       const keys = flattenKeys(parseYaml(read(file)));
-      const absent = [...readTranslations].filter((key) => !keys.has(`stalir-mc-bridge.${key}`));
+      const absent = [...readTranslations].filter((key) => !keys.has(`stalirmc-mc-bridge.${key}`));
 
       if (absent.length > 0) {
         fail(rel(file), `the frontend asks for keys that are missing here: [${absent.join(', ')}]`);

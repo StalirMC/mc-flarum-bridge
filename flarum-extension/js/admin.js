@@ -1,6 +1,6 @@
 import app from 'flarum/admin/app';
 
-const EXTENSION_ID = 'stalir-mc-bridge';
+const EXTENSION_ID = 'stalirmc-mc-bridge';
 
 app.initializers.add(EXTENSION_ID, () => {
   // Flarum 2.x replaced `app.extensionData` with `app.registry` (AdminRegistry).
