@@ -629,6 +629,28 @@ Packagist 会认为最高版本是 1.0.0，于是不带约束的 `composer requi
 
 > 本次**不发版**：按维护者要求，不再为每个改动升版本号，改动只进 `main`。
 
+### 2.16 徽章显示与属性翻译（0.0.8 – 0.0.10）
+
+三处显示问题，都是在真实论坛上被维护者发现后定位的，结论都写进了代码注释与 `verify.mjs`：
+
+1. **徽章文字重复**（0.0.9）：avocado 主题的 `less/forum/PostBadges.less` 用
+   `.PostUser-badges .Badge::after { content: attr(aria-label); }` 把 `aria-label` 当作胶囊上的
+   可见标签，其源码注释明确写着这对**任何**遵循核心约定的徽章都生效。上一版既在子元素里放了
+   可见文字，又把「Minecraft 账号：xxx」放进 `aria-label`，于是两段一起被画了出来。
+   正解就是核心约定本身：**`aria-label` 装标签，子元素只放图标**。
+2. **悬浮提示多出一个逗号**（0.0.10）：`app.translator.trans()` 返回 vnode（多段消息是数组），
+   直接交给 HTML 属性会被 `String()` 用**逗号**连接，「Minecraft 账号：{name}」于是变成
+   「Minecraft 账号：,名字」。Flarum 自己的解法是 `extractText()`（核心用它生成后台下拉选项），
+   它以空串拼接。凡属性位置的翻译一律过它：徽章 2 处、绑定码输入框、FieldSet 标签、后台 3 个设置项。
+   `verify.mjs` 增加检查：属性值以翻译调用开头且未被 `extractText()` 包裹即失败（已做反向验证）。
+3. **管理页版本显示 `0.0`、作者链接跳 `/admin`**（0.0.7）：前者因为 Flarum 读**子扩展自己的**
+   `composer.json` 的 `version`，缺失时回退成写死的 `0.0`；后者因为
+   `authors[].link = homepage ?? email ?? ''`，空串被浏览器解析成当前页面。两处补齐字段后
+   纳入 `verify.mjs` 第 17 节强制校验。
+
+0.0.10 曾被撤回重发一次：维护者要求作者名改为 `StalirMC`，而当时 Packagist 只抓到 `v0.0.6`，
+所以撤回是干净的 —— 删除 tag 后在新提交上重建，Release 就地更新（资产已替换并实测）。
+
 ## 3. 无法在本机验证的内容（现由 CI 覆盖）
 
 > 本机没有 PHP / JDK，这些检查**已全部由 CI 在带 PHP 8.3 / JDK 21 的真实环境中
