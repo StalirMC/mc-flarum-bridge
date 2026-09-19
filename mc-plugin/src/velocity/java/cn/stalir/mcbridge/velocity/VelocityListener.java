@@ -2,16 +2,15 @@ package cn.stalir.mcbridge.velocity;
 
 import cn.stalir.mcbridge.BridgeCore;
 import com.velocitypowered.api.event.Subscribe;
-import com.velocitypowered.api.event.connection.DisconnectEvent;
 import com.velocitypowered.api.event.connection.PostLoginEvent;
 import com.velocitypowered.api.proxy.Player;
 
 /**
- * Forwards proxy logins and disconnects to the shared core.
+ * Tells a player who has not linked a forum account how to do it.
  *
- * A proxy only sees connections: deaths and advancements happen on the backend
- * servers, where the Paper/Folia entry point reports them, so no such event is
- * invented here.
+ * The join/quit reporting that used to live here was removed together with the
+ * gameplay event feature, and a proxy never saw deaths or advancements, so the
+ * login prompt is all that is left.
  */
 public final class VelocityListener {
 
@@ -31,41 +30,19 @@ public final class VelocityListener {
 
         Player player = event.getPlayer();
 
-        // Independent of the event switch below: a player who has not linked yet
-        // is told how to do it even when join events are not reported.
         core.promptBindingIfNeeded(player.getUniqueId(), player.getUsername());
-
-        if (!core.config().reportJoins()) {
-            return;
-        }
-
-        core.enqueuePlayerEvent("join", player.getUniqueId(), player.getUsername(), null);
-    }
-
-    @Subscribe
-    public void onDisconnect(DisconnectEvent event) {
-        BridgeCore core = activeCore();
-
-        if (core == null || !core.config().reportQuits()) {
-            return;
-        }
-
-        Player player = event.getPlayer();
-
-        core.enqueuePlayerEvent("quit", player.getUniqueId(), player.getUsername(), null);
     }
 
     /**
-     * The core, or {@code null} while it cannot buffer events yet.
+     * The core, or {@code null} while it cannot answer yet.
      *
      * Events can fire before {@code ProxyInitializeEvent} finished loading the
-     * configuration, and the event queue only exists once the configuration is
-     * known, so both are guarded.
+     * configuration, so the core and its configuration are both guarded.
      */
     private BridgeCore activeCore() {
         BridgeCore core = plugin.core();
 
-        if (core == null || core.config() == null || core.eventQueue() == null) {
+        if (core == null || core.config() == null) {
             return null;
         }
 

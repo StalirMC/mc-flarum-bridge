@@ -33,16 +33,8 @@ security:
   secret: ""
 
 sync:
-  heartbeat-interval-seconds: 30
+  # How often the plugin asks the forum for pending announcements.
   outbox-poll-interval-seconds: 20
-  event-flush-interval-seconds: 10
-  # Events are buffered while the forum is unreachable; oldest are dropped
-  # once this limit is reached.
-  max-queued-events: 200
-  report-joins: true
-  report-quits: true
-  report-deaths: true
-  report-advancements: false
 
 game:
   # Placeholders: {title} {body} {url} {type}

@@ -6,12 +6,9 @@
  * Flarum installation, a database or a web server. The implemented contract is
  * the one described in `protocol/README.md` and `docs/API.md`:
  *
- *   POST /api/mc-bridge/heartbeat     HMAC
- *   POST /api/mc-bridge/events        HMAC
  *   GET  /api/mc-bridge/outbox        HMAC   (alias: /announcements)
  *   POST /api/mc-bridge/bind/start    HMAC
  *   GET  /api/mc-bridge/bind/status   HMAC
- *   GET  /api/mc-bridge/status        public
  *
  * Authentication mirrors `Stalir\McBridge\Api\Controller\AbstractBridgeController`
  * and `Stalir\McBridge\Service\BridgeCrypto`:
@@ -23,8 +20,8 @@
  * The timestamp must be within +/-300 seconds and a nonce may be used once
  * (cached for 600 seconds).
  *
- * Storage is a plain in-memory object standing in for the `mc_servers`,
- * `mc_events`, `mc_outbox`, `mc_bindings` and `mc_bind_codes` tables.
+ * Storage is a plain in-memory object standing in for the `mc_outbox`,
+ * `mc_bindings` and `mc_bind_codes` tables.
  *
  * Environment variables:
  *   MOCK_SECRET  shared secret (default: the TEST_SECRET constant below)
@@ -58,8 +55,8 @@ export const BRIDGE_PREFIX = '/api/mc-bridge';
 /**
  * Route prefix every bridge route lives under. The canonical signed path starts
  * here, NOT at BRIDGE_PREFIX: Flarum strips the api frontend prefix (`/api`)
- * before the controller runs, so the forum sees `/mc-bridge/heartbeat` while
- * the client requests `/api/mc-bridge/heartbeat`. Signing the raw request path
+ * before the controller runs, so the forum sees `/mc-bridge/outbox` while
+ * the client requests `/api/mc-bridge/outbox`. Signing the raw request path
  * makes the two sides disagree and every request fails with 401.
  */
 export const SIGN_MARKER = '/mc-bridge';
@@ -69,9 +66,6 @@ export const MAX_SKEW = 300;
 
 /** How long a spent nonce is remembered, in seconds. */
 export const NONCE_TTL = 600;
-
-/** A heartbeat keeps a server "online" for this many seconds (McServer::STALE_AFTER). */
-export const STALE_AFTER = 120;
 
 /** Default listening port (MOCK_PORT). */
 export const DEFAULT_PORT = 8791;
@@ -86,20 +80,6 @@ export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export const CODE_LENGTH = 8;
 export const CODE_TTL_SECONDS = 600;
 
-/** Event types accepted by POST /events (McEvent::ALLOWED_TYPES). */
-export const ALLOWED_EVENT_TYPES = [
-  'join',
-  'quit',
-  'death',
-  'advancement',
-  'chat',
-  'command',
-  'start',
-  'stop',
-  'custom',
-];
-
-const MAX_BATCH = 100;
 const DEFAULT_OUTBOX_LIMIT = 20;
 const MAX_OUTBOX_LIMIT = 100;
 const UUID_PATTERN = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/;
@@ -259,10 +239,6 @@ function clampText(value, maxLength) {
  */
 export function createStore(options = {}) {
   const store = {
-    /** mc_servers */
-    servers: new Map(),
-    /** mc_events */
-    events: [],
     /** mc_outbox */
     outbox: [],
     /** mc_bindings */
@@ -270,17 +246,13 @@ export function createStore(options = {}) {
     /** mc_bind_codes */
     bindCodes: [],
 
-    nextEventId: 1,
     nextOutboxId: 1,
 
     /** Reset every table; a demo message is seeded unless suppressed. */
     reset(resetOptions = {}) {
-      store.servers.clear();
-      store.events.length = 0;
       store.outbox.length = 0;
       store.bindings.clear();
       store.bindCodes.length = 0;
-      store.nextEventId = 1;
       store.nextOutboxId = 1;
 
       // null  -> never seed;  true/undefined -> seed;  false -> seed only when
@@ -322,7 +294,7 @@ export function createStore(options = {}) {
       );
     },
 
-    /** Count of pending messages, as reported by the heartbeat response. */
+    /** Count of pending messages for a server. */
     pendingCount(serverKey) {
       return store.pendingMessages(serverKey).length;
     },
@@ -346,36 +318,6 @@ export function createStore(options = {}) {
 
   store.reset();
   return store;
-}
-
-/** Wire shape of a mc_servers row (McServer::toApiPayload). */
-function serverPayload(server) {
-  const fresh = server.last_heartbeat_at !== null && nowSeconds() - server.last_heartbeat_at <= STALE_AFTER;
-  return {
-    server_key: server.server_key,
-    online: Boolean(server.online) && fresh,
-    players_online: server.players_online,
-    players_max: server.players_max,
-    tps: server.tps,
-    mspt: server.mspt,
-    version: server.version,
-    motd: server.motd,
-    player_names: server.player_names,
-    last_heartbeat_at: iso(server.last_heartbeat_at),
-  };
-}
-
-/** Wire shape of a mc_events row (McEvent::toApiPayload). */
-function eventPayload(event) {
-  return {
-    id: event.id,
-    server_key: event.server_key,
-    type: event.type,
-    player_uuid: event.player_uuid,
-    player_name: event.player_name,
-    message: event.message,
-    happened_at: iso(event.happened_at),
-  };
 }
 
 /** Wire shape of a mc_outbox row (McOutboxMessage::toApiPayload). */
@@ -517,115 +459,6 @@ export function createServer(options = {}) {
   // Endpoint handlers
   // -------------------------------------------------------------------------
 
-  function handleHeartbeat(request, response, body) {
-    const serverKey =
-      sanitizeServerKey(body.server_key) ??
-      sanitizeServerKey(request.headers[HEADERS.server.toLowerCase()]);
-
-    if (serverKey === null) {
-      return sendError(response, 422, 'A valid server_key is required.');
-    }
-
-    const playerNames = Array.isArray(body.player_names)
-      ? [...new Set(body.player_names
-          .filter((name) => typeof name === 'string')
-          .map((name) => name.trim())
-          .filter((name) => name !== '')
-          .map((name) => name.slice(0, 64)))].slice(0, 500)
-      : [];
-
-    const existing = store.servers.get(serverKey) ?? {
-      server_key: serverKey,
-      online: true,
-      players_online: 0,
-      players_max: 0,
-      tps: null,
-      mspt: null,
-      version: null,
-      motd: null,
-      player_names: [],
-      last_heartbeat_at: null,
-    };
-
-    existing.online = body.online === undefined ? true : toBoolean(body.online, true);
-    existing.players_online = Math.max(
-      0,
-      Math.trunc(optionalNumber(body.players_online) ?? playerNames.length)
-    );
-    existing.players_max = Math.max(0, Math.trunc(optionalNumber(body.players_max) ?? 0));
-    existing.tps = optionalNumber(body.tps);
-    existing.mspt = optionalNumber(body.mspt);
-    existing.version = body.version === undefined ? existing.version : clampText(body.version, 64);
-    existing.motd = body.motd === undefined ? existing.motd : clampText(body.motd, 255);
-    existing.player_names = playerNames;
-    existing.last_heartbeat_at = nowSeconds();
-
-    store.servers.set(serverKey, existing);
-
-    return sendJson(response, 200, {
-      ok: true,
-      server: serverPayload(existing),
-      pending_messages: store.pendingCount(serverKey),
-      server_time: iso(nowSeconds()),
-    });
-  }
-
-  function handleEvents(request, response, body) {
-    const serverKey =
-      sanitizeServerKey(body.server_key) ??
-      sanitizeServerKey(request.headers[HEADERS.server.toLowerCase()]);
-
-    if (serverKey === null) {
-      return sendError(response, 422, 'A valid server_key is required.');
-    }
-
-    let events = body.events;
-    if (events === undefined || events === null) events = [body];
-
-    if (!Array.isArray(events) || events.length === 0) {
-      return sendError(response, 422, 'No events supplied.');
-    }
-
-    events = events.slice(0, MAX_BATCH);
-
-    let stored = 0;
-    const rejected = [];
-
-    events.forEach((event, index) => {
-      if (event === null || typeof event !== 'object' || Array.isArray(event)) {
-        rejected.push({ index, reason: 'Event must be an object.' });
-        return;
-      }
-
-      const type = event.type;
-      if (typeof type !== 'string' || !ALLOWED_EVENT_TYPES.includes(type)) {
-        rejected.push({ index, reason: 'Unsupported event type.' });
-        return;
-      }
-
-      const happenedAt = typeof event.happened_at === 'string' && event.happened_at !== ''
-        ? Math.floor(Date.parse(event.happened_at) / 1000)
-        : nowSeconds();
-
-      store.events.push({
-        id: store.nextEventId++,
-        server_key: serverKey,
-        type,
-        player_uuid: sanitizeUuid(event.player_uuid ?? event.uuid),
-        player_name: clampText(event.player_name ?? event.username, 64),
-        message: clampText(event.message, 4000),
-        happened_at: Number.isNaN(happenedAt) ? nowSeconds() : happenedAt,
-      });
-      stored++;
-    });
-
-    return sendJson(response, stored > 0 ? 201 : 422, {
-      ok: true,
-      stored,
-      rejected,
-    });
-  }
-
   function handleOutbox(request, response, payload, query, rawBody) {
     const serverKey =
       sanitizeServerKey(query.get('server_key')) ??
@@ -747,30 +580,6 @@ export function createServer(options = {}) {
     });
   }
 
-  function handleStatus(response) {
-    const servers = [...store.servers.values()]
-      .sort((a, b) => a.server_key.localeCompare(b.server_key))
-      .map(serverPayload);
-
-    const recentEvents = [...store.events]
-      .sort((a, b) => b.id - a.id)
-      .slice(0, 15)
-      .map(eventPayload);
-
-    return sendJson(response, 200, {
-      ok: true,
-      totals: {
-        servers: servers.length,
-        servers_online: servers.filter((server) => server.online).length,
-        players_online: servers
-          .filter((server) => server.online)
-          .reduce((sum, server) => sum + server.players_online, 0),
-      },
-      servers,
-      recent_events: recentEvents,
-    });
-  }
-
   // -------------------------------------------------------------------------
   // Routing
   // -------------------------------------------------------------------------
@@ -783,13 +592,10 @@ export function createServer(options = {}) {
    * @type {Map<string, {methods: string[], auth: boolean, handler: Function}>}
    */
   const routes = new Map([
-    ['/heartbeat', { methods: ['POST'], auth: true, handler: handleHeartbeat }],
-    ['/events', { methods: ['POST'], auth: true, handler: handleEvents }],
     ['/outbox', { methods: ['GET'], auth: true, handler: handleOutbox }],
     ['/announcements', { methods: ['GET'], auth: true, handler: handleOutbox }],
     ['/bind/start', { methods: ['POST'], auth: true, handler: handleBindStart }],
     ['/bind/status', { methods: ['GET'], auth: true, handler: handleBindStatus }],
-    ['/status', { methods: ['GET'], auth: false, handler: (request, response) => handleStatus(response) }],
   ]);
 
   const server = createHttpServer(async (request, response) => {
@@ -905,7 +711,7 @@ if (isMain) {
   mock
     .listen()
     .then((port) => {
-      console.log(`[mock-flarum] ready — try: curl ${mock.url}/api/mc-bridge/status`);
+      console.log(`[mock-flarum] ready — machine endpoints live under ${BRIDGE_PREFIX} (HMAC signed)`);
       process.on('SIGINT', () => {
         mock.close().then(() => process.exit(0));
       });

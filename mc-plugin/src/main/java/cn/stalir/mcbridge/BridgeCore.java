@@ -6,8 +6,6 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
 import net.kyori.adventure.text.Component;
 
-import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -16,30 +14,26 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * Platform-independent heart of the plugin.
  *
- * Everything that decides what is sent to the forum lives here: the heartbeat
- * payload, the gameplay event buffer, the announcement poller and the rendering
- * of every command reply. Paper, Folia and Velocity therefore talk to Flarum
- * with byte-identical requests no matter which jar entry point loaded.
+ * Everything that talks to the forum lives here: the announcement poller, the
+ * broadcast submission, the account binding and the rendering of every command
+ * reply. Paper, Folia and Velocity therefore talk to Flarum with byte-identical
+ * requests no matter which jar entry point loaded.
  *
- * Threading: the {@link Platform} implementation decides where tasks run. On
- * Paper/Folia {@link #heartbeatNow()} is scheduled on the main thread because it
- * reads server state, and the HTTP call it starts is handed to
- * {@link Platform#runAsync(Runnable)}. On Velocity everything runs on the proxy
- * scheduler.
+ * The plugin only ever <em>receives</em> from the forum. Reporting the server
+ * status (heartbeat) and gameplay events were removed at the maintainer's
+ * request, so nothing is pushed except the binding a player asks for.
+ *
+ * Threading: the {@link Platform} implementation decides where tasks run. The
+ * outbox poller is asynchronous and hands each message to
+ * {@link Platform#runSync(Runnable)}, because broadcasting and command dispatch
+ * belong on the main thread / global region.
  */
 public final class BridgeCore {
 
     /** Above this many relayed messages the per-message log line is dropped. */
     private static final int OUTBOX_BATCH_LOG_LIMIT = 5;
 
-    /** Shutdown must not stall the server when the forum is unreachable. */
-    private static final Duration SHUTDOWN_TIMEOUT = Duration.ofSeconds(3);
-
-    private static final long HEARTBEAT_INITIAL_DELAY_MILLIS = 5_000L;
     private static final long OUTBOX_INITIAL_DELAY_MILLIS = 10_000L;
-    private static final long FLUSH_INITIAL_DELAY_MILLIS = 8_000L;
-
-    private static final int FLUSH_BATCH_SIZE = 50;
 
     private final Platform platform;
 
@@ -47,10 +41,7 @@ public final class BridgeCore {
     private volatile BridgeConfig config;
     private volatile Messages messages;
     private volatile HttpBridgeClient client;
-    private volatile EventQueue eventQueue;
 
-    private final AtomicLong failedHeartbeats = new AtomicLong();
-    private final AtomicLong deliveredEvents = new AtomicLong();
     private final AtomicLong receivedMessages = new AtomicLong();
     private final AtomicLong outboxFailures = new AtomicLong();
 
@@ -67,13 +58,10 @@ public final class BridgeCore {
         schedule();
 
         if (config.isUsable()) {
-            enqueueServerEvent("start", "Server started (" + platform.serverVersion() + ")");
-            platform.runAsync(this::flushEvents);
-
             platform.log().info(logText("log.enabled",
                     "platform", platform.id(),
                     "key", config.serverKey(),
-                    "url", config.endpoint("/heartbeat")));
+                    "url", config.endpoint("/outbox")));
         } else {
             platform.log().warn(logText("log.idle"));
         }
@@ -82,20 +70,6 @@ public final class BridgeCore {
     public void stop() {
         platform.cancelTasks();
 
-        if (client != null && config != null && config.isUsable()) {
-            // Building the snapshot is safe here: shutdown runs on the main
-            // thread on Paper/Folia and the proxy exposes thread-safe getters.
-            // Short timeouts keep a dead forum from delaying the stop.
-            try {
-                client.heartbeat(buildHeartbeatPayload(false), SHUTDOWN_TIMEOUT);
-            } catch (BridgeException exception) {
-                platform.log().fine("Could not send the shutdown heartbeat: " + exception.getMessage());
-            }
-
-            enqueueServerEvent("stop", "Server stopped");
-            flushEvents(SHUTDOWN_TIMEOUT);
-        }
-
         if (client != null) {
             client.close();
         }
@@ -103,7 +77,7 @@ public final class BridgeCore {
         platform.log().info(logText("log.disabled"));
     }
 
-    /** Reload config.yml, keep buffered events and restart the scheduled tasks. */
+    /** Reload config.yml and restart the scheduled tasks. */
     public void reload() {
         platform.cancelTasks();
         load();
@@ -112,7 +86,6 @@ public final class BridgeCore {
 
     private void load() {
         HttpBridgeClient previousClient = this.client;
-        EventQueue previousQueue = this.eventQueue;
 
         // The language is read from the raw config first: it decides how the
         // configuration validation messages and every log line below render.
@@ -121,17 +94,6 @@ public final class BridgeCore {
         this.messages = Messages.load(platform, raw.getString("language", Messages.DEFAULT_LANGUAGE));
         this.config = BridgeConfig.from(raw, platform.log(), this.messages);
         this.client = new HttpBridgeClient(this.config);
-
-        EventQueue replacement = new EventQueue(this.config.maxQueuedEvents());
-
-        // Carry buffered events across a reload instead of dropping them.
-        if (previousQueue != null) {
-            for (JsonObject pending : previousQueue.drain(previousQueue.size())) {
-                replacement.add(pending);
-            }
-        }
-
-        this.eventQueue = replacement;
 
         // Closing the old client releases its selector thread and connection pool.
         if (previousClient != null) {
@@ -142,19 +104,9 @@ public final class BridgeCore {
     private void schedule() {
         BridgeConfig current = this.config;
 
-        // The heartbeat is captured on the main thread / global region, because
-        // it reads server state; only the HTTP call is asynchronous.
-        platform.runSyncRepeating(this::heartbeatNow,
-                HEARTBEAT_INITIAL_DELAY_MILLIS,
-                current.heartbeatIntervalSeconds() * 1000L);
-
         platform.runAsyncRepeating(this::pollOutbox,
                 OUTBOX_INITIAL_DELAY_MILLIS,
                 current.outboxPollIntervalSeconds() * 1000L);
-
-        platform.runAsyncRepeating(this::flushEvents,
-                FLUSH_INITIAL_DELAY_MILLIS,
-                current.eventFlushIntervalSeconds() * 1000L);
     }
 
     /**
@@ -170,166 +122,12 @@ public final class BridgeCore {
     }
 
     // ------------------------------------------------------------------
-    // Heartbeat
-    // ------------------------------------------------------------------
-
-    /**
-     * Collect the status and transmit it.
-     *
-     * Must be called on the main thread on Paper/Folia: the payload reads online
-     * players, the MOTD and the player limit, none of which are thread-safe.
-     */
-    public void heartbeatNow() {
-        BridgeConfig current = this.config;
-
-        if (current == null || !current.isUsable()) {
-            return;
-        }
-
-        JsonObject payload = buildHeartbeatPayload(true);
-
-        platform.runAsync(() -> transmitHeartbeat(payload, current.requestTimeout()));
-    }
-
-    private void transmitHeartbeat(JsonObject payload, Duration timeout) {
-        try {
-            client.heartbeat(payload, timeout);
-            failedHeartbeats.set(0);
-        } catch (BridgeException exception) {
-            long failures = failedHeartbeats.incrementAndGet();
-
-            // Log the first failure and then only every tenth one, to avoid spam.
-            if (failures == 1 || failures % 10 == 0) {
-                platform.log().warn(logText("log.heartbeat-failed",
-                        "count", String.valueOf(failures),
-                        "reason", exception.getMessage()));
-            }
-        }
-    }
-
-    /** The heartbeat body, identical on every platform. */
-    public JsonObject buildHeartbeatPayload(boolean online) {
-        JsonObject payload = new JsonObject();
-        payload.addProperty("server_key", config.serverKey());
-        payload.addProperty("online", online);
-        payload.addProperty("name", config.serverName());
-        payload.addProperty("version", platform.serverVersion());
-        payload.addProperty("motd", platform.motd());
-
-        JsonArray names = new JsonArray();
-        int onlineCount = 0;
-
-        if (online) {
-            for (String name : platform.playerNames()) {
-                names.add(name);
-                onlineCount++;
-            }
-        }
-
-        payload.addProperty("players_online", onlineCount);
-        payload.addProperty("players_max", platform.maxPlayers());
-        payload.add("player_names", names);
-
-        double tps = platform.tps();
-
-        if (tps >= 0) {
-            payload.addProperty("tps", round(tps));
-        }
-
-        double mspt = platform.mspt();
-
-        if (mspt >= 0) {
-            payload.addProperty("mspt", round(mspt));
-        }
-
-        return payload;
-    }
-
-    private static double round(double value) {
-        return Math.round(value * 100.0) / 100.0;
-    }
-
-    // ------------------------------------------------------------------
-    // Events
-    // ------------------------------------------------------------------
-
-    public void enqueuePlayerEvent(String type, UUID uuid, String playerName, String message) {
-        JsonObject event = new JsonObject();
-        event.addProperty("type", type);
-
-        if (uuid != null) {
-            event.addProperty("player_uuid", uuid.toString());
-        }
-
-        if (playerName != null && !playerName.isBlank()) {
-            event.addProperty("player_name", playerName);
-        }
-
-        if (message != null && !message.isBlank()) {
-            event.addProperty("message", message);
-        }
-
-        event.addProperty("happened_at", Instant.now().toString());
-        eventQueue.add(event);
-    }
-
-    public void enqueueServerEvent(String type, String message) {
-        JsonObject event = new JsonObject();
-        event.addProperty("type", type);
-
-        if (message != null && !message.isBlank()) {
-            event.addProperty("message", message);
-        }
-
-        event.addProperty("happened_at", Instant.now().toString());
-        eventQueue.add(event);
-    }
-
-    /** Send buffered events using the configured timeout. Safe from any thread. */
-    public void flushEvents() {
-        flushEvents(config.requestTimeout());
-    }
-
-    private void flushEvents(Duration timeout) {
-        BridgeConfig current = this.config;
-
-        if (current == null || !current.isUsable()) {
-            return;
-        }
-
-        EventQueue queue = this.eventQueue;
-
-        if (queue.size() == 0) {
-            return;
-        }
-
-        List<JsonObject> batch = queue.drain(FLUSH_BATCH_SIZE);
-
-        if (batch.isEmpty()) {
-            return;
-        }
-
-        JsonArray array = new JsonArray();
-        batch.forEach(array::add);
-
-        try {
-            client.sendEvents(array, timeout);
-            deliveredEvents.addAndGet(batch.size());
-        } catch (BridgeException exception) {
-            queue.requeue(batch);
-            platform.log().warn(logText("log.events-failed",
-                    "count", String.valueOf(batch.size()),
-                    "reason", exception.getMessage()));
-        }
-    }
-
-    // ------------------------------------------------------------------
     // Outbox
     // ------------------------------------------------------------------
 
     /**
-     * Pull pending forum messages and hand each one to the main thread /
-     * global region, where broadcasting and command dispatch are safe.
+     * Pull pending forum messages and hand each one to the main thread / global
+     * region, where broadcasting is safe.
      *
      * Messages are only marked as delivered on the forum when they are returned
      * without {@code peek}, so a crash mid-handling can at worst duplicate a
@@ -528,29 +326,6 @@ public final class BridgeCore {
                     : messages.prefixed("bind-prompt-code", "code", pending, "url", url));
         });
     }
-    /**
-     * Fetch the public status snapshot and render one line about it.
-     *
-     * Blocking: call it off the main thread.
-     */
-    public Component statusMessage() {
-        JsonObject response;
-
-        try {
-            response = client.fetchStatus();
-        } catch (BridgeException exception) {
-            return messages.prefixed("status-unreachable", "reason", exception.getMessage());
-        }
-
-        JsonObject totals = response.has("totals") && response.get("totals").isJsonObject()
-                ? response.getAsJsonObject("totals")
-                : new JsonObject();
-
-        return messages.prefixed("status-online",
-                "servers", optString(totals, "servers", "0"),
-                "servers_online", optString(totals, "servers_online", "0"),
-                "players", optString(totals, "players_online", "0"));
-    }
 
     /**
      * Peek at the messages waiting on the forum.
@@ -575,7 +350,7 @@ public final class BridgeCore {
                 : new JsonArray();
 
         if (messages.isEmpty()) {
-            reply.add(messages().prefixed("outbox-empty"));
+            reply.add(this.messages.prefixed("outbox-empty"));
             return reply;
         }
 
@@ -623,10 +398,6 @@ public final class BridgeCore {
         lines.add(messages.string("stats-server-key", "key", config.serverKey()));
         lines.add(messages.string("stats-forum-url", "url", config.forumUrl()));
         lines.add(messages.string("stats-locale", "locale", messages.language()));
-        lines.add(messages.string("stats-queue",
-                "queued", String.valueOf(eventQueue.size()),
-                "dropped", String.valueOf(eventQueue.droppedCount())));
-        lines.add(messages.string("stats-delivered", "delivered", String.valueOf(deliveredEvents.get())));
         lines.add(messages.string("stats-received", "received", String.valueOf(receivedMessages.get())));
         lines.add(messages.string("stats-config", "state", state));
 
@@ -637,7 +408,6 @@ public final class BridgeCore {
     public List<String> helpLines() {
         return List.of(
                 messages.string("help-header"),
-                messages.string("help-status"),
                 messages.string("help-outbox"),
                 messages.string("help-broadcast"),
                 messages.string("help-stats"),
@@ -647,7 +417,7 @@ public final class BridgeCore {
 
     /** Subcommands the admin command accepts, used for the unknown-subcommand reply. */
     public static List<String> subcommands() {
-        return List.of("status", "outbox", "broadcast", "stats", "reload");
+        return List.of("outbox", "broadcast", "stats", "reload");
     }
 
     private static boolean optBoolean(JsonObject object, String key) {
@@ -659,6 +429,7 @@ public final class BridgeCore {
 
         return primitive.isBoolean() && primitive.getAsBoolean();
     }
+
     private static String optString(JsonObject object, String key, String fallback) {
         if (object != null && object.has(key) && object.get(key).isJsonPrimitive()) {
             return object.get(key).getAsString();
@@ -687,19 +458,7 @@ public final class BridgeCore {
         return client;
     }
 
-    public EventQueue eventQueue() {
-        return eventQueue;
-    }
-
-    public long deliveredEvents() {
-        return deliveredEvents.get();
-    }
-
     public long receivedMessages() {
         return receivedMessages.get();
-    }
-
-    public long failedHeartbeats() {
-        return failedHeartbeats.get();
     }
 }

@@ -167,53 +167,6 @@ public final class VelocityPlatform implements Platform {
         tasks.clear();
     }
 
-    // ------------------------------------------------------------------
-    // Server state
-    // ------------------------------------------------------------------
-
-    @Override
-    public String serverVersion() {
-        return "Velocity " + proxy.getVersion().getVersion();
-    }
-
-    @Override
-    public String motd() {
-        // A proxy has no MOTD of its own; the one players see in their server
-        // list is the closest equivalent the forum can display.
-        return PlainTextComponentSerializer.plainText().serialize(proxy.getConfiguration().getMotd());
-    }
-
-    @Override
-    public int maxPlayers() {
-        return proxy.getConfiguration().getShowMaxPlayers();
-    }
-
-    @Override
-    public int onlinePlayers() {
-        return proxy.getPlayerCount();
-    }
-
-    @Override
-    public List<String> playerNames() {
-        List<String> names = new ArrayList<>();
-
-        for (Player player : proxy.getAllPlayers()) {
-            names.add(player.getUsername());
-        }
-
-        return Collections.unmodifiableList(names);
-    }
-
-    @Override
-    public double tps() {
-        // A proxy has no tick loop; the core omits the field when it is negative.
-        return -1;
-    }
-
-    @Override
-    public double mspt() {
-        return -1;
-    }
 
     // ------------------------------------------------------------------
     // Output

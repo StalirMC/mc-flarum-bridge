@@ -17,12 +17,10 @@
  *   4. a correctly signed request is accepted (2xx)
  *   5. a wrong secret is rejected with 401
  *   6. a tampered body is rejected with 401
- *   7. a stale timestamp (-400s) is rejected with 401
- *   8. a replayed nonce is rejected with 401
- *   9. GET /api/mc-bridge/status is reachable without any signature
- *  10. heartbeat -> outbox: peek=true does not consume, peek=false does
- *  11. bind/start returns an 8-character code from the unambiguous alphabet
- *  12. /events and /bind/status round-trip
+ *   7. a stale timestamp (-400s) and a replayed nonce are rejected with 401
+ *   8. outbox: peek=true does not consume, peek=false does
+ *   9. bind/start returns an 8-character code from the unambiguous alphabet
+ *  10. bind start/status round-trip, sub-directory installs, concurrency
  *
  * Every check prints PASS or FAIL; any failure exits with code 1.
  *
@@ -215,10 +213,10 @@ async function checkSigningPrimitives() {
   group('1. Canonical string (Signature.java semantics)');
 
   await test('canonical string joins five components with \\n and no trailing newline', () => {
-    const value = jsCanonicalString('1700000000', 'abcdefgh', 'POST', '/api/mc-bridge/heartbeat', '{"a":1}');
+    const value = jsCanonicalString('1700000000', 'abcdefgh', 'POST', '/api/mc-bridge/bind/start', '{"a":1}');
     assertEqual(
       value,
-      '1700000000\nabcdefgh\nPOST\n/api/mc-bridge/heartbeat\n{"a":1}',
+      '1700000000\nabcdefgh\nPOST\n/api/mc-bridge/bind/start\n{"a":1}',
       'canonical string layout'
     );
     assert(!value.endsWith('\n'), 'canonical string must not end with a newline');
@@ -234,8 +232,8 @@ async function checkSigningPrimitives() {
 
   await test('tools/mock-flarum.mjs computes the same canonical string', () => {
     assertEqual(
-      canonicalString('1700000000', 'abcdefgh', 'POST', '/api/mc-bridge/heartbeat', '{"a":1}'),
-      jsCanonicalString('1700000000', 'abcdefgh', 'POST', '/api/mc-bridge/heartbeat', '{"a":1}'),
+      canonicalString('1700000000', 'abcdefgh', 'POST', '/api/mc-bridge/bind/start', '{"a":1}'),
+      jsCanonicalString('1700000000', 'abcdefgh', 'POST', '/api/mc-bridge/bind/start', '{"a":1}'),
       'mock vs test signer'
     );
     assertEqual(
@@ -280,7 +278,7 @@ async function checkSigningPrimitives() {
   });
 
   await test('signature is 64 lowercase hex characters', () => {
-    const signature = jsSign(TEST_SECRET, '1700000000', 'abcdefgh', 'POST', '/api/mc-bridge/heartbeat', '{}');
+    const signature = jsSign(TEST_SECRET, '1700000000', 'abcdefgh', 'POST', '/api/mc-bridge/bind/start', '{}');
     assert(/^[0-9a-f]{64}$/.test(signature), `unexpected signature ${signature}`);
   });
 
@@ -296,18 +294,18 @@ async function checkSigningPrimitives() {
 
   await test('the /api frontend prefix is stripped from the signed path', () => {
     // Flarum removes /api before the middleware stack runs, so the forum sees
-    // /mc-bridge/heartbeat while the client requested /api/mc-bridge/heartbeat.
+    // /mc-bridge/outbox while the client requested /api/mc-bridge/outbox.
     assertEqual(
-      normalizePath('/api/mc-bridge/heartbeat'),
-      '/mc-bridge/heartbeat',
+      normalizePath('/api/mc-bridge/outbox'),
+      '/mc-bridge/outbox',
       'normalizePath strips the api frontend prefix'
     );
   });
 
   await test('a Flarum sub-directory is stripped from the signed path', () => {
     assertEqual(
-      normalizePath('/forum/api/mc-bridge/heartbeat'),
-      '/mc-bridge/heartbeat',
+      normalizePath('/forum/api/mc-bridge/outbox'),
+      '/mc-bridge/outbox',
       'normalizePath strips the prefix'
     );
     assertEqual(BRIDGE_PREFIX, '/api/mc-bridge', 'public bridge prefix constant');
@@ -315,7 +313,7 @@ async function checkSigningPrimitives() {
 }
 
 // ---------------------------------------------------------------------------
-// Section 4-12: live HTTP checks against the mock
+// Section 4-10: live HTTP checks against the mock
 // ---------------------------------------------------------------------------
 
 async function checkAgainstMock(mock) {
@@ -323,78 +321,19 @@ async function checkAgainstMock(mock) {
 
   group('4. Correctly signed requests are accepted');
 
-  await test('POST /api/mc-bridge/heartbeat with a valid signature returns 200', async () => {
-    const response = await request(baseUrl, {
-      method: 'POST',
-      path: '/api/mc-bridge/heartbeat',
-      body: {
-        server_key: 'survival',
-        online: true,
-        name: 'Survival',
-        version: 'Paper 1.21.1',
-        motd: 'A Minecraft Server',
-        players_online: 3,
-        players_max: 40,
-        tps: 19.97,
-        mspt: 12.4,
-        player_names: ['Alice', 'Bob', 'Carol'],
-      },
-    });
-
-    assertStatus(response, 200, 'heartbeat should be accepted');
-    assert(response.status >= 200 && response.status < 300, 'heartbeat must be 2xx');
-    assertEqual(response.json?.ok, true, 'heartbeat ok flag');
-    assert(response.json?.server !== undefined, 'heartbeat must return server state');
-    assertEqual(response.json.server.server_key, 'survival', 'server_key echo');
-    assertEqual(response.json.server.online, true, 'server reported online');
-    assertEqual(response.json.server.players_online, 3, 'players_online');
-    assertEqual(response.json.server.players_max, 40, 'players_max');
-    assertEqualJson(response.json.server.player_names, ['Alice', 'Bob', 'Carol'], 'player_names');
-    assert(typeof response.json.pending_messages === 'number', 'pending_messages must be numeric');
-  });
-
-  await test('heartbeat reports the number of queued outbox messages', async () => {
+  await test('X-MC-Server is honoured when the query omits server_key', async () => {
     mock.reset();
-    mock.createMessage({ type: 'broadcast', title: 'Maintenance', body: 'Restart tonight', server_key: null });
+    mock.createMessage({ type: 'announcement', title: 'Header fallback' });
 
     const response = await request(baseUrl, {
-      method: 'POST',
-      path: '/api/mc-bridge/heartbeat',
-      body: { server_key: 'survival', online: true },
-    });
-
-    assertStatus(response, 200, 'heartbeat');
-    assertEqual(response.json.pending_messages, 1, 'one message queued for every server');
-  });
-
-  await test('X-MC-Server is honoured when the body omits server_key', async () => {
-    const response = await request(baseUrl, {
-      method: 'POST',
-      path: '/api/mc-bridge/heartbeat',
-      body: { online: true },
+      method: 'GET',
+      path: '/api/mc-bridge/outbox?peek=true',
       headers: { [HEADER_SERVER]: 'creative' },
     });
 
-    assertStatus(response, 200, 'heartbeat with the header fallback');
-    assertEqual(response.json.server.server_key, 'creative', 'server_key from X-MC-Server');
-  });
-
-  await test('POST /api/mc-bridge/events stores a batch and returns 201', async () => {
-    const response = await request(baseUrl, {
-      method: 'POST',
-      path: '/api/mc-bridge/events',
-      body: {
-        server_key: 'survival',
-        events: [
-          { type: 'join', player_uuid: '069a79f4-44e9-4726-a5be-fca90e38aaf5', player_name: 'Alice' },
-          { type: 'death', player_uuid: '069a79f4-44e9-4726-a5be-fca90e38aaf5', message: 'cause=FALL' },
-        ],
-      },
-    });
-
-    assertStatus(response, 201, 'events are stored with 201');
-    assertEqual(response.json.stored, 2, 'stored count');
-    assertEqualJson(response.json.rejected, [], 'rejected list');
+    assertStatus(response, 200, 'outbox pull with the header fallback');
+    assertEqual(response.json.server_key, 'creative', 'server_key from X-MC-Server');
+    assertEqual(response.json.messages.length, 1, 'the header server sees the broadcast message');
   });
 
   await test('GET /api/mc-bridge/outbox accepts a signed, query-bearing path', async () => {
@@ -418,8 +357,8 @@ async function checkAgainstMock(mock) {
   await test('a request signed with the wrong secret returns 401 with an error body', async () => {
     const response = await request(baseUrl, {
       method: 'POST',
-      path: '/api/mc-bridge/heartbeat',
-      body: { server_key: 'survival', online: true },
+      path: '/api/mc-bridge/bind/start',
+      body: { server_key: 'survival', player_uuid: '069a79f4-44e9-4726-a5be-fca90e38aaf5' },
       secret: 'totally-the-wrong-secret-000000000000',
     });
 
@@ -430,8 +369,8 @@ async function checkAgainstMock(mock) {
   await test('a missing signature header returns 401', async () => {
     const response = await request(baseUrl, {
       method: 'POST',
-      path: '/api/mc-bridge/heartbeat',
-      body: { server_key: 'survival', online: true },
+      path: '/api/mc-bridge/bind/start',
+      body: { server_key: 'survival', player_uuid: '069a79f4-44e9-4726-a5be-fca90e38aaf5' },
       secret: null,
     });
 
@@ -442,11 +381,11 @@ async function checkAgainstMock(mock) {
   group('6. Tampered body is rejected');
 
   await test('a body modified after signing returns 401', async () => {
-    const signedBody = { server_key: 'survival', online: false };
+    const signedBody = { server_key: 'survival', player_uuid: '069a79f4-44e9-4726-a5be-fca90e38aaf5' };
     const response = await request(baseUrl, {
       method: 'POST',
-      path: '/api/mc-bridge/heartbeat',
-      body: { server_key: 'survival', online: true, players_online: 99 },
+      path: '/api/mc-bridge/bind/start',
+      body: { server_key: 'survival', player_uuid: '069a79f4-44e9-4726-a5be-fca90e38aaf5', player_name: 'Alice' },
       signBody: JSON.stringify(signedBody),
     });
 
@@ -457,21 +396,20 @@ async function checkAgainstMock(mock) {
   await test('a tampered signature itself returns 401', async () => {
     const response = await request(baseUrl, {
       method: 'POST',
-      path: '/api/mc-bridge/heartbeat',
-      body: { server_key: 'survival' },
+      path: '/api/mc-bridge/bind/start',
+      body: { server_key: 'survival', player_uuid: '069a79f4-44e9-4726-a5be-fca90e38aaf5' },
       headers: { [HEADER_SIGNATURE]: 'f'.repeat(64) },
     });
 
     assertStatus(response, 401, 'bad signature must be rejected');
   });
 
-  group('7-8. Timestamp window and nonce replay');
+  group('7. Timestamp window and nonce replay');
 
   await test(`a timestamp ${MAX_SKEW + 100}s in the past returns 401`, async () => {
     const response = await request(baseUrl, {
-      method: 'POST',
-      path: '/api/mc-bridge/heartbeat',
-      body: { server_key: 'survival' },
+      method: 'GET',
+      path: '/api/mc-bridge/outbox?server_key=survival&peek=true',
       timestamp: Math.floor(Date.now() / 1000) - (MAX_SKEW + 100),
     });
 
@@ -480,9 +418,8 @@ async function checkAgainstMock(mock) {
 
   await test('a timestamp in the far future also returns 401', async () => {
     const response = await request(baseUrl, {
-      method: 'POST',
-      path: '/api/mc-bridge/heartbeat',
-      body: { server_key: 'survival' },
+      method: 'GET',
+      path: '/api/mc-bridge/outbox?server_key=survival&peek=true',
       timestamp: Math.floor(Date.now() / 1000) + (MAX_SKEW + 100),
     });
 
@@ -491,21 +428,21 @@ async function checkAgainstMock(mock) {
 
   await test('replaying the same nonce returns 401 the second time', async () => {
     const nonce = jsNonce();
-    const body = { server_key: 'survival', online: true };
+    const body = { server_key: 'survival', player_uuid: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' };
     const timestamp = Math.floor(Date.now() / 1000);
 
     const first = await request(baseUrl, {
       method: 'POST',
-      path: '/api/mc-bridge/heartbeat',
+      path: '/api/mc-bridge/bind/start',
       body,
       nonce,
       timestamp,
     });
-    assertStatus(first, 200, 'first use of the nonce succeeds');
+    assertStatus(first, 201, 'first use of the nonce succeeds');
 
     const replay = await request(baseUrl, {
       method: 'POST',
-      path: '/api/mc-bridge/heartbeat',
+      path: '/api/mc-bridge/bind/start',
       body,
       nonce,
       timestamp,
@@ -514,26 +451,7 @@ async function checkAgainstMock(mock) {
     assert(/nonce/i.test(replay.json?.error ?? ''), `error should mention the nonce: ${replay.text.slice(0, 120)}`);
   });
 
-  group('9. Public status endpoint');
-
-  await test('GET /api/mc-bridge/status works with no signature at all', async () => {
-    const response = await request(baseUrl, { method: 'GET', path: '/api/mc-bridge/status', secret: null });
-
-    assertStatus(response, 200, 'status is public');
-    assertEqual(response.json?.ok, true, 'ok flag');
-    assert(typeof response.json?.totals === 'object', 'totals object');
-    assert(Array.isArray(response.json?.servers), 'servers array');
-    assert(Array.isArray(response.json?.recent_events), 'recent_events array');
-    assert(response.json.totals.servers >= 1, 'at least one known server');
-  });
-
-  await test('the public status payload exposes no secrets', async () => {
-    const response = await request(baseUrl, { method: 'GET', path: '/api/mc-bridge/status', secret: null });
-    assert(!response.text.includes(mock.secret), 'secret must never appear in the response');
-    assert(!/secret/i.test(response.text), 'no secret-looking field in the response');
-  });
-
-  group('10. Heartbeat then outbox (peek vs consume)');
+  group('8. Outbox (peek vs consume)');
 
   await test('peek=true returns the queued message without consuming it', async () => {
     mock.reset();
@@ -544,13 +462,6 @@ async function checkAgainstMock(mock) {
       url: '/d/50',
       payload: { discussion_id: 50, post_id: 210, author: 'kxkl2024', is_op: true },
     });
-
-    const heartbeat = await request(baseUrl, {
-      method: 'POST',
-      path: '/api/mc-bridge/heartbeat',
-      body: { server_key: 'survival', online: true, players_online: 1, players_max: 20 },
-    });
-    assertStatus(heartbeat, 200, 'heartbeat primes the queue');
 
     const peek = await request(baseUrl, {
       method: 'GET',
@@ -603,7 +514,7 @@ async function checkAgainstMock(mock) {
     assertEqual(response.json.messages[0].title, 'Alias check', 'alias payload');
   });
 
-  group('11. Binding codes');
+  group('9. Binding codes');
 
   await test('bind/start returns 201 and an 8-character unambiguous code', async () => {
     const response = await request(baseUrl, {
@@ -683,14 +594,13 @@ async function checkAgainstMock(mock) {
     assert(response.json.binding !== undefined, 'binding payload expected');
   });
 
-  group('12. Sub-directory and concurrency robustness');
+  group('10. Sub-directory and concurrency robustness');
 
   await test('a request to /forum/api/... verifies against the bare bridge path', async () => {
     const response = await request(baseUrl, {
-      method: 'POST',
-      path: '/forum/api/mc-bridge/heartbeat',
-      body: { server_key: 'survival', online: true },
-      signPath: '/api/mc-bridge/heartbeat',
+      method: 'GET',
+      path: '/forum/api/mc-bridge/outbox?server_key=survival&peek=true',
+      signPath: '/api/mc-bridge/outbox',
     });
 
     assertStatus(response, 200, 'sub-directory installs must verify');
@@ -700,9 +610,8 @@ async function checkAgainstMock(mock) {
     const responses = await Promise.all(
       Array.from({ length: 25 }, (unused, index) =>
         request(baseUrl, {
-          method: 'POST',
-          path: '/api/mc-bridge/heartbeat',
-          body: { server_key: `node-${index}`, online: true, players_online: index },
+          method: 'GET',
+          path: `/api/mc-bridge/outbox?server_key=node-${index}&peek=true`,
         })
       )
     );
@@ -712,11 +621,11 @@ async function checkAgainstMock(mock) {
       statuses.every((status) => status === 200),
       `expected every concurrent request to return 200, got ${JSON.stringify(statuses)}`
     );
-    const keys = responses.map((response) => response.json?.server?.server_key);
+    const keys = responses.map((response) => response.json?.server_key);
     assertEqualJson(
       keys,
       Array.from({ length: 25 }, (unused, index) => `node-${index}`),
-      'each concurrent request kept its own body'
+      'each concurrent request kept its own query'
     );
   });
 }

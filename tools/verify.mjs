@@ -879,8 +879,6 @@ section('13. Flarum 2.x framework contracts');
   }
 
   const MACHINE_ROUTES = [
-    'mc-bridge.heartbeat',
-    'mc-bridge.events',
     'mc-bridge.outbox',
     'mc-bridge.announcements',
     'mc-bridge.bind.start',

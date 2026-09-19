@@ -3,7 +3,6 @@ package cn.stalir.mcbridge;
 import net.kyori.adventure.text.Component;
 
 import java.nio.file.Path;
-import java.util.List;
 import java.util.UUID;
 
 /**
@@ -21,11 +20,10 @@ import java.util.UUID;
  *       proxy, which has no main thread and no game commands.</li>
  * </ul>
  *
- * Threading contract: every method that reports server state
- * ({@link #serverVersion()}, {@link #motd()}, {@link #maxPlayers()},
- * {@link #onlinePlayers()}, {@link #playerNames()}, {@link #tps()}) must be
- * called from {@link #runSyncRepeating(Runnable, long, long)} on Paper/Folia.
- * The Velocity implementation is thread-safe for all of them.
+ * Threading contract: server state may only be touched on the main thread (or
+ * the global region) on Paper/Folia, which is what {@link #runSync(Runnable)}
+ * and {@link #runSyncRepeating(Runnable, long, long)} are for. Velocity has no
+ * main thread and runs everything on its own scheduler.
  */
 public interface Platform {
 
@@ -75,28 +73,6 @@ public interface Platform {
 
     /** Cancel every task this plugin scheduled, used by reload and shutdown. */
     void cancelTasks();
-
-    // ------------------------------------------------------------------
-    // Server state
-    // ------------------------------------------------------------------
-
-    /** Server or proxy version string, also reported as the heartbeat version. */
-    String serverVersion();
-
-    /** MOTD shown on the forum; the proxy has none, so it may return its brand. */
-    String motd();
-
-    int maxPlayers();
-
-    int onlinePlayers();
-
-    List<String> playerNames();
-
-    /** Current TPS, or a negative value when the platform cannot report one. */
-    double tps();
-
-    /** Average tick time in milliseconds, or a negative value when unknown. */
-    double mspt();
 
     // ------------------------------------------------------------------
     // Output

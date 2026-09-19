@@ -74,10 +74,7 @@ public final class SelfTest {
         check("server.key", "survival", config.getString("server.key", ""));
         check("server.name keeps non-ASCII", "Stalir 生存服", config.getString("server.name", ""));
         check("security.secret parses as empty", "", config.getString("security.secret", "missing"));
-        check("sync.heartbeat-interval-seconds", 30, config.getInt("sync.heartbeat-interval-seconds", 0));
-        check("sync.max-queued-events", 200, config.getInt("sync.max-queued-events", 0));
-        check("sync.report-joins", true, config.getBoolean("sync.report-joins", false));
-        check("sync.report-advancements", false, config.getBoolean("sync.report-advancements", true));
+        check("sync.outbox-poll-interval-seconds", 20, config.getInt("sync.outbox-poll-interval-seconds", 0));
         check("game.announce-format", "&e[论坛] &f{title}", config.getString("game.announce-format", ""));
 
         // Unknown keys must come back as the caller's fallback, never as null.
@@ -85,7 +82,7 @@ public final class SelfTest {
         check("scalar used as a section falls back", "fallback", config.getString("forum.url.nested", "fallback"));
 
         // Comments must not leak into values.
-        check("comment is stripped", "30", String.valueOf(config.getInt("sync.heartbeat-interval-seconds", 0)));
+        check("comment is stripped", "20", String.valueOf(config.getInt("sync.outbox-poll-interval-seconds", 0)));
     }
 
     // ------------------------------------------------------------------
@@ -101,8 +98,10 @@ public final class SelfTest {
         Set<String> zhKeys = new LinkedHashSet<>(zh.flattened().keySet());
         Set<String> enKeys = new LinkedHashSet<>(en.flattened().keySet());
 
-        check("zh_CN has a usable key count (> 50)", true, zhKeys.size() > 50);
-        check("en has a usable key count (> 50)", true, enKeys.size() > 50);
+        // A floor, not an exact count: it catches a file that failed to parse or
+        // was truncated, while leaving room to add and remove keys freely.
+        check("zh_CN has a usable key count (> 40)", true, zhKeys.size() > 40);
+        check("en has a usable key count (> 40)", true, enKeys.size() > 40);
         check("zh_CN and en define the same keys", zhKeys, enKeys);
 
         check("prefix present in zh_CN", true, zh.getString("prefix", "").startsWith("&8"));
@@ -147,8 +146,8 @@ public final class SelfTest {
         check("log.enabled interpolates the key", true, enabled.contains("survival"));
         check("log.enabled leaves no placeholder behind", false, enabled.contains("{"));
 
-        check("apiPath", "/api/mc-bridge/heartbeat", config.apiPath("/heartbeat"));
-        check("endpoint", "https://forum.kxkl2024.cn/api/mc-bridge/heartbeat", config.endpoint("/heartbeat"));
+        check("apiPath", "/api/mc-bridge/outbox", config.apiPath("/outbox"));
+        check("endpoint", "https://forum.kxkl2024.cn/api/mc-bridge/outbox", config.endpoint("/outbox"));
     }
 
     // ------------------------------------------------------------------
@@ -171,7 +170,7 @@ public final class SelfTest {
         check("config is usable", true, config.isUsable());
         check("secret is read", secret, config.secret());
         check("server key is read", "survival", config.serverKey());
-        check("heartbeat interval", 30, config.heartbeatIntervalSeconds());
+        check("outbox poll interval", 20, config.outboxPollIntervalSeconds());
         check("announce body format", "&7{body}", config.announceBodyFormat());
 
         // A too short secret must be reported.
@@ -269,40 +268,6 @@ public final class SelfTest {
         public void cancelTasks() {
         }
 
-        @Override
-        public String serverVersion() {
-            return "self test";
-        }
-
-        @Override
-        public String motd() {
-            return "self test";
-        }
-
-        @Override
-        public int maxPlayers() {
-            return 20;
-        }
-
-        @Override
-        public int onlinePlayers() {
-            return 0;
-        }
-
-        @Override
-        public List<String> playerNames() {
-            return List.of();
-        }
-
-        @Override
-        public double tps() {
-            return -1;
-        }
-
-        @Override
-        public double mspt() {
-            return -1;
-        }
 
         @Override
         public void broadcast(net.kyori.adventure.text.Component message) {

@@ -46,7 +46,6 @@ public final class BridgeCommand implements CommandExecutor, TabCompleter {
         switch (args[0].toLowerCase(Locale.ROOT)) {
             case "reload" -> reload(sender);
 
-            case "status" -> fetchStatus(sender);
 
             case "outbox" -> fetchOutbox(sender);
 
@@ -87,13 +86,6 @@ public final class BridgeCommand implements CommandExecutor, TabCompleter {
         }
     }
 
-    private void fetchStatus(CommandSender sender) {
-        core.platform().runAsync(() -> {
-            Component reply = core.statusMessage();
-
-            core.platform().runSync(() -> sender.sendMessage(reply));
-        });
-    }
 
     private void fetchOutbox(CommandSender sender) {
         core.platform().runAsync(() -> {

@@ -15,7 +15,7 @@
 
 | source set | 目录 | 内容 |
 |-----------|------|------|
-| `main` | `src/main/java` | 平台无关核心：协议、配置、语言文件、心跳/事件/公告编排。**零平台引用** |
+| `main` | `src/main/java` | 平台无关核心：协议、配置、语言文件、公告编排。**零平台引用** |
 | `paper` | `src/paper/java` | Paper 与 Folia 入口（`paper.yml` 形式的 `plugin.yml`） |
 | `velocity` | `src/velocity/java` | Velocity 入口（`velocity-plugin.json` 由注解处理器生成） |
 
@@ -95,14 +95,12 @@ game:
 
 | 功能 | Paper / Folia | Velocity |
 |------|---------------|----------|
-| 心跳（在线数、版本、MOTD、在线名单） | ✅ | ✅（代理维度） |
-| TPS / MSPT | ✅ | — 代理没有 tick 循环，字段省略 |
 | 进服 / 退服事件 | ✅ | ✅ |
 | 死亡 / 成就事件 | ✅ | — 代理看不到 |
 | 论坛公告广播 | ✅ | ✅ |
 | `/bind`、`/mcbridge` | ✅ | ✅ |
 
-心跳的 JSON 字段在三个平台上完全一致（由共享核心生成），因此论坛侧无需区分平台；
+所有请求都由共享核心生成，三个平台的报文逐字节一致，因此论坛侧无需区分平台；
 平台名会出现在 `/mcbridge stats` 与启动日志里。
 
 ## 语言
@@ -144,15 +142,11 @@ Velocity 端权限同样使用 `mcbridge.bind` / `mcbridge.admin`（由代理的
 
 | 任务 | 默认间隔 | 作用 |
 |------|---------|------|
-| 心跳 | 30s | `POST /heartbeat` 上报 TPS/MSPT/在线玩家 |
 | 事件刷新 | 10s | 批量 `POST /events` |
 | Outbox 轮询 | 20s | `GET /outbox` 并投递公告/广播 |
 
 - 所有网络调用都在**异步线程**执行；消息展示与指令执行回到主线程（Folia 为 global region）。
-- 事件先入本地有界队列（默认 200 条，超出丢弃最旧的），论坛不可用时不会阻塞
   服务器，也不会无限占用内存。
-- 心跳失败日志每 10 次才打印一条，避免刷屏。
-- 关闭服务器时会尽力发送一次 `online=false` 心跳与 `stop` 事件。
 
 ## 安全
 
@@ -163,7 +157,7 @@ Velocity 端权限同样使用 `mcbridge.bind` / `mcbridge.admin`（由代理的
 
 ```
 src/main/java/cn/stalir/mcbridge/           共享核心（零平台引用）
-├── BridgeCore.java        心跳/事件/公告编排 + 全部命令文案渲染
+├── BridgeCore.java        公告编排 + 全部命令文案渲染
 ├── Platform.java          平台 SPI（调度、服务器状态、输出）
 ├── BridgeConfig.java      配置读取与校验
 ├── Yaml.java              极简 YAML 读取器（避免在通用 jar 里塞第三方库）

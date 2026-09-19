@@ -79,7 +79,6 @@ public final class VelocityBridgeCommand implements SimpleCommand {
         }
 
         switch (arguments[0].toLowerCase(Locale.ROOT)) {
-            case "status" -> plugin.platform().runAsync(() -> source.sendMessage(core.statusMessage()));
 
             case "outbox" -> plugin.platform().runAsync(
                     () -> sendComponents(source, core.outboxMessages()));

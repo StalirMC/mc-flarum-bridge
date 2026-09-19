@@ -10,7 +10,6 @@ import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.io.File;
-import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -217,77 +216,6 @@ public final class PaperPlatform implements Platform {
         return Math.max(1L, millis / MILLIS_PER_TICK);
     }
 
-    // ------------------------------------------------------------------
-    // Server state
-    // ------------------------------------------------------------------
-
-    @Override
-    public String serverVersion() {
-        return Bukkit.getVersion();
-    }
-
-    @Override
-    @SuppressWarnings("deprecation") // Server#getMotd() is deprecated in favour of motd() but is universally available.
-    public String motd() {
-        return Bukkit.getMotd();
-    }
-
-    @Override
-    public int maxPlayers() {
-        return Bukkit.getMaxPlayers();
-    }
-
-    @Override
-    public int onlinePlayers() {
-        return Bukkit.getOnlinePlayers().size();
-    }
-
-    @Override
-    public List<String> playerNames() {
-        List<String> names = new ArrayList<>();
-
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            names.add(player.getName());
-        }
-
-        return names;
-    }
-
-    /**
-     * Paper exposes {@code Server#getTPS()}; read it reflectively so the plugin
-     * also loads on servers that do not implement it.
-     */
-    @Override
-    public double tps() {
-        try {
-            Method method = Bukkit.getServer().getClass().getMethod("getTPS");
-            Object value = method.invoke(Bukkit.getServer());
-
-            if (value instanceof double[] array && array.length > 0) {
-                return array[0];
-            }
-        } catch (Throwable ignored) {
-            // Not available on this server implementation.
-        }
-
-        return -1;
-    }
-
-    @Override
-    public double mspt() {
-        try {
-            Method method = Bukkit.getServer().getClass().getMethod("getAverageTickTime");
-            Object value = method.invoke(Bukkit.getServer());
-
-            if (value instanceof Number number) {
-                return number.doubleValue();
-            }
-        } catch (Throwable ignored) {
-            // Not available on this server implementation.
-        }
-
-        return -1;
-    }
 
     // ------------------------------------------------------------------
     // Output

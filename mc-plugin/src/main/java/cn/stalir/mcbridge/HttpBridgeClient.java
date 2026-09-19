@@ -41,30 +41,6 @@ public final class HttpBridgeClient {
     // Bridge operations
     // ------------------------------------------------------------------
 
-    public JsonObject heartbeat(JsonObject payload) throws BridgeException {
-        return post("/heartbeat", payload, config.requestTimeout());
-    }
-
-    /**
-     * Variant with an explicit timeout, used during shutdown where blocking for
-     * the full request timeout would delay the server stop.
-     */
-    public JsonObject heartbeat(JsonObject payload, Duration timeout) throws BridgeException {
-        return post("/heartbeat", payload, timeout);
-    }
-
-    public JsonObject sendEvents(JsonArray events) throws BridgeException {
-        return sendEvents(events, config.requestTimeout());
-    }
-
-    public JsonObject sendEvents(JsonArray events, Duration timeout) throws BridgeException {
-        JsonObject body = new JsonObject();
-        body.addProperty("server_key", config.serverKey());
-        body.add("events", events);
-
-        return post("/events", body, timeout);
-    }
-
     public JsonObject fetchOutbox(boolean peek) throws BridgeException {
         return get("/outbox", "server_key=" + encode(config.serverKey()) + "&peek=" + peek + "&limit=20");
     }
@@ -95,17 +71,6 @@ public final class HttpBridgeClient {
         return post("/broadcast", payload);
     }
 
-    /** Public, unsigned snapshot of the servers known to the forum. */
-    public JsonObject fetchStatus() throws BridgeException {
-        HttpRequest request = HttpRequest.newBuilder(URI.create(config.endpoint("/status")))
-                .timeout(config.requestTimeout())
-                .header("Accept", "application/json")
-                .header("User-Agent", userAgent())
-                .GET()
-                .build();
-
-        return execute(request);
-    }
 
     // ------------------------------------------------------------------
     // Transport

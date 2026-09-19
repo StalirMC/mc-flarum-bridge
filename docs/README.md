@@ -315,24 +315,7 @@ php flarum mc-bridge:selftest --url=https://forum.kxkl2024.cn
 全部显示 `OK` 说明论坛侧完全就绪（该命令会发一次真实的带签名回环请求，并在
 结束后删除探针产生的临时服务器记录）。
 
-### 3.1 服务器状态
-
-```
-/mcbridge status
-```
-
-应显示论坛记录的在线服务器数与玩家数。
-
-也可以不开游戏直接验证——用一个已登录的论坛账号访问：
-
-```bash
-curl -s https://forum.kxkl2024.cn/api/mc-bridge/status | jq
-```
-
-这个端点是公开只读的，返回每台服务器的在线人数、TPS/MSPT、版本、MOTD、最后心跳与最近事件，
-方便脚本或其他系统接入；扩展本身不再提供论坛侧的展示页面。
-
-### 3.2 公告推送
+### 3.1 公告推送
 
 在论坛发一个新讨论（或在限定标签下发帖），几秒内游戏内应出现：
 
@@ -342,11 +325,7 @@ curl -s https://forum.kxkl2024.cn/api/mc-bridge/status | jq
 /d/123
 ```
 
-### 3.3 游戏 → 论坛
-
-玩家进出服务器后，论坛后台的 `mc_events` 表会新增记录。
-
-### 3.4 账号绑定
+### 3.2 账号绑定
 
 **玩家侧（正常流程）**
 
@@ -414,6 +393,4 @@ curl -s -X POST https://forum.kxkl2024.cn/api/mc-bridge/broadcast \
 | `401 Duplicate nonce detected` | 通常意味着请求被重放或代理重复发送 |
 | `403` + Cloudflare 页面 | 关闭该路径的 WAF/挑战 |
 | 游戏内无公告 | 用 `/mcbridge outbox` 看队列；确认 `announcement_tag_ids` 包含该标签 |
-| 事件表为空 | 确认 `sync.report-joins` 等开关为 `true`，且日志无心跳失败 |
 
-插件日志中「Heartbeat failed」每 10 次才打印一次，避免刷屏。

@@ -609,6 +609,26 @@ Packagist 会认为最高版本是 1.0.0，于是不带约束的 `composer requi
 管理页会显示与发布版本不符的号），**每个 author 必须带 `homepage` 或 `email`**（否则又是一个
 只会刷新 `/admin` 的死链）。`RELEASING.md` 同步记录：版本号现在是**四处**一致，升级时都要改。
 
+### 2.15 删掉服务器状态上报与游戏事件上报（未发版）
+
+维护者要求删除「服务器状态互通」与「游戏事件上报」两项功能。删除后插件只做四件事：拉取论坛
+公告并广播、把广播提交给论坛、账号绑定、未绑定玩家的进服提示 —— **不再向论坛推送任何数据**。
+
+| 删除项 | 主要位置 |
+|--------|----------|
+| 服务器状态（心跳） | `BridgeCore` 的心跳构建/发送/调度与停机心跳、`statusMessage`、`HttpBridgeClient.heartbeat`/`fetchStatus`、`Platform` 的七个服务器状态 getter 与两个平台实现（含 Paper 的 `getTPS`/`getAverageTickTime` 反射）、`HeartbeatController`、公开的 `/api/mc-bridge/status`、`StatusController`、`config.yml` 的 `heartbeat-interval-seconds` |
+| 游戏事件上报 | `EventQueue`（整文件）、`BridgeCore.enqueue*`/`flushEvents`、`EventController`、Paper 的退服/死亡/成就监听、Velocity 的断线监听、`config.yml` 的 `event-flush-interval-seconds` / `max-queued-events` / `report-joins\|quits\|deaths\|advancements` |
+
+**保留** `mc_servers` / `mc_events` 两张表与其模型：不动数据库、不丢历史数据，只是不再写入
+（`docs/API.md` 的数据表一节已注明）。`/mcbridge status` 子命令随功能一起删除，
+`outbox` / `broadcast` / `stats` / `reload` 保留。
+
+规模：Java 14 个文件、PHP 3 个控制器、mock 与协议测试（33 → 28 项）、`verify.mjs`（315 → 284 项）、
+构建自测 40 → 37 项（其中「语言键数」的下限断言同时从 50 放宽到 40：它是防解析失败的护栏，
+不是精确计数）。`gradle build`、`verify.mjs`、`protocol-test.mjs` 全部通过。
+
+> 本次**不发版**：按维护者要求，不再为每个改动升版本号，改动只进 `main`。
+
 ## 3. 无法在本机验证的内容（现由 CI 覆盖）
 
 > 本机没有 PHP / JDK，这些检查**已全部由 CI 在带 PHP 8.3 / JDK 21 的真实环境中

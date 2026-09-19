@@ -22,14 +22,7 @@ public final class BridgeConfig {
     private final String serverKey;
     private final String serverName;
     private final String secret;
-    private final int heartbeatIntervalSeconds;
     private final int outboxPollIntervalSeconds;
-    private final int eventFlushIntervalSeconds;
-    private final int maxQueuedEvents;
-    private final boolean reportJoins;
-    private final boolean reportQuits;
-    private final boolean reportDeaths;
-    private final boolean reportAdvancements;
     private final String announceFormat;
     private final String announceBodyFormat;
     private final boolean promptUnbound;
@@ -43,14 +36,7 @@ public final class BridgeConfig {
             String serverKey,
             String serverName,
             String secret,
-            int heartbeatIntervalSeconds,
             int outboxPollIntervalSeconds,
-            int eventFlushIntervalSeconds,
-            int maxQueuedEvents,
-            boolean reportJoins,
-            boolean reportQuits,
-            boolean reportDeaths,
-            boolean reportAdvancements,
             String announceFormat,
             String announceBodyFormat,
             boolean promptUnbound,
@@ -63,14 +49,7 @@ public final class BridgeConfig {
         this.serverKey = serverKey;
         this.serverName = serverName;
         this.secret = secret;
-        this.heartbeatIntervalSeconds = heartbeatIntervalSeconds;
         this.outboxPollIntervalSeconds = outboxPollIntervalSeconds;
-        this.eventFlushIntervalSeconds = eventFlushIntervalSeconds;
-        this.maxQueuedEvents = maxQueuedEvents;
-        this.reportJoins = reportJoins;
-        this.reportQuits = reportQuits;
-        this.reportDeaths = reportDeaths;
-        this.reportAdvancements = reportAdvancements;
         this.announceFormat = announceFormat;
         this.announceBodyFormat = announceBodyFormat;
         this.promptUnbound = promptUnbound;
@@ -117,10 +96,7 @@ public final class BridgeConfig {
             problems.add(messages.plain("config.problem.secret-short"));
         }
 
-        int heartbeat = Math.max(5, config.getInt("sync.heartbeat-interval-seconds", 30));
         int outboxPoll = Math.max(5, config.getInt("sync.outbox-poll-interval-seconds", 20));
-        int eventFlush = Math.max(2, config.getInt("sync.event-flush-interval-seconds", 10));
-        int maxQueued = Math.max(10, config.getInt("sync.max-queued-events", 200));
 
         BridgeConfig built = new BridgeConfig(
                 language,
@@ -130,14 +106,7 @@ public final class BridgeConfig {
                 serverKey,
                 config.getString("server.name", serverKey),
                 secret,
-                heartbeat,
                 outboxPoll,
-                eventFlush,
-                maxQueued,
-                config.getBoolean("sync.report-joins", true),
-                config.getBoolean("sync.report-quits", true),
-                config.getBoolean("sync.report-deaths", true),
-                config.getBoolean("sync.report-advancements", false),
                 config.getString("game.announce-format", "&e[论坛] &f{title}"),
                 config.getString("game.announce-body-format", "&7{body}"),
                 config.getBoolean("game.prompt-unbound", true),
@@ -160,7 +129,7 @@ public final class BridgeConfig {
         return problems;
     }
 
-    /** Absolute API path for a suffix such as {@code "/heartbeat"}. */
+    /** Absolute API path for a suffix such as {@code "/outbox"}. */
     public String apiPath(String suffix) {
         return apiPrefix + suffix;
     }
@@ -197,36 +166,8 @@ public final class BridgeConfig {
         return secret;
     }
 
-    public int heartbeatIntervalSeconds() {
-        return heartbeatIntervalSeconds;
-    }
-
     public int outboxPollIntervalSeconds() {
         return outboxPollIntervalSeconds;
-    }
-
-    public int eventFlushIntervalSeconds() {
-        return eventFlushIntervalSeconds;
-    }
-
-    public int maxQueuedEvents() {
-        return maxQueuedEvents;
-    }
-
-    public boolean reportJoins() {
-        return reportJoins;
-    }
-
-    public boolean reportQuits() {
-        return reportQuits;
-    }
-
-    public boolean reportDeaths() {
-        return reportDeaths;
-    }
-
-    public boolean reportAdvancements() {
-        return reportAdvancements;
     }
 
     public String announceFormat() {
@@ -241,5 +182,4 @@ public final class BridgeConfig {
     public boolean promptUnbound() {
         return promptUnbound;
     }
-
 }

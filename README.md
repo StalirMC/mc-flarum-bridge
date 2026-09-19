@@ -30,7 +30,7 @@
 >
 > **尚未验证的部分**
 > - **只有 Paper 被真实加载过**：Folia 与 Velocity 仍只到「编译 + 静态断言」为止，从未实机启动
-> - **心跳、事件上报、公告推送、广播的端到端效果未验证**（插件能启用，但没有观察到数据真正
+> - **公告推送、广播的端到端效果未验证**（插件能启用，但没有观察到数据真正
 >   出现在论坛上）；账号绑定此前因缺陷 2 不可见，0.0.2 修复后需重新实测
 > - 前端设置页区块（`js/dist`）**尚未在浏览器里确认可用**：导致启动崩溃的根因已定位并修复，
 >   但仍需刷新论坛页面实测绑定码输入框是否正常显示
@@ -46,15 +46,13 @@
 | 目录 | 组件 | 技术栈 |
 |------|------|--------|
 | `flarum-extension/` | Flarum 扩展：安全 REST API、数据存储、公告推送队列 | PHP 8.1+ / Flarum 2.x |
-| `mc-plugin/` | 通用插件（**一个 jar 同时支持三个平台**）：状态上报、事件上报、公告拉取、账号绑定 | Java 17 字节码 / Paper 1.21.x · Folia · Velocity 3.x |
+| `mc-plugin/` | 通用插件（**一个 jar 同时支持三个平台**）：公告拉取、广播、账号绑定 | Java 17 字节码 / Paper 1.21.x · Folia · Velocity 3.x |
 | `protocol/` | 双方共享的线上协议契约与 JSON Schema | Markdown / JSON Schema |
 | `docs/` | [部署指南](docs/README.md)、[API 参考](docs/API.md)、[验证报告](docs/VERIFICATION.md)、[发布流程](docs/RELEASING.md)（维护者） | Markdown |
 | `tools/` | 静态一致性校验、模拟论坛、协议一致性测试 | Node.js |
 
 ## 功能
 
-- **服务器状态互通** — 插件定时上报在线玩家数、TPS、MSPT、版本、MOTD、在线名单；论坛可通过公开 API 展示。
-- **游戏事件上报** — 进服 / 退服 / 死亡 / 成就批量写入论坛，含离线缓冲与有界队列。
 - **公告推送** — 论坛中指定标签（或全部）的新讨论自动入队，插件轮询后在游戏内广播。
 - **论坛 → 游戏广播** — 管理员从论坛推送一条消息，游戏内全员显示。
 - **账号绑定** — 游戏内 `/bind` 拿一次性绑定码，论坛端消费后建立 `论坛账号 ↔ MC UUID` 双向唯一映射。
@@ -120,7 +118,7 @@ McBridge-0.0.2.jar
 ```
 
 各平台只加载自己描述符里写明的入口类，因此同一个文件在三种服务端上都能装。
-共享核心（心跳载荷、事件队列、公告渲染、全部命令文案）完全一致，三平台的
+共享核心（公告渲染、全部命令文案）完全一致，三平台的
 协议行为逐字节相同。
 
 ## 协议
@@ -128,7 +126,7 @@ McBridge-0.0.2.jar
 ```
 ┌──────────────┐   HMAC-SHA256   ┌──────────────────────┐
 │  MC Plugin   │ ──────────────► │  Flarum Extension    │
-│ Paper/Folia/ │  heartbeat      │  /api/mc-bridge/*    │
+│ Paper/Folia/ │  outbox         │  /api/mc-bridge/*    │
 │   Velocity   │  events         │                      │
 │              │  bind/start     │  mc_servers          │
 │              │  bind/status    │  mc_events           │
@@ -173,7 +171,7 @@ cd mc-plugin && ./gradlew build                            # Java 编译（首�
 |------|----------|------|
 | **Paper** 1.21.x | ✅ 完整功能 | 主目标平台 |
 | **Folia** 1.21.x | ✅ 完整功能 | 用 Folia 的 `AsyncScheduler` / `GlobalRegionScheduler` 调度，`plugin.yml` 声明 `folia-supported: true` |
-| **Velocity** 3.x | ✅ 完整功能 | 心跳按代理维度上报（没有 TPS/MSPT），进/退服事件、公告广播、`/bind` 与 `/mcbridge` 都可用；代理看不到死亡/成就 |
+| **Velocity** 3.x | ✅ 完整功能 | 公告广播、`/bind` 与 `/mcbridge` 都可用；代理没有游戏世界，因此只有连接相关的提示 |
 
 - Minecraft：Paper / Folia 1.21.x（`-PpaperApiVersion=` 可覆盖）、Velocity 3.x
 - Flarum：2.x（PHP 8.1+）

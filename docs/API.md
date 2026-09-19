@@ -17,8 +17,8 @@ Flarum 对整个 `api` 中间件栈强制校验 CSRF，而服务器没有 sessio
 
 ```php
 (new Extend\Csrf())
-    ->exemptRoute('mc-bridge.heartbeat')
-    ->exemptRoute('mc-bridge.events')
+    ->exemptRoute('mc-bridge.outbox')
+    ->exemptRoute('mc-bridge.announcements')
     // ...
 ```
 
@@ -26,11 +26,10 @@ Flarum 对整个 `api` 中间件栈强制校验 CSRF，而服务器没有 sessio
 
 | 端点 | 是否需要 CSRF token |
 |------|--------------------|
-| 机器端点（`heartbeat` / `events` / `outbox` / `announcements` / `bind/start` / `bind/status`） | ❌ 不需要，靠 HMAC 认证 |
+| 机器端点（`outbox` / `announcements` / `bind/start` / `bind/status` / `broadcast`） | ❌ 不需要，靠 HMAC 认证 |
 | `POST /mc-bridge/broadcast`（带签名头） | ❌ 不需要 |
 | `POST /mc-bridge/broadcast`（管理员会话） | ✅ **需要** `X-CSRF-Token`，控制器内单独校验 |
 | `POST` / `DELETE /mc-bridge/link`（会话） | ✅ 需要，**未豁免**，由框架校验 |
-| `GET /mc-bridge/status` | 公开只读 |
 
 用 curl 调用会话端点时，从 `XSRF-TOKEN` Cookie 取值放进 `X-CSRF-Token` 头：
 
@@ -58,105 +57,6 @@ php flarum mc-bridge:selftest --url=...    # 全链路自检
 ```
 
 `locale/en.yml` 中的文案已为将来的后台设置页预留。
-
----
-
-## POST /api/mc-bridge/heartbeat
-
-**认证：HMAC** — 上报服务器状态。建议每 30 秒一次。
-
-请求：
-
-```json
-{
-  "server_key": "survival",
-  "online": true,
-  "name": "Stalir 生存服",
-  "version": "Paper 1.21.1",
-  "motd": "A Minecraft Server",
-  "players_online": 3,
-  "players_max": 40,
-  "tps": 19.97,
-  "mspt": 12.4,
-  "player_names": ["Alice", "Bob", "Carol"]
-}
-```
-
-`server_key` 必填；其余字段可选且会被忽略未知字段。
-
-响应 `200`：
-
-```json
-{
-  "ok": true,
-  "server": {
-    "server_key": "survival",
-    "online": true,
-    "players_online": 3,
-    "players_max": 40,
-    "tps": 19.97,
-    "mspt": 12.4,
-    "version": "Paper 1.21.1",
-    "motd": "A Minecraft Server",
-    "player_names": ["Alice", "Bob", "Carol"],
-    "last_heartbeat_at": "2026-01-01T12:00:00+00:00"
-  },
-  "pending_messages": 0,
-  "server_time": "2026-01-01T12:00:00+00:00"
-}
-```
-
-`online` 在响应中表示“心跳新鲜且未主动下线”：超过 120 秒无心跳即视为离线。
-
----
-
-## POST /api/mc-bridge/events
-
-**认证：HMAC** — 批量上报游戏事件。
-
-请求：
-
-```json
-{
-  "server_key": "survival",
-  "events": [
-    {
-      "type": "join",
-      "player_uuid": "069a79f4-44e9-4726-a5be-fca90e38aaf5",
-      "player_name": "Alice",
-      "happened_at": "2026-01-01T12:00:00Z"
-    },
-    {
-      "type": "death",
-      "player_uuid": "069a79f4-44e9-4726-a5be-fca90e38aaf5",
-      "player_name": "Alice",
-      "message": "cause=FALL world=world"
-    }
-  ]
-}
-```
-
-- 单次最多 **100** 条。
-- `type` 只接受：`join` `quit` `death` `advancement` `chat` `command` `start` `stop` `custom`。
-- 也可以只发一个事件对象（不带 `events` 数组），服务端会自动包装。
-
-响应 `201`：
-
-```json
-{ "ok": true, "stored": 2, "rejected": [] }
-```
-
-部分失败时仍返回 `201`，`rejected` 列出被拒条目：
-
-```json
-{
-  "ok": true,
-  "stored": 1,
-  "rejected": [{ "index": 1, "reason": "Unsupported event type." }]
-}
-```
-
-全部失败返回 `422`。
 
 ---
 
@@ -307,40 +207,6 @@ php flarum mc-bridge:selftest --url=...    # 全链路自检
 
 ---
 
-## GET /api/mc-bridge/status
-
-**认证：公开** — 供论坛前端渲染服务器小组件的只读快照。
-
-响应 `200`：
-
-```json
-{
-  "ok": true,
-  "totals": { "servers": 2, "servers_online": 1, "players_online": 3 },
-  "servers": [
-    {
-      "server_key": "survival",
-      "online": true,
-      "players_online": 3,
-      "players_max": 40,
-      "tps": 19.97,
-      "mspt": 12.4,
-      "version": "Paper 1.21.1",
-      "motd": "A Minecraft Server",
-      "player_names": ["Alice", "Bob", "Carol"],
-      "last_heartbeat_at": "2026-01-01T12:00:00+00:00"
-    }
-  ],
-  "recent_events": [
-    { "id": 88, "server_key": "survival", "type": "join", "player_uuid": "…", "player_name": "Alice", "message": null, "happened_at": "2026-01-01T11:59:30+00:00" }
-  ]
-}
-```
-
-仅暴露聚合信息与在线玩家名，不含任何密钥。
-
----
-
 ## GET /api/mc-bridge/link
 
 **认证：论坛会话（需登录）** — 返回当前登录账号的 Minecraft 绑定，供论坛前端显示。
@@ -428,8 +294,8 @@ payload 里看到它们；游客的响应里根本不包含这些字段（不是
 
 | 表 | 用途 |
 |----|------|
-| `mc_servers` | 每台服务器一行，最新心跳状态 |
-| `mc_events` | 游戏事件流水，`(server_key, created_at)` 与 `player_uuid` 建索引 |
+| `mc_servers` | 早期状态上报留下的表；上报功能已移除，表保留但不再写入 |
+| `mc_events` | 早期游戏事件流水；上报功能已移除，表保留但不再写入 |
 | `mc_outbox` | 待投递给游戏的队列，`delivered_at` 为 NULL 表示未投递 |
 | `mc_bindings` | 已确认的 `user_id ↔ player_uuid` 绑定（两侧均唯一） |
 | `mc_bind_codes` | 一次性绑定码，含过期与使用时间 |

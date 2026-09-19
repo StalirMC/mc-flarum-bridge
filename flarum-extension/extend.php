@@ -7,12 +7,9 @@ use Stalir\McBridge\Api\Controller\AnnouncementsController;
 use Stalir\McBridge\Api\Controller\BindStartController;
 use Stalir\McBridge\Api\Controller\BindStatusController;
 use Stalir\McBridge\Api\Controller\BroadcastController;
-use Stalir\McBridge\Api\Controller\EventController;
-use Stalir\McBridge\Api\Controller\HeartbeatController;
 use Stalir\McBridge\Api\Controller\LinkController;
 use Stalir\McBridge\Api\Controller\LinkPageController;
 use Stalir\McBridge\Api\Controller\LinkStatusController;
-use Stalir\McBridge\Api\Controller\StatusController;
 use Stalir\McBridge\Api\UserResourceFields;
 use Stalir\McBridge\Console\ConfigCommand;
 use Stalir\McBridge\Console\SecretCommand;
@@ -44,8 +41,6 @@ return [
     // token by hand for the session path.
     // ---------------------------------------------------------------------
     (new Extend\Csrf())
-        ->exemptRoute('mc-bridge.heartbeat')
-        ->exemptRoute('mc-bridge.events')
         ->exemptRoute('mc-bridge.outbox')
         ->exemptRoute('mc-bridge.announcements')
         ->exemptRoute('mc-bridge.bind.start')
@@ -66,8 +61,6 @@ return [
     // the HMAC scheme implemented in Api\Controller\AbstractBridgeController.
     // ---------------------------------------------------------------------
     (new Extend\Routes('api'))
-        ->post('/mc-bridge/heartbeat', 'mc-bridge.heartbeat', HeartbeatController::class)
-        ->post('/mc-bridge/events', 'mc-bridge.events', EventController::class)
         ->get('/mc-bridge/outbox', 'mc-bridge.outbox', AnnouncementsController::class)
         // Alias kept for the documented "announcements" endpoint name.
         ->get('/mc-bridge/announcements', 'mc-bridge.announcements', AnnouncementsController::class)
@@ -80,7 +73,6 @@ return [
     // are safe to call from the browser.
     // ---------------------------------------------------------------------
     (new Extend\Routes('api'))
-        ->get('/mc-bridge/status', 'mc-bridge.status', StatusController::class)
         // GET is what the forum's settings section reads to show whether the
         // account is already linked. Without it the frontend asked for a route
         // that did not exist, received a 404, and rendered "not linked" even

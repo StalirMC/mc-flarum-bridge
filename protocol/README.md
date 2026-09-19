@@ -88,21 +88,16 @@ All errors share the shape:
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| `POST` | `/api/mc-bridge/heartbeat` | HMAC | Server status upsert |
-| `POST` | `/api/mc-bridge/events` | HMAC | Batch gameplay events |
 | `GET` | `/api/mc-bridge/outbox` | HMAC | Pull + consume pending messages |
 | `GET` | `/api/mc-bridge/announcements` | HMAC | Alias of `/outbox` |
 | `POST` | `/api/mc-bridge/bind/start` | HMAC | Issue a binding code |
 | `GET` | `/api/mc-bridge/bind/status` | HMAC | Is this UUID linked yet? |
 | `POST` | `/api/mc-bridge/broadcast` | HMAC **or** admin session | Queue a broadcast |
-| `GET` | `/api/mc-bridge/status` | public | Read-only server snapshot |
 | `POST` | `/api/mc-bridge/link` | forum session | Consume a binding code |
 | `DELETE` | `/api/mc-bridge/link` | forum session | Remove the link |
 
 ## 4. Schemas
 
-- [`heartbeat.schema.json`](heartbeat.schema.json)
-- [`events.schema.json`](events.schema.json)
 - [`outbox.schema.json`](outbox.schema.json)
 
 ## 5. Reference signing snippets
@@ -115,7 +110,7 @@ SECRET="<the shared secret>"
 BODY='{"server_key":"survival","online":true,"players_online":0,"players_max":20}'
 TS=$(date +%s)
 NONCE=$(openssl rand -hex 16)
-PATH_="/api/mc-bridge/heartbeat"
+PATH_="/api/mc-bridge/bind/start"
 
 SIG=$(printf '%s' "$TS
 $NONCE
@@ -139,7 +134,7 @@ use Stalir\McBridge\Service\BridgeCrypto;
 $timestamp = (string) time();
 $nonce = bin2hex(random_bytes(16));
 $body = json_encode(['server_key' => 'survival', 'online' => true]);
-$path = '/api/mc-bridge/heartbeat';
+$path = '/api/mc-bridge/bind/start';
 
 $signature = BridgeCrypto::sign($secret, $timestamp, $nonce, 'POST', $path, $body);
 ```
