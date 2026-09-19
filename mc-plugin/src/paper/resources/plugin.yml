@@ -20,10 +20,6 @@ commands:
     description: Report a player to the forum moderators
     usage: /report <player> <reason>
     permission: mcbridge.report
-  vote:
-    description: Vote in the forum poll announced in game
-    usage: /vote <number> [number...]
-    permission: mcbridge.vote
 
 permissions:
   mcbridge.bind:
@@ -31,9 +27,6 @@ permissions:
     default: true
   mcbridge.report:
     description: Allows a player to report another player
-    default: true
-  mcbridge.vote:
-    description: Allows a player to vote in an activity poll
     default: true
   mcbridge.admin:
     description: Allows managing the bridge and sending broadcasts

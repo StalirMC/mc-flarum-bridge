@@ -42,19 +42,6 @@ news-header: "&8&m--------&r &e论坛公告 &8&m-------- &7(最近 {count} 条)"
 broadcast-usage: "&c用法：/mcbridge broadcast <内容>"
 broadcast-sent: "&a消息已提交到论坛，将在服务器轮询后显示。"
 
-# ---- 论坛投票（与 fof/polls 联动）----
-poll-open: "&e[投票] &f{question}"
-poll-vote-hint: "&7输入 &e/vote <编号> &7参与投票！"
-poll-vote-hint-multiple: "&7输入 &e/vote <编号> [编号...] &7参与投票（可多选，空格或逗号分隔）！"
-poll-results-header: "&e[投票结果] &f{question}"
-poll-result-line: "&7- &f{answer} &8({votes} 票, {percent}%)"
-poll-winner: "&a获胜选项：&e{answer}"
-vote-usage: "&c用法：/vote <编号> [编号...]"
-vote-none: "&7当前没有可投票的论坛投票。"
-vote-out-of-range: "&c编号超出范围（这个投票有 &e{max}&c 个选项）。"
-vote-sent: "&a投票成功（选项 &e{options}&a，该投票共 &e{total}&a 票）。"
-vote-failed: "&c投票失败：{reason}"
-
 # ---- 重载与统计 ----
 reloaded: "&a配置已重新加载。"
 reload-problems: "&c配置仍有问题：&7{problems}"

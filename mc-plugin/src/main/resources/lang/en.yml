@@ -43,19 +43,6 @@ news-header: "&8&m--------&r &eForum Announcements &8&m-------- &7(last {count})
 broadcast-usage: "&cUsage: /mcbridge broadcast <text>"
 broadcast-sent: "&aMessage queued on the forum; it will appear after the next poll."
 
-# ---- forum polls (fof/polls) ----
-poll-open: "&e[Poll] &f{question}"
-poll-vote-hint: "&7Type &e/vote <number> &7to cast your vote!"
-poll-vote-hint-multiple: "&7Type &e/vote <number> [number...] &7to vote (multiple choices, space or comma separated)!"
-poll-results-header: "&e[Poll results] &f{question}"
-poll-result-line: "&7- &f{answer} &8({votes} votes, {percent}%)"
-poll-winner: "&aWinning option: &e{answer}"
-vote-usage: "&cUsage: /vote <number> [number...]"
-vote-none: "&7There is no forum poll open for voting right now."
-vote-out-of-range: "&cThat number is out of range (this poll has &e{max}&c options)."
-vote-sent: "&aVote recorded (option &e{options}&a; &e{total}&a votes total in this poll)."
-vote-failed: "&cCould not submit the vote: {reason}"
-
 # ---- reload and statistics ----
 reloaded: "&aConfiguration reloaded."
 reload-problems: "&cThe configuration still has problems: &7{problems}"

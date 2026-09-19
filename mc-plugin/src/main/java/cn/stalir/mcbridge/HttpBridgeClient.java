@@ -15,7 +15,6 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
 import java.util.UUID;
 
 /**
@@ -81,31 +80,6 @@ public final class HttpBridgeClient {
         payload.addProperty("reason", reason);
 
         return post("/report", payload);
-    }
-
-    public JsonObject fetchPolls() throws BridgeException {
-        return get("/polls", "server_key=" + encode(config.serverKey()));
-    }
-
-    /**
-     * Cast a vote in the forum's own fof/polls poll, as the forum account this
-     * player bound with /bind.
-     */
-    public JsonObject submitPollVote(int pollId, UUID playerUuid, List<Integer> optionIds) throws BridgeException {
-        JsonObject payload = new JsonObject();
-        payload.addProperty("server_key", config.serverKey());
-        payload.addProperty("poll_id", pollId);
-        payload.addProperty("player_uuid", playerUuid.toString());
-
-        JsonArray options = new JsonArray();
-
-        for (Integer optionId : optionIds) {
-            options.add(optionId);
-        }
-
-        payload.add("option_ids", options);
-
-        return post("/polls/vote", payload);
     }
 
 

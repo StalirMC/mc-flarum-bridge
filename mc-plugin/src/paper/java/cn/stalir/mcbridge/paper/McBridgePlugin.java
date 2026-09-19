@@ -59,12 +59,6 @@ public final class McBridgePlugin extends JavaPlugin {
             report.setExecutor(new ReportCommand(core));
         }
 
-        PluginCommand vote = getCommand("vote");
-
-        if (vote != null) {
-            vote.setExecutor(new VoteCommand(core));
-        }
-
         PluginCommand mcbridge = getCommand("mcbridge");
 
         if (mcbridge != null) {

@@ -10,8 +10,6 @@
  *   POST /api/mc-bridge/bind/start    HMAC
  *   GET  /api/mc-bridge/bind/status   HMAC
  *   POST /api/mc-bridge/report        HMAC
- *   GET  /api/mc-bridge/polls         HMAC
- *   POST /api/mc-bridge/polls/vote    HMAC
  *
  * Authentication mirrors `Stalir\McBridge\Api\Controller\AbstractBridgeController`
  * and `Stalir\McBridge\Service\BridgeCrypto`:
@@ -24,9 +22,7 @@
  * (cached for 600 seconds).
  *
  * Storage is a plain in-memory object standing in for the `mc_outbox`,
- * `mc_bindings`, `mc_bind_codes` and `mc_reports` tables, plus `polls`,
- * `poll_options` and `poll_votes` as they are shaped by the fof/polls
- * extension the bridge talks to.
+ * `mc_bindings`, `mc_bind_codes` and `mc_reports` tables.
  *
  * Environment variables:
  *   MOCK_SECRET  shared secret (default: the TEST_SECRET constant below)
@@ -84,10 +80,6 @@ export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 /** Binding code length and lifetime in seconds (McBindCode::TTL_MINUTES). */
 export const CODE_LENGTH = 8;
 export const CODE_TTL_SECONDS = 600;
-
-/** Poll exposure limits (PollsController constants). */
-export const POLL_MAX_POLLS = 5;
-export const POLL_RECENT_RESULT_HOURS = 24;
 
 /** Report field limits (ReportController). */
 export const REPORT_MAX_REASON_LENGTH = 1000;
@@ -260,20 +252,9 @@ export function createStore(options = {}) {
     bindCodes: [],
     /** mc_reports */
     reports: [],
-    /**
-     * Stand-ins for the fof/polls tables. The bridge does not own polls, so the
-     * mock mirrors the extension's own shape: one row per poll, one per option,
-     * one per vote.
-     */
-    polls: [],
-    pollOptions: [],
-    pollVotes: [],
 
     nextOutboxId: 1,
     nextReportId: 1,
-    nextPollId: 1,
-    nextPollOptionId: 1,
-    nextPollVoteId: 1,
 
     /** Reset every table; a demo message is seeded unless suppressed. */
     reset(resetOptions = {}) {
@@ -281,14 +262,8 @@ export function createStore(options = {}) {
       store.bindings.clear();
       store.bindCodes.length = 0;
       store.reports.length = 0;
-      store.polls.length = 0;
-      store.pollOptions.length = 0;
-      store.pollVotes.length = 0;
       store.nextOutboxId = 1;
       store.nextReportId = 1;
-      store.nextPollId = 1;
-      store.nextPollOptionId = 1;
-      store.nextPollVoteId = 1;
 
       // null  -> never seed;  true/undefined -> seed;  false -> seed only when
       // the server was created with seedOutbox enabled.
@@ -366,129 +341,6 @@ export function createStore(options = {}) {
       return record;
     },
 
-    /**
-     * Create a global, published poll, mirroring a fof/polls row.
-     *
-     * `endsInMinutes` may be negative, which produces an already-ended poll -
-     * that is how the tests exercise the results branch.
-     */
-    addPoll(poll = {}) {
-      const record = {
-        id: store.nextPollId++,
-        question: poll.question ?? 'Mock poll',
-        subtitle: poll.subtitle ?? null,
-        // Global poll: fof/polls marks these with a null post_id.
-        post_id: null,
-        published_at: poll.published_at ?? nowSeconds(),
-        end_date:
-          poll.endsInMinutes === undefined || poll.endsInMinutes === null
-            ? null
-            : nowSeconds() + Math.trunc(poll.endsInMinutes) * 60,
-        settings: {
-          allow_multiple_votes: poll.multiple ?? false,
-          max_votes: poll.maxVotes ?? 0,
-          allow_change_vote: poll.allowChangeVote ?? true,
-        },
-        vote_count: 0,
-        created_at: nowSeconds(),
-      };
-
-      store.polls.push(record);
-
-      for (const answer of poll.options ?? []) {
-        store.pollOptions.push({
-          id: store.nextPollOptionId++,
-          poll_id: record.id,
-          answer,
-          vote_count: 0,
-        });
-      }
-
-      return record;
-    },
-
-    /** Options of a poll, in display order (poll_options). */
-    optionsOf(pollId) {
-      return store.pollOptions.filter((option) => option.poll_id === pollId);
-    },
-
-    /** Votes in a poll, optionally narrowed to one forum user. */
-    votesOf(pollId, userId) {
-      return store.pollVotes.filter(
-        (vote) => vote.poll_id === pollId && (userId === undefined || vote.user_id === userId)
-      );
-    },
-
-    /** True when the poll's end date has passed (Poll::hasEnded). */
-    pollHasEnded(poll) {
-      return poll.end_date !== null && poll.end_date <= nowSeconds();
-    },
-
-    /**
-     * Cast a vote on behalf of a forum user, following fof/polls semantics:
-     * for a single-choice poll a new vote replaces the previous one, for a
-     * multiple-choice poll the deselected options are removed.
-     */
-    castPollVote(pollId, userId, optionIds) {
-      const poll = store.polls.find((record) => record.id === pollId);
-
-      if (poll === undefined) {
-        throw new Error('castPollVote() needs an existing poll');
-      }
-
-      const allowed = new Set(store.optionsOf(pollId).map((option) => option.id));
-
-      for (const optionId of optionIds) {
-        if (!allowed.has(optionId)) {
-          throw new Error(`option ${optionId} does not belong to poll ${pollId}`);
-        }
-      }
-
-      const keep = store.pollVotes.filter((vote) => {
-        if (vote.poll_id !== pollId || vote.user_id !== userId) return true;
-        // Single choice: drop every previous vote by this user.
-        if (!poll.settings.allow_multiple_votes) return false;
-        // Multiple choice: keep only the options still selected.
-        return optionIds.includes(vote.option_id);
-      });
-
-      // Mutate in place so callers holding a reference keep seeing the table.
-      store.pollVotes.length = 0;
-      store.pollVotes.push(...keep);
-
-      for (const optionId of optionIds) {
-        const already = store.pollVotes.some(
-          (vote) => vote.poll_id === pollId && vote.user_id === userId && vote.option_id === optionId
-        );
-
-        if (already) continue;
-
-        store.pollVotes.push({
-          id: store.nextPollVoteId++,
-          poll_id: pollId,
-          option_id: optionId,
-          user_id: userId,
-          created_at: nowSeconds(),
-        });
-      }
-
-      store.refreshPollCounts(pollId);
-
-      return store.votesOf(pollId, userId);
-    },
-
-    /** Recompute the denormalised vote_count columns (refreshVoteCount). */
-    refreshPollCounts(pollId) {
-      for (const option of store.optionsOf(pollId)) {
-        option.vote_count = store.pollVotes.filter((vote) => vote.option_id === option.id).length;
-      }
-
-      const poll = store.polls.find((record) => record.id === pollId);
-
-      if (poll !== undefined) {
-        poll.vote_count = store.votesOf(pollId).length;
-      }
-    },
   };
 
   store.reset();
@@ -790,162 +642,6 @@ export function createServer(options = {}) {
     return sendJson(response, 201, { ok: true, report_id: report.id });
   }
 
-  /** Wire shape of a fof/polls poll (PollsController::pollPayload). */
-  function pollPayload(poll) {
-    const options = store.optionsOf(poll.id).map((option, index) => ({
-      number: index + 1,
-      id: option.id,
-      answer: option.answer,
-    }));
-
-    return {
-      id: poll.id,
-      question: poll.question,
-      subtitle: poll.subtitle,
-      options,
-      multiple: poll.settings.allow_multiple_votes,
-      max_votes: poll.settings.max_votes,
-      can_change_vote: poll.settings.allow_change_vote,
-      ends_at: poll.end_date === null ? null : iso(poll.end_date),
-      url: `/polls/view/${poll.id}`,
-    };
-  }
-
-  /** Wire shape of a closed poll's tally (PollsController::resultPayload). */
-  function pollResultPayload(poll) {
-    const options = store.optionsOf(poll.id).map((option, index) => ({
-      number: index + 1,
-      answer: option.answer,
-      votes: option.vote_count,
-    }));
-
-    const total = options.reduce((sum, option) => sum + option.votes, 0);
-    let winner = null;
-    let best = 0;
-
-    for (const option of options) {
-      if (option.votes > best) {
-        best = option.votes;
-        winner = option.number;
-      }
-    }
-
-    return {
-      id: poll.id,
-      question: poll.question,
-      options,
-      total_votes: total,
-      winner_number: winner,
-      url: `/polls/view/${poll.id}`,
-    };
-  }
-
-  function handlePollsGet(request, response, payload, query) {
-    const serverKey =
-      sanitizeServerKey(query.get('server_key')) ??
-      sanitizeServerKey(request.headers[HEADERS.server.toLowerCase()]);
-
-    if (serverKey === null) {
-      return sendError(response, 422, 'A valid server_key is required.');
-    }
-
-    // Only global, published polls are exposed (post_id null, published_at set).
-    const published = store.polls.filter(
-      (poll) => poll.post_id === null && poll.published_at !== null
-    );
-
-    const open = published
-      .filter((poll) => !store.pollHasEnded(poll))
-      .sort((left, right) => right.id - left.id)
-      .slice(0, POLL_MAX_POLLS);
-
-    const cutoff = nowSeconds() - POLL_RECENT_RESULT_HOURS * 3600;
-
-    const ended = published
-      .filter((poll) => store.pollHasEnded(poll) && poll.end_date >= cutoff)
-      .sort((left, right) => right.end_date - left.end_date)
-      .slice(0, POLL_MAX_POLLS);
-
-    return sendJson(response, 200, {
-      ok: true,
-      available: true,
-      polls: open.map(pollPayload),
-      results: ended.map(pollResultPayload),
-    });
-  }
-
-  function handlePollVote(request, response, body) {
-    const serverKey =
-      sanitizeServerKey(body.server_key) ??
-      sanitizeServerKey(request.headers[HEADERS.server.toLowerCase()]);
-
-    if (serverKey === null) {
-      return sendError(response, 422, 'A valid server_key is required.');
-    }
-
-    const pollId = Math.trunc(optionalNumber(body.poll_id) ?? 0);
-    if (pollId <= 0) {
-      return sendError(response, 422, 'A valid poll_id is required.');
-    }
-
-    const uuid = sanitizeUuid(body.player_uuid ?? body.uuid);
-    if (uuid === null) {
-      return sendError(response, 422, 'A valid player_uuid is required.');
-    }
-
-    if (!Array.isArray(body.option_ids) || body.option_ids.length === 0) {
-      return sendError(response, 422, 'option_ids is required.');
-    }
-
-    const optionIds = body.option_ids
-      .map((value) => Math.trunc(Number(value)))
-      .filter((value) => Number.isFinite(value) && value > 0);
-
-    if (optionIds.length === 0) {
-      return sendError(response, 422, 'option_ids is required.');
-    }
-
-    // The vote is cast as the forum account this player bound with /bind.
-    const binding = store.bindings.get(uuid);
-
-    if (binding === undefined) {
-      return sendError(response, 409, 'This player has not linked a forum account yet.');
-    }
-
-    const poll = store.polls.find((record) => record.id === pollId);
-
-    if (poll === undefined) {
-      return sendError(response, 404, 'Poll not found.');
-    }
-
-    if (store.pollHasEnded(poll)) {
-      return sendError(response, 403, 'This poll has ended.');
-    }
-
-    const maxVotes = poll.settings.allow_multiple_votes
-      ? poll.settings.max_votes === 0
-        ? store.optionsOf(pollId).length
-        : poll.settings.max_votes
-      : 1;
-
-    if (optionIds.length > maxVotes) {
-      return sendError(response, 422, `This poll allows at most ${maxVotes} choice(s).`);
-    }
-
-    try {
-      store.castPollVote(pollId, binding.user_id, optionIds);
-    } catch (exception) {
-      return sendError(response, 422, exception.message);
-    }
-
-    return sendJson(response, 200, {
-      ok: true,
-      poll_id: pollId,
-      voter: binding.username,
-      total_votes: poll.vote_count,
-    });
-  }
-
   // -------------------------------------------------------------------------
   // Routing
   // -------------------------------------------------------------------------
@@ -963,8 +659,6 @@ export function createServer(options = {}) {
     ['/bind/start', { methods: ['POST'], auth: true, handler: handleBindStart }],
     ['/bind/status', { methods: ['GET'], auth: true, handler: handleBindStatus }],
     ['/report', { methods: ['POST'], auth: true, handler: handleReport }],
-    ['/polls', { methods: ['GET'], auth: true, handler: handlePollsGet }],
-    ['/polls/vote', { methods: ['POST'], auth: true, handler: handlePollVote }],
   ]);
 
   const server = createHttpServer(async (request, response) => {

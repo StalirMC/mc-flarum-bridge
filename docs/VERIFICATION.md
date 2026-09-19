@@ -651,54 +651,48 @@ Packagist 会认为最高版本是 1.0.0，于是不带约束的 `composer requi
 0.0.10 曾被撤回重发一次：维护者要求作者名改为 `StalirMC`，而当时 Packagist 只抓到 `v0.0.6`，
 所以撤回是干净的 —— 删除 tag 后在新提交上重建，Release 就地更新（资产已替换并实测）。
 
-### 2.17 游戏内查公告、举报与论坛投票联动（0.0.12）
+### 2.17 游戏内查公告与举报（0.0.12）
 
-三个新功能，都由游戏侧命令发起：
+两个新功能，都由游戏侧命令发起：
 
 | 功能 | 游戏内入口 | 论坛侧 | 新表 |
 |------|-----------|--------|------|
 | 查公告 | `/mcbridge news`（**无需权限**） | 复用 `GET /outbox`，插件只筛 `announcement` 并取前 5 条 | — |
 | 举报 | `/report <玩家> <原因>` | `POST /api/mc-bridge/report` | `mc_reports` |
-| 投票 | `/vote <编号>` | `GET /api/mc-bridge/polls`、`POST /api/mc-bridge/polls/vote` | 无（读 fof/polls 自己的表） |
 
-**投票是联动，不是自建。** 最初实现了一套 `mc_activities` / `mc_votes` 自建投票，
-维护者指出要的是**与论坛已有的 `fof/polls` 联动**，于是整套自建表、控制器、模型被删除，
-改为：
+设计要点：
 
-1. **投票由 fof/polls 拥有**，桥接只读。`PollsController` 读 `polls` / `poll_options`，
-   只暴露**全局投票**（`post_id IS NULL`）且**已发布**（`published_at IS NOT NULL`）的行。
-   讨论内投票属于具体帖子，不进游戏。
-2. **投票写回走 fof/polls 自己的命令**：`PollVoteController` 通过 `mc_bindings` 把
-   `player_uuid` 解析成论坛用户，然后 `dispatch(new MultipleVotesPoll($actor, $pollId, ...))`。
-   单选/多选、`max_votes`、能否改票、是否已结束这些规则因此**完全由 fof/polls 判定**，
-   桥接不重新实现一套，也不可能与论坛网页行为漂移。
-3. **投票必须先绑定**：票要算在具体论坛用户名下，未绑定的玩家拿到 `409`，插件把它
-   渲染成引导信息。这条把已有的 `/bind` 功能变成了投票的前置条件。
-4. **fof/polls 是可选依赖**：`class_exists(Poll::class)` 为假时 `GET /polls` 返回
-   `available: false`（而不是报错），插件据此提示"论坛未启用投票"，不影响其它功能。
-5. **故意不做"已广播"标记**。第一版在论坛侧记录"这个投票播过了"，但多服务器网络里
-   每台服务器都要给自己玩家播报，论坛侧标记只会让第一台抢到的服务器播、其余全哑。
-   去重改到插件侧内存（`announcedPollIds` / `announcedResultIds`），代价是插件重启可能
-   重播一次最新公告。`protocol-test.mjs` 第 12 组断言"已结束的投票只作为 result 出现，
-   绝不作为 open poll 出现"。
-6. **论坛侧没有定时任务**：结果窗口是"最近 24 小时内结束的投票"，由插件轮询自然触发播报。
-7. **增量迁移**：`mc_reports` 与 `mc_outbox` 的 `target_uuid` / `actor_id` 两列写进了创建
-   迁移与 `2025_06_28_000000_add_bridge_features.php`。**已装过旧版的论坛必须跑一次
+1. **查公告复用现有拉取**：`outboxMessages()` 是管理员看的原样列表（peek，不消费），
+   `newsMessages()` 在其上只保留 `announcement` 类型并限 5 条，供普通玩家查看。
+   `plugin.yml` 里 `/mcbridge` 命令整体不设权限位，把判断下移到子命令，
+   于是 `BridgeCommand` 能在检查 `mcbridge.admin` **之前**先放行 `news`——否则普通玩家
+   会因为父命令的权限位根本进不到这一段。Tab 补全同样按玩家权限给出不同列表。
+2. **举报只写不回**：`POST /api/mc-bridge/report` 要求 `reporter_uuid` 是合法 UUID、
+   `target_name` 与 `reason` 非空，落库到 `mc_reports`（初始状态 `pending`），
+   玩家侧只收到一句确认；处理状态（`reviewed` / `dismissed`）由管理员在库里改。
+3. **增量迁移**：`mc_reports` 与 `mc_outbox` 的 `target_uuid` / `actor_id` 两列同时写进了
+   创建迁移与 `2025_06_28_000000_add_bridge_features.php`。**已装过旧版的论坛必须跑一次
    `php flarum migrate` 才会建表加列** —— 创建迁移在旧论坛上是"已执行"状态不会再跑，
    这正是那份增量迁移存在的原因（每步都有 `hasTable` / `hasColumn` 守卫，新装论坛执行它是空操作）。
-8. `X-MC-Diagnostic` 头在联调里派上了用场：本机缺 PHP，但与线上论坛比对规范字符串时，
+4. `X-MC-Diagnostic` 头在联调里派上了用场：本机缺 PHP，但与线上论坛比对规范字符串时，
    服务端回显的 `canonical` 与本地构造的**逐字节一致**，从而确认"签名不匹配"是密钥不同，
    而不是算法或路径写错。
 
-规模：mock 与协议测试 28 → **41 项**（举报 4、投票联动 8；原自建投票的 5 项已删除），
-`verify.mjs` **316 项**（自建投票的三条路由被两条 polls 路由取代），构建自测仍 37 项。
-`gradle build`、`verify.mjs`、`protocol-test.mjs` 全部通过。
+> **投票功能实现过两轮，最后整个去掉了。** 第一轮是自建投票
+> （`mc_activities` / `mc_votes` 两张表 + `ActivityController` / `VoteController`），
+> 维护者指出要的是与论坛已有的 `fof/polls` 联动；第二轮改成联动
+> （读 `polls` / `poll_options`、借 `MultipleVotesPoll` 命令把票记到绑定账号名下），
+> 随后维护者决定不要投票功能了。两轮的痕迹都已清除：表、控制器、`/vote` 命令与权限、
+> `poll-*` / `vote-*` 语言键、mock 与协议测试的对应分组都不在代码里。
+> 留这段记录是为了说清楚：**`mc_outbox` 的 `target_uuid` / `actor_id` 两列和
+> `mc_reports` 表与投票无关**，增量迁移仍然必须跑。
+
+规模：mock 与协议测试 28 → **32 项**（举报 4 项），`verify.mjs` **299 项**，
+构建自测 37 项。`gradle build`、`verify.mjs`、`protocol-test.mjs` 全部通过。
 
 **线上实测（forum.kxkl2024.cn）**：用 `DeepSeekHarness` 账号换取 Flarum token 后确认
-`GET /api/mc-bridge/link` 正常返回，`GET /api/polls` 返回合法的空 JSON:API 文档
-（说明 fof/polls 已安装、当时还没有投票），而 `GET /api/mc-bridge/activity` 返回 `404`
-—— 即论坛侧仍是旧版，这些功能需要先部署（见第 4 节）。
-
+`GET /api/mc-bridge/link` 正常返回，而当时新加的 `/api/mc-bridge/polls` 返回 `404`
+—— 即论坛侧仍是旧版，这两个功能需要先部署（见第 4 节）。
 ## 3. 无法在本机验证的内容（现由 CI 覆盖）
 
 > 本机没有 PHP / JDK，这些检查**已全部由 CI 在带 PHP 8.3 / JDK 21 的真实环境中
@@ -742,9 +736,7 @@ cd mc-plugin && gradle wrapper --gradle-version 8.10 && ./gradlew build
 #   /mcbridge news      -> 应列出论坛最新公告（所有玩家都可用）
 #   /bind               -> 应返回 8 位绑定码
 #   /report <玩家> <原因> -> 应提示已提交，论坛后台出现 pending 记录
-#   （先在论坛 /polls 建一个全局投票）-> 游戏内广播公告
-#   /vote <编号>        -> 需先 /bind；成功后论坛投票页出现该票
-#   （未绑定时 /vote）  -> 应提示需要先绑定论坛账号
+
 ```
 
 在论坛发一个新讨论，20 秒内游戏内应出现 `[论坛] <标题>`。

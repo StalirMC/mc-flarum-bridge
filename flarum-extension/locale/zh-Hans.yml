@@ -126,13 +126,6 @@ stalirmc-mc-bridge:
       reporter_uuid_invalid: "reporter_uuid 不合法。"
       target_name_required: "请提供被举报玩家的名字。"
       reason_required: "请提供举报原因。"
-      polls_unavailable: "论坛未启用投票扩展（fof/polls），游戏内投票不可用。"
-      poll_id_required: "缺少合法的 poll_id。"
-      poll_options_required: "请提供要投的选项。"
-      poll_binding_required: "该玩家还没有绑定论坛账号，无法投票（请先在游戏内执行 /bind）。"
-      poll_not_found: "投票不存在。"
-      poll_vote_denied: "论坛拒绝了这次投票：投票已结束，或该账号没有投票权限。"
-      poll_vote_invalid: "选项无效，或超出了这个投票允许的选择数量。"
   forum:
     settings:
       title: "Minecraft 账号绑定"

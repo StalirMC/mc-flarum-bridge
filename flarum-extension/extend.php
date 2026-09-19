@@ -10,8 +10,6 @@ use Stalir\McBridge\Api\Controller\BroadcastController;
 use Stalir\McBridge\Api\Controller\LinkController;
 use Stalir\McBridge\Api\Controller\LinkPageController;
 use Stalir\McBridge\Api\Controller\LinkStatusController;
-use Stalir\McBridge\Api\Controller\PollsController;
-use Stalir\McBridge\Api\Controller\PollVoteController;
 use Stalir\McBridge\Api\Controller\ReportController;
 use Stalir\McBridge\Api\UserResourceFields;
 use Stalir\McBridge\Console\ConfigCommand;
@@ -49,9 +47,7 @@ return [
         ->exemptRoute('mc-bridge.bind.start')
         ->exemptRoute('mc-bridge.bind.status')
         ->exemptRoute('mc-bridge.broadcast')
-        ->exemptRoute('mc-bridge.report')
-        ->exemptRoute('mc-bridge.polls')
-        ->exemptRoute('mc-bridge.polls.vote'),
+        ->exemptRoute('mc-bridge.report'),
 
     // ---------------------------------------------------------------------
     // The Minecraft binding of a forum account, exposed on the user resource.
@@ -73,11 +69,7 @@ return [
         ->post('/mc-bridge/bind/start', 'mc-bridge.bind.start', BindStartController::class)
         ->get('/mc-bridge/bind/status', 'mc-bridge.bind.status', BindStatusController::class)
         ->post('/mc-bridge/broadcast', 'mc-bridge.broadcast', BroadcastController::class)
-        ->post('/mc-bridge/report', 'mc-bridge.report', ReportController::class)
-        // Read the forum's own fof/polls polls, and cast an in-game vote as the
-        // bound forum account. The bridge owns no polls of its own.
-        ->get('/mc-bridge/polls', 'mc-bridge.polls', PollsController::class)
-        ->post('/mc-bridge/polls/vote', 'mc-bridge.polls.vote', PollVoteController::class),
+        ->post('/mc-bridge/report', 'mc-bridge.report', ReportController::class),
 
     // ---------------------------------------------------------------------
     // Forum-facing endpoints. These use the normal Flarum session/actor and

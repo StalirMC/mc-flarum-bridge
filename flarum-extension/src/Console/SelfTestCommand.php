@@ -33,9 +33,6 @@ class SelfTestCommand extends AbstractBridgeCommand
         // Added with player reports; an existing install only gets it after
         // `php flarum migrate` runs the incremental migration, so the
         // self-test is the quickest way to notice a stale database.
-        //
-        // fof/polls tables are deliberately absent: polls are an optional
-        // companion extension, not something the bridge brings with it.
         'mc_reports',
     ];
 
