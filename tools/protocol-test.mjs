@@ -21,6 +21,10 @@
  *   8. outbox: peek=true does not consume, peek=false does
  *   9. bind/start returns an 8-character code from the unambiguous alphabet
  *  10. bind start/status round-trip, sub-directory installs, concurrency
+ *  11. player reports: stored when signed, 422 without a reason or a bad UUID
+ *  12. activity polls: created with 2-10 options, readable while open
+ *  13. voting: one vote per player, re-voting replaces, 409 once closed, and
+ *      the final tally with its winner is handed back exactly once
  *
  * Every check prints PASS or FAIL; any failure exits with code 1.
  *
@@ -627,6 +631,225 @@ async function checkAgainstMock(mock) {
       Array.from({ length: 25 }, (unused, index) => `node-${index}`),
       'each concurrent request kept its own query'
     );
+  });
+
+  // -------------------------------------------------------------------------
+  // 11. Player reports
+  // -------------------------------------------------------------------------
+
+  group('11. Player reports');
+
+  const REPORTER_UUID = '069a79f4-44e9-4726-a5be-fca90e38aaf5';
+
+  await test('POST /api/mc-bridge/report stores a signed report', async () => {
+    const response = await request(baseUrl, {
+      method: 'POST',
+      path: '/api/mc-bridge/report',
+      body: {
+        server_key: 'survival',
+        reporter_uuid: REPORTER_UUID,
+        reporter_name: 'Alice',
+        target_name: 'Steve',
+        reason: 'Griefing at spawn',
+      },
+    });
+
+    assertStatus(response, 201, 'report accepted');
+    assert(response.json.report_id > 0, 'a report_id is expected');
+    assertEqual(mock.store.reports.length, 1, 'exactly one report stored');
+    assertEqual(mock.store.reports[0].status, 'pending', 'new reports start pending');
+    assertEqual(mock.store.reports[0].target_name, 'Steve', 'target kept');
+  });
+
+  await test('a report without a reason is rejected with 422', async () => {
+    const response = await request(baseUrl, {
+      method: 'POST',
+      path: '/api/mc-bridge/report',
+      body: {
+        server_key: 'survival',
+        reporter_uuid: REPORTER_UUID,
+        target_name: 'Steve',
+      },
+    });
+
+    assertStatus(response, 422, 'reason is mandatory');
+  });
+
+  await test('a report with a malformed reporter_uuid is rejected with 422', async () => {
+    const response = await request(baseUrl, {
+      method: 'POST',
+      path: '/api/mc-bridge/report',
+      body: {
+        server_key: 'survival',
+        reporter_uuid: 'not-a-uuid',
+        target_name: 'Steve',
+        reason: 'test',
+      },
+    });
+
+    assertStatus(response, 422, 'reporter_uuid must be a UUID');
+  });
+
+  await test('an unsigned report is rejected with 401', async () => {
+    const response = await request(baseUrl, {
+      method: 'POST',
+      path: '/api/mc-bridge/report',
+      secret: null,
+      body: {
+        server_key: 'survival',
+        reporter_uuid: REPORTER_UUID,
+        target_name: 'Steve',
+        reason: 'test',
+      },
+    });
+
+    assertStatus(response, 401, 'machine endpoints require a signature');
+  });
+
+  // -------------------------------------------------------------------------
+  // 12. Activity polls
+  // -------------------------------------------------------------------------
+
+  group('12. Activity polls');
+
+  const POLL_OPTIONS = ['Build contest', 'PvP tournament', 'Parkour'];
+  let activityId = 0;
+
+  await test('POST /api/mc-bridge/activity starts a poll', async () => {
+    const response = await request(baseUrl, {
+      method: 'POST',
+      path: '/api/mc-bridge/activity',
+      body: {
+        server_key: 'survival',
+        title: 'What should the next event be?',
+        options: POLL_OPTIONS,
+        closes_in_minutes: 30,
+      },
+    });
+
+    assertStatus(response, 201, 'poll created');
+    activityId = response.json.activity.id;
+    assertEqualJson(response.json.activity.options, POLL_OPTIONS, 'options echoed in order');
+    assertEqual(response.json.activity.total_votes, 0, 'a fresh poll has no votes');
+  });
+
+  await test('a poll with fewer than two options is rejected with 422', async () => {
+    const response = await request(baseUrl, {
+      method: 'POST',
+      path: '/api/mc-bridge/activity',
+      body: { server_key: 'survival', title: 'Nope', options: ['only one'] },
+    });
+
+    assertStatus(response, 422, 'at least two options are required');
+  });
+
+  await test('GET /api/mc-bridge/activity returns the open poll', async () => {
+    const response = await request(baseUrl, {
+      method: 'GET',
+      path: '/api/mc-bridge/activity?server_key=survival',
+    });
+
+    assertStatus(response, 200, 'current poll');
+    assert(response.json.open !== null, 'an open poll is expected');
+    assertEqual(response.json.open.id, activityId, 'the poll we just created');
+    assertEqual(response.json.results, null, 'no results yet');
+  });
+
+  // -------------------------------------------------------------------------
+  // 13. Voting
+  // -------------------------------------------------------------------------
+
+  group('13. Voting');
+
+  await test('POST /api/mc-bridge/vote records a vote', async () => {
+    const response = await request(baseUrl, {
+      method: 'POST',
+      path: '/api/mc-bridge/vote',
+      body: {
+        server_key: 'survival',
+        activity_id: activityId,
+        player_uuid: REPORTER_UUID,
+        player_name: 'Alice',
+        option_index: 1,
+      },
+    });
+
+    assertStatus(response, 200, 'vote accepted');
+    assertEqual(response.json.total_votes, 1, 'one vote counted');
+  });
+
+  await test('re-voting replaces the previous option instead of adding a second vote', async () => {
+    const response = await request(baseUrl, {
+      method: 'POST',
+      path: '/api/mc-bridge/vote',
+      body: {
+        server_key: 'survival',
+        activity_id: activityId,
+        player_uuid: REPORTER_UUID,
+        player_name: 'Alice',
+        option_index: 0,
+      },
+    });
+
+    assertStatus(response, 200, 're-vote accepted');
+    assertEqual(response.json.total_votes, 1, 'still a single vote');
+    assertEqualJson(mock.store.tally(activityId), [1, 0, 0], 'the vote moved to option 0');
+  });
+
+  await test('an out-of-range option is rejected with 422', async () => {
+    const response = await request(baseUrl, {
+      method: 'POST',
+      path: '/api/mc-bridge/vote',
+      body: {
+        server_key: 'survival',
+        activity_id: activityId,
+        player_uuid: '11111111-2222-3333-4444-555555555555',
+        option_index: 9,
+      },
+    });
+
+    assertStatus(response, 422, 'the option index must exist');
+  });
+
+  await test('a closed poll rejects new votes with 409', async () => {
+    // Push the deadline into the past, exactly like an expired poll.
+    const activity = mock.store.activities.find((record) => record.id === activityId);
+    activity.closes_at = Math.floor(Date.now() / 1000) - 1;
+
+    const response = await request(baseUrl, {
+      method: 'POST',
+      path: '/api/mc-bridge/vote',
+      body: {
+        server_key: 'survival',
+        activity_id: activityId,
+        player_uuid: '11111111-2222-3333-4444-555555555555',
+        option_index: 0,
+      },
+    });
+
+    assertStatus(response, 409, 'voting is over');
+  });
+
+  await test('GET /api/mc-bridge/activity hands the results back exactly once', async () => {
+    const first = await request(baseUrl, {
+      method: 'GET',
+      path: '/api/mc-bridge/activity?server_key=survival',
+    });
+
+    assertStatus(first, 200, 'first read');
+    assert(first.json.results !== null, 'a closed poll must surrender its results');
+    assertEqual(first.json.open, null, 'nothing is open any more');
+    assertEqual(first.json.results.total_votes, 1, 'the single vote is counted');
+    assertEqualJson(first.json.results.tally, [1, 0, 0], 'final tally');
+    assertEqual(first.json.results.winner, 0, 'the only voted option wins');
+
+    const second = await request(baseUrl, {
+      method: 'GET',
+      path: '/api/mc-bridge/activity?server_key=survival',
+    });
+
+    assertStatus(second, 200, 'second read');
+    assertEqual(second.json.results, null, 'results must not be replayed');
   });
 }
 

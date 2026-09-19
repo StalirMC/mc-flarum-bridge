@@ -30,6 +30,12 @@ class SelfTestCommand extends AbstractBridgeCommand
         'mc_outbox',
         'mc_bindings',
         'mc_bind_codes',
+        // Added with player reports and activity polls; an existing install
+        // only gets them after `php flarum migrate` runs the incremental
+        // migration, so the self-test is the quickest way to notice a stale DB.
+        'mc_reports',
+        'mc_activities',
+        'mc_votes',
     ];
 
     private array $results = [];

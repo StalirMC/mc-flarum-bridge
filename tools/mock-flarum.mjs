@@ -9,6 +9,10 @@
  *   GET  /api/mc-bridge/outbox        HMAC   (alias: /announcements)
  *   POST /api/mc-bridge/bind/start    HMAC
  *   GET  /api/mc-bridge/bind/status   HMAC
+ *   POST /api/mc-bridge/report        HMAC
+ *   GET  /api/mc-bridge/activity      HMAC
+ *   POST /api/mc-bridge/activity      HMAC   (admin session allowed on the forum)
+ *   POST /api/mc-bridge/vote          HMAC
  *
  * Authentication mirrors `Stalir\McBridge\Api\Controller\AbstractBridgeController`
  * and `Stalir\McBridge\Service\BridgeCrypto`:
@@ -21,7 +25,8 @@
  * (cached for 600 seconds).
  *
  * Storage is a plain in-memory object standing in for the `mc_outbox`,
- * `mc_bindings` and `mc_bind_codes` tables.
+ * `mc_bindings`, `mc_bind_codes`, `mc_reports`, `mc_activities` and `mc_votes`
+ * tables.
  *
  * Environment variables:
  *   MOCK_SECRET  shared secret (default: the TEST_SECRET constant below)
@@ -79,6 +84,18 @@ export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 /** Binding code length and lifetime in seconds (McBindCode::TTL_MINUTES). */
 export const CODE_LENGTH = 8;
 export const CODE_TTL_SECONDS = 600;
+
+/** Activity poll limits (ActivityController constants). */
+export const ACTIVITY_MIN_OPTIONS = 2;
+export const ACTIVITY_MAX_OPTIONS = 10;
+export const ACTIVITY_MAX_OPTION_LENGTH = 100;
+export const ACTIVITY_DEFAULT_MINUTES = 60;
+export const ACTIVITY_MIN_MINUTES = 5;
+export const ACTIVITY_MAX_MINUTES = 10080;
+
+/** Report field limits (ReportController). */
+export const REPORT_MAX_REASON_LENGTH = 1000;
+export const REPORT_MAX_NAME_LENGTH = 64;
 
 const DEFAULT_OUTBOX_LIMIT = 20;
 const MAX_OUTBOX_LIMIT = 100;
@@ -245,15 +262,30 @@ export function createStore(options = {}) {
     bindings: new Map(),
     /** mc_bind_codes */
     bindCodes: [],
+    /** mc_reports */
+    reports: [],
+    /** mc_activities */
+    activities: [],
+    /** mc_votes, keyed by `${activity_id}:${player_uuid}` */
+    votes: new Map(),
 
     nextOutboxId: 1,
+    nextReportId: 1,
+    nextActivityId: 1,
+    nextVoteId: 1,
 
     /** Reset every table; a demo message is seeded unless suppressed. */
     reset(resetOptions = {}) {
       store.outbox.length = 0;
       store.bindings.clear();
       store.bindCodes.length = 0;
+      store.reports.length = 0;
+      store.activities.length = 0;
+      store.votes.clear();
       store.nextOutboxId = 1;
+      store.nextReportId = 1;
+      store.nextActivityId = 1;
+      store.nextVoteId = 1;
 
       // null  -> never seed;  true/undefined -> seed;  false -> seed only when
       // the server was created with seedOutbox enabled.
@@ -313,6 +345,108 @@ export function createStore(options = {}) {
       };
       store.bindings.set(uuid, binding);
       return binding;
+    },
+
+    /** Record one player report (mc_reports). */
+    addReport(report = {}) {
+      const record = {
+        id: store.nextReportId++,
+        server_key: report.server_key ?? 'survival',
+        reporter_uuid: report.reporter_uuid ?? null,
+        reporter_name: report.reporter_name ?? null,
+        target_name: report.target_name ?? 'Unknown',
+        reason: report.reason ?? '',
+        status: 'pending',
+        created_at: nowSeconds(),
+      };
+      store.reports.push(record);
+      return record;
+    },
+
+    /**
+     * Create an activity poll (mc_activities).
+     *
+     * `minutes` is clamped exactly like ActivityController: default 60, floor 5,
+     * ceiling 10080.
+     */
+    createActivity(activity = {}) {
+      const minutes = Math.max(
+        ACTIVITY_MIN_MINUTES,
+        Math.min(ACTIVITY_MAX_MINUTES, Math.trunc(activity.minutes ?? ACTIVITY_DEFAULT_MINUTES))
+      );
+      const record = {
+        id: store.nextActivityId++,
+        server_key: activity.server_key ?? null,
+        title: activity.title ?? 'Mock activity',
+        options: [...(activity.options ?? [])],
+        closes_at: nowSeconds() + minutes * 60,
+        closed: false,
+        announced_at: null,
+        created_at: nowSeconds(),
+      };
+      store.activities.push(record);
+      return record;
+    },
+
+    /** Votes cast in one activity. */
+    activityVotes(activityId) {
+      return [...store.votes.values()].filter((vote) => vote.activity_id === activityId);
+    },
+
+    /** Vote counts per option, zero-filled in option order (McActivity::tally). */
+    tally(activityId) {
+      const activity = store.activities.find((record) => record.id === activityId);
+      if (activity === undefined) return [];
+      const counts = new Array(activity.options.length).fill(0);
+      for (const vote of store.activityVotes(activityId)) {
+        if (vote.option_index >= 0 && vote.option_index < counts.length) counts[vote.option_index]++;
+      }
+      return counts;
+    },
+
+    /** Index of the winning option, or null when nobody voted. */
+    winner(activityId) {
+      const counts = store.tally(activityId);
+      if (counts.length === 0) return null;
+      let best = 0;
+      for (let index = 1; index < counts.length; index++) {
+        if (counts[index] > counts[best]) best = index;
+      }
+      return counts[best] > 0 ? best : null;
+    },
+
+    /**
+     * Cast (or replace) a vote. Returns the stored vote.
+     *
+     * The (activity_id, player_uuid) pair is unique, so re-voting replaces the
+     * previous option exactly like VoteController::firstOrNew.
+     */
+    castVote(activityId, playerUuid, playerName, optionIndex) {
+      const key = `${activityId}:${playerUuid}`;
+      const existing = store.votes.get(key);
+      const record = {
+        id: existing?.id ?? store.nextVoteId++,
+        activity_id: activityId,
+        player_uuid: playerUuid,
+        player_name: playerName ?? null,
+        option_index: optionIndex,
+        created_at: nowSeconds(),
+      };
+      store.votes.set(key, record);
+      return record;
+    },
+
+    /** Close every activity whose deadline has passed (closeExpired()). */
+    closeExpired() {
+      const now = nowSeconds();
+      let closed = 0;
+      for (const activity of store.activities) {
+        if (!activity.closed && activity.closes_at <= now) {
+          activity.closed = true;
+          closed++;
+        }
+      }
+      return closed;
     },
   };
 
@@ -580,6 +714,195 @@ export function createServer(options = {}) {
     });
   }
 
+  function handleReport(request, response, body) {
+    const serverKey =
+      sanitizeServerKey(body.server_key) ??
+      sanitizeServerKey(request.headers[HEADERS.server.toLowerCase()]);
+
+    if (serverKey === null) {
+      return sendError(response, 422, 'A valid server_key is required.');
+    }
+
+    const reporterUuid = sanitizeUuid(body.reporter_uuid ?? body.uuid);
+    if (reporterUuid === null) {
+      return sendError(response, 422, 'A valid reporter_uuid is required.');
+    }
+
+    const targetName = clampText(body.target_name, REPORT_MAX_NAME_LENGTH)?.trim() ?? '';
+    if (targetName === '') {
+      return sendError(response, 422, 'target_name is required.');
+    }
+
+    const reason = clampText(body.reason, REPORT_MAX_REASON_LENGTH)?.trim() ?? '';
+    if (reason === '') {
+      return sendError(response, 422, 'reason is required.');
+    }
+
+    const report = store.addReport({
+      server_key: serverKey,
+      reporter_uuid: reporterUuid,
+      reporter_name: clampText(body.reporter_name, REPORT_MAX_NAME_LENGTH),
+      target_name: targetName,
+      reason,
+    });
+
+    return sendJson(response, 201, { ok: true, report_id: report.id });
+  }
+
+  /** Wire shape of a mc_activities row (McActivity::toApiPayload). */
+  function activityPayload(activity) {
+    const tally = store.tally(activity.id);
+
+    return {
+      id: activity.id,
+      title: activity.title,
+      options: [...activity.options],
+      closes_at: iso(activity.closes_at),
+      closed: activity.closed,
+      open: !activity.closed && activity.closes_at > nowSeconds(),
+      total_votes: tally.reduce((sum, count) => sum + count, 0),
+      tally,
+    };
+  }
+
+  function handleActivityGet(request, response, payload, query) {
+    const serverKey =
+      sanitizeServerKey(query.get('server_key')) ??
+      sanitizeServerKey(request.headers[HEADERS.server.toLowerCase()]);
+
+    if (serverKey === null) {
+      return sendError(response, 422, 'A valid server_key is required.');
+    }
+
+    // Closing on read is what lets the forum run without a scheduler.
+    store.closeExpired();
+
+    const matchesServer = (activity) =>
+      activity.server_key === null || activity.server_key === serverKey;
+
+    const open =
+      [...store.activities]
+        .reverse()
+        .find((activity) => !activity.closed && activity.closes_at > nowSeconds() && matchesServer(activity)) ??
+      null;
+
+    // A closed poll whose result nobody collected yet. Claim it, so it is
+    // broadcast exactly once.
+    const pending = store.activities.find(
+      (activity) => activity.closed && activity.announced_at === null && matchesServer(activity)
+    );
+
+    let results = null;
+    if (pending !== undefined) {
+      pending.announced_at = nowSeconds();
+      const payloadForPending = activityPayload(pending);
+      payloadForPending.winner = store.winner(pending.id);
+      results = payloadForPending;
+    }
+
+    return sendJson(response, 200, {
+      ok: true,
+      open: open === null ? null : activityPayload(open),
+      results,
+    });
+  }
+
+  function handleActivityCreate(request, response, body) {
+    // Unlike the other endpoints, an omitted server_key is meaningful here:
+    // null means "announce the poll on every server". A key that is present but
+    // malformed is still rejected (ActivityController::create).
+    const rawServerKey = body.server_key ?? request.headers[HEADERS.server.toLowerCase()];
+    let serverKey = null;
+
+    if (rawServerKey !== undefined && rawServerKey !== null && rawServerKey !== '') {
+      serverKey = sanitizeServerKey(rawServerKey);
+      if (serverKey === null) {
+        return sendError(response, 422, 'server_key must match [A-Za-z0-9._-].');
+      }
+    }
+
+    const title = clampText(body.title, 255)?.trim() ?? '';
+    if (title === '') {
+      return sendError(response, 422, 'title is required.');
+    }
+
+    if (!Array.isArray(body.options)) {
+      return sendError(response, 422, 'options must be a list.');
+    }
+
+    const options = [];
+    for (const option of body.options) {
+      if (typeof option !== 'string') {
+        return sendError(response, 422, 'Every option must be a string.');
+      }
+      const trimmed = option.slice(0, ACTIVITY_MAX_OPTION_LENGTH).trim();
+      if (trimmed === '') {
+        return sendError(response, 422, 'Every option must be non-empty.');
+      }
+      options.push(trimmed);
+    }
+
+    if (options.length < ACTIVITY_MIN_OPTIONS || options.length > ACTIVITY_MAX_OPTIONS) {
+      return sendError(
+        response,
+        422,
+        `Option count must be between ${ACTIVITY_MIN_OPTIONS} and ${ACTIVITY_MAX_OPTIONS}.`
+      );
+    }
+
+    const activity = store.createActivity({
+      server_key: serverKey,
+      title,
+      options,
+      minutes: optionalNumber(body.closes_in_minutes) ?? ACTIVITY_DEFAULT_MINUTES,
+    });
+
+    return sendJson(response, 201, { ok: true, activity: activityPayload(activity) });
+  }
+
+  function handleVote(request, response, body) {
+    const serverKey =
+      sanitizeServerKey(body.server_key) ??
+      sanitizeServerKey(request.headers[HEADERS.server.toLowerCase()]);
+
+    if (serverKey === null) {
+      return sendError(response, 422, 'A valid server_key is required.');
+    }
+
+    const activityId = Math.trunc(optionalNumber(body.activity_id) ?? 0);
+    if (activityId <= 0) {
+      return sendError(response, 422, 'A valid activity_id is required.');
+    }
+
+    const uuid = sanitizeUuid(body.player_uuid ?? body.uuid);
+    if (uuid === null) {
+      return sendError(response, 422, 'A valid player_uuid is required.');
+    }
+
+    const activity = store.activities.find((record) => record.id === activityId);
+    if (activity === undefined) {
+      return sendError(response, 404, 'Activity not found.');
+    }
+
+    const optionIndex = Math.trunc(optionalNumber(body.option_index) ?? -1);
+    if (optionIndex < 0 || optionIndex >= activity.options.length) {
+      return sendError(response, 422, 'Option index out of range.');
+    }
+
+    if (activity.closed || activity.closes_at <= nowSeconds()) {
+      return sendError(response, 409, 'This activity poll has closed.');
+    }
+
+    store.castVote(activityId, uuid, clampText(body.player_name, 64), optionIndex);
+
+    return sendJson(response, 200, {
+      ok: true,
+      activity_id: activityId,
+      option_index: optionIndex,
+      total_votes: store.activityVotes(activityId).length,
+    });
+  }
+
   // -------------------------------------------------------------------------
   // Routing
   // -------------------------------------------------------------------------
@@ -596,6 +919,21 @@ export function createServer(options = {}) {
     ['/announcements', { methods: ['GET'], auth: true, handler: handleOutbox }],
     ['/bind/start', { methods: ['POST'], auth: true, handler: handleBindStart }],
     ['/bind/status', { methods: ['GET'], auth: true, handler: handleBindStatus }],
+    ['/report', { methods: ['POST'], auth: true, handler: handleReport }],
+    [
+      '/activity',
+      {
+        methods: ['GET', 'POST'],
+        auth: true,
+        // One path, two verbs: GET reads the current poll (and hands back a
+        // closed one's results), POST starts a new one.
+        handler: (request, response, body, query, rawBody) =>
+          request.method === 'GET'
+            ? handleActivityGet(request, response, body, query, rawBody)
+            : handleActivityCreate(request, response, body, query, rawBody),
+      },
+    ],
+    ['/vote', { methods: ['POST'], auth: true, handler: handleVote }],
   ]);
 
   const server = createHttpServer(async (request, response) => {

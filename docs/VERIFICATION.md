@@ -651,6 +651,45 @@ Packagist 会认为最高版本是 1.0.0，于是不带约束的 `composer requi
 0.0.10 曾被撤回重发一次：维护者要求作者名改为 `StalirMC`，而当时 Packagist 只抓到 `v0.0.6`，
 所以撤回是干净的 —— 删除 tag 后在新提交上重建，Release 就地更新（资产已替换并实测）。
 
+### 2.17 游戏内查公告、举报与活动投票（未发版）
+
+三个新功能，都由游戏侧命令发起：
+
+| 功能 | 游戏内入口 | 论坛侧 | 新表 |
+|------|-----------|--------|------|
+| 查公告 | `/mcbridge news`（**无需权限**） | 复用 `GET /outbox`，插件只筛 `announcement` 并取前 5 条 | — |
+| 举报 | `/report <玩家> <原因>` | `POST /api/mc-bridge/report` | `mc_reports` |
+| 活动投票 | `/vote <编号>` | `POST/GET /api/mc-bridge/activity`、`POST /api/mc-bridge/vote` | `mc_activities`、`mc_votes` |
+
+设计要点：
+
+1. **论坛侧没有定时任务**。活动投票的"到期关闭 + 回传结果"发生在**读**的时候：
+   任何服务器来 `GET /activity` 时，`closes_at` 已过的投票会被标记 `closed`，
+   第一个来拿的服务器收到最终票数与获胜选项，同时盖上 `announced_at` ——
+   所以结果**只广播一次**（`protocol-test.mjs` 第 13 组专门断言了这一点）。
+2. **一人一票可改票**：`mc_votes` 的 `(activity_id, player_uuid)` 唯一，
+   `VoteController` 用 `firstOrNew` 覆盖旧选项，而不是新增一行。
+3. **投票与公告复用同一轮询**：`BridgeCore.pollOutbox()` 成功后在同一个周期里调用
+   `pollActivity()`；活动轮询失败**不影响**已经完成的公告投递。
+4. **增量迁移**：新的三张表与 `mc_outbox` 的 `target_uuid` / `actor_id` 两列同时写进了
+   创建迁移与 `2025_06_28_000000_add_bridge_features.php`。**已装过旧版的论坛必须跑一次
+   `php flarum migrate` 才会建表加列** —— 创建迁移在旧论坛上是"已执行"状态，不会再跑，
+   这正是那份增量迁移存在的原因（每一步都有 `hasTable` / `hasColumn` 守卫，
+   新装论坛执行它是空操作）。
+5. `X-MC-Diagnostic` 头在这次联调里直接派上用场：本机缺 PHP，但与线上论坛比对规范字符串时，
+   服务端回显的 `canonical` 与本地构造的**逐字节一致**，从而确认"签名不匹配"是密钥不同，
+   而不是算法或路径写错。
+
+规模：mock 与协议测试 28 → **40 项**（新增举报 4、活动 3、投票 5），`verify.mjs` 284 → **329 项**
+（新路由纳入 CSRF 豁免与文档比对），构建自测仍 37 项。
+`gradle build`、`verify.mjs`、`protocol-test.mjs` 全部通过。
+
+**线上实测（forum.kxkl2024.cn）**：用 `DeepSeekHarness` 账号换取 Flarum token 后确认
+`GET /api/mc-bridge/link` 正常返回，而 `GET /api/mc-bridge/activity` 返回 `404` ——
+即论坛侧仍是旧版，**这三个功能尚未上线**，需要先部署（见第 4 节）。
+
+> 本次同样**不发版**：改动只进 `main`。
+
 ## 3. 无法在本机验证的内容（现由 CI 覆盖）
 
 > 本机没有 PHP / JDK，这些检查**已全部由 CI 在带 PHP 8.3 / JDK 21 的真实环境中
@@ -661,7 +700,7 @@ Packagist 会认为最高版本是 1.0.0，于是不带约束的 `composer requi
 | PHP 语法 | `find flarum-extension -name '*.php' -exec php -l {} \;` | 无 `Parse error` | ✅ CI 已执行通过 |
 | Java 编译 | `cd mc-plugin && gradle wrapper --gradle-version 8.10 && ./gradlew build` | `BUILD SUCCESSFUL` | ✅ CI 已执行通过，jar 已上传为 artifact |
 | Flarum 安装 | `composer require stalirmc/mc-flarum-bridge` | 扩展出现在管理后台 | ⬜ 需在真实论坛执行（CI 不安装 Flarum） |
-| 迁移执行 | `php flarum migrate` | 5 张表建立 | ⬜ 需真实数据库（CI 仅反射校验迁移契约） |
+| 迁移执行 | `php flarum migrate` | 8 张表建立 | ⬜ 需真实数据库（CI 仅反射校验迁移契约） |
 | **桥接自检** | `php flarum mc-bridge:selftest --url=https://你的域名` | 全部 `OK` | ⬜ 需在真实论坛执行 |
 | 插件加载（Paper） | 放入 jar 后启动服务器 | 日志出现 `McBridge enabled on paper as server ...` | ⬜ 需在真实服务器执行 |
 | 插件加载（Folia） | 同一个 jar 放入 Folia 的 `plugins/` | 日志出现 `on folia`，且无 `UnsupportedOperationException` | ⬜ 需真实 Folia 服务端 |
@@ -670,7 +709,7 @@ Packagist 会认为最高版本是 1.0.0，于是不带约束的 `composer requi
 
 其中 `mc-bridge:selftest` 是专为此设计的：它在**运行论坛的那台机器**上检查密钥
 长度、HMAC 签名/验签/篡改检测、规范化字符串格式、路径规范化（含子目录安装）、
-5 张表是否存在、查询路径是否可用、绑定码字符集，并在给出 `--url` 时发起一次
+8 张表是否存在、查询路径是否可用、绑定码字符集，并在给出 `--url` 时发起一次
 **真实的带签名 HTTP 回环请求**，从而覆盖路由、中间件、签名校验、持久化的
 完整链路。
 
@@ -691,8 +730,10 @@ cd mc-plugin && gradle wrapper --gradle-version 8.10 && ./gradlew build
 # 编辑 plugins/McBridge/config.yml 填入 forum.url 与 security.secret
 # 启动服务器，然后：
 #   /mcbridge stats     -> 配置状态应为「正常」
-#   /mcbridge status    -> 应返回论坛记录的服务器数
+#   /mcbridge news      -> 应列出论坛最新公告（所有玩家都可用）
 #   /bind               -> 应返回 8 位绑定码
+#   /report <玩家> <原因> -> 应提示已提交，论坛后台出现 pending 记录
+#   （先在论坛发起活动投票）-> 游戏内广播公告，/vote <编号> 应提示投票成功
 ```
 
 在论坛发一个新讨论，20 秒内游戏内应出现 `[论坛] <标题>`。
