@@ -14,13 +14,26 @@ commands:
     permission: mcbridge.bind
   mcbridge:
     description: McBridge administration
-    usage: /mcbridge <status|outbox|broadcast|stats|reload>
+    usage: /mcbridge <news|outbox|broadcast|stats|reload>
     aliases: [mcb]
-    permission: mcbridge.admin
+  report:
+    description: Report a player to the forum moderators
+    usage: /report <player> <reason>
+    permission: mcbridge.report
+  vote:
+    description: Vote in the current activity poll
+    usage: /vote <number>
+    permission: mcbridge.vote
 
 permissions:
   mcbridge.bind:
     description: Allows a player to request an account binding code
+    default: true
+  mcbridge.report:
+    description: Allows a player to report another player
+    default: true
+  mcbridge.vote:
+    description: Allows a player to vote in an activity poll
     default: true
   mcbridge.admin:
     description: Allows managing the bridge and sending broadcasts

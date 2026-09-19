@@ -10,6 +10,7 @@ no-permission: "&c你没有权限执行此命令。"
 players-only: "&c该命令只能由玩家执行。"
 unknown-subcommand: "&c未知子命令。可用：&f{available}"
 help-header: "&8&m--------&r &2McBridge &8&m--------"
+help-news: "&7/mcbridge news &8- &f查看论坛最新公告"
 help-outbox: "&7/mcbridge outbox &8- &f查看待投递的消息"
 help-broadcast: "&7/mcbridge broadcast <内容> &8- &f向所有服务器推送一条消息"
 help-stats: "&7/mcbridge stats &8- &f本地统计"
@@ -25,14 +26,32 @@ bind-prompt-code: "&7你的绑定码是 &e{code} &7，请到论坛右上角头�
 bind-failed: "&c获取绑定码失败：{reason}"
 bind-failed-no-code: "&c论坛没有返回绑定码。"
 
+# ---- 玩家举报 ----
+report-usage: "&c用法：/report <玩家> <原因>"
+report-sent: "&a已举报玩家 &e{target}&a，论坛管理员会尽快处理。"
+report-failed: "&c举报失败：{reason}"
+
 # ---- 状态与公告 ----
 status-unreachable: "&c无法连接论坛：{reason}"
 outbox-empty: "&7论坛没有待投递的消息。"
 outbox-header: "&7待投递消息 &e{count} &7条："
 outbox-line: "&8- &f{type} &7{title}"
 outbox-untitled: "（无标题）"
+news-empty: "&7论坛没有最新公告。"
+news-header: "&8&m--------&r &e论坛公告 &8&m-------- &7(最近 {count} 条)"
 broadcast-usage: "&c用法：/mcbridge broadcast <内容>"
 broadcast-sent: "&a消息已提交到论坛，将在服务器轮询后显示。"
+
+# ---- 活动投票 ----
+activity-open: "&e[活动] &f{title}"
+activity-vote-hint: "&7输入 &e/vote <编号> &7参与投票！"
+activity-results-header: "&e[活动结果] &f{title}"
+activity-result-line: "&7- &f{option} &8({count} 票, {percent}%)"
+activity-winner: "&a获胜选项：&e{option}"
+vote-usage: "&c用法：/vote <编号>"
+vote-none: "&7当前没有进行中的活动投票。"
+vote-sent: "&a投票成功（选项 &e{option}&a，共 &e{total}&a 票）。"
+vote-failed: "&c投票失败：{reason}"
 
 # ---- 重载与统计 ----
 reloaded: "&a配置已重新加载。"

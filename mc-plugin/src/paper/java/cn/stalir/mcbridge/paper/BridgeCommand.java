@@ -33,6 +33,12 @@ public final class BridgeCommand implements CommandExecutor, TabCompleter {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        // /mcbridge news is available to all players (no admin permission required).
+        if (args.length > 0 && "news".equalsIgnoreCase(args[0])) {
+            fetchNews(sender);
+            return true;
+        }
+
         if (!sender.hasPermission("mcbridge.admin")) {
             sender.sendMessage(core.messages().prefixed("no-permission"));
             return true;
@@ -99,6 +105,18 @@ public final class BridgeCommand implements CommandExecutor, TabCompleter {
         });
     }
 
+    private void fetchNews(CommandSender sender) {
+        core.platform().runAsync(() -> {
+            List<Component> reply = core.newsMessages(5);
+
+            core.platform().runSync(() -> {
+                for (Component line : reply) {
+                    sender.sendMessage(line);
+                }
+            });
+        });
+    }
+
     private void sendBroadcast(CommandSender sender, String[] args) {
         if (args.length < 2) {
             sender.sendMessage(core.messages().prefixed("broadcast-usage"));
@@ -117,20 +135,21 @@ public final class BridgeCommand implements CommandExecutor, TabCompleter {
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
-        if (!sender.hasPermission("mcbridge.admin")) {
-            return List.of();
-        }
-
         if (args.length == 1) {
             String prefix = args[0].toLowerCase(Locale.ROOT);
-
-            // A fresh mutable list on purpose: the core hands out an immutable
-            // one and Bukkit is free to reuse what a completer returns.
             List<String> matches = new ArrayList<>();
 
-            for (String subcommand : BridgeCore.subcommands()) {
-                if (subcommand.startsWith(prefix)) {
-                    matches.add(subcommand);
+            // "news" is available to all players, so always include it.
+            if ("news".startsWith(prefix)) {
+                matches.add("news");
+            }
+
+            // Other subcommands require admin permission.
+            if (sender.hasPermission("mcbridge.admin")) {
+                for (String subcommand : BridgeCore.subcommands()) {
+                    if (!"news".equals(subcommand) && subcommand.startsWith(prefix)) {
+                        matches.add(subcommand);
+                    }
                 }
             }
 

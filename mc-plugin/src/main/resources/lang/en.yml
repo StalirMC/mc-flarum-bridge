@@ -11,6 +11,7 @@ no-permission: "&cYou do not have permission to run this command."
 players-only: "&cThis command can only be run by a player."
 unknown-subcommand: "&cUnknown subcommand. Available: &f{available}"
 help-header: "&8&m--------&r &2McBridge &8&m--------"
+help-news: "&7/mcbridge news &8- &fShow the latest forum announcements"
 help-outbox: "&7/mcbridge outbox &8- &fList messages waiting to be delivered"
 help-broadcast: "&7/mcbridge broadcast <text> &8- &fPush a message to every server"
 help-stats: "&7/mcbridge stats &8- &fLocal counters"
@@ -26,14 +27,32 @@ bind-prompt-code: "&7Your binding code is &e{code} &7- enter it under your avata
 bind-failed: "&cCould not obtain a binding code: {reason}"
 bind-failed-no-code: "&cThe forum did not return a binding code."
 
+# ---- player reporting ----
+report-usage: "&cUsage: /report <player> <reason>"
+report-sent: "&aReported player &e{target}&a. Forum moderators will review it soon."
+report-failed: "&cCould not submit the report: {reason}"
+
 # ---- status and announcements ----
 status-unreachable: "&cCannot reach the forum: {reason}"
 outbox-empty: "&7There are no messages waiting on the forum."
 outbox-header: "&7Waiting messages: &e{count}"
 outbox-line: "&8- &f{type} &7{title}"
 outbox-untitled: "(untitled)"
+news-empty: "&7There are no recent announcements on the forum."
+news-header: "&8&m--------&r &eForum Announcements &8&m-------- &7(last {count})"
 broadcast-usage: "&cUsage: /mcbridge broadcast <text>"
 broadcast-sent: "&aMessage queued on the forum; it will appear after the next poll."
+
+# ---- activity polls ----
+activity-open: "&e[Activity] &f{title}"
+activity-vote-hint: "&7Type &e/vote <number> &7to cast your vote!"
+activity-results-header: "&e[Activity results] &f{title}"
+activity-result-line: "&7- &f{option} &8({count} votes, {percent}%)"
+activity-winner: "&aWinning option: &e{option}"
+vote-usage: "&cUsage: /vote <number>"
+vote-none: "&7There is no activity poll running right now."
+vote-sent: "&aVote recorded (option &e{option}&a, &e{total}&a votes total)."
+vote-failed: "&cCould not submit the vote: {reason}"
 
 # ---- reload and statistics ----
 reloaded: "&aConfiguration reloaded."

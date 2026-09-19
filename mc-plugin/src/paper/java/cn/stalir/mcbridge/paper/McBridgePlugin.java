@@ -45,12 +45,24 @@ public final class McBridgePlugin extends JavaPlugin {
         }
     }
 
-    /** Wire the two plugin.yml commands, tolerating a missing declaration. */
+    /** Wire the three plugin.yml commands, tolerating a missing declaration. */
     private void registerCommands() {
         PluginCommand bind = getCommand("bind");
 
         if (bind != null) {
             bind.setExecutor(new BindCommand(core));
+        }
+
+        PluginCommand report = getCommand("report");
+
+        if (report != null) {
+            report.setExecutor(new ReportCommand(core));
+        }
+
+        PluginCommand vote = getCommand("vote");
+
+        if (vote != null) {
+            vote.setExecutor(new VoteCommand(core));
         }
 
         PluginCommand mcbridge = getCommand("mcbridge");

@@ -45,6 +45,12 @@ public final class BridgeCore {
     private final AtomicLong receivedMessages = new AtomicLong();
     private final AtomicLong outboxFailures = new AtomicLong();
 
+    /** Id of the activity poll currently announced in game (0 = none). */
+    private volatile long activeActivityId = 0L;
+
+    /** Id of the last poll whose results were announced in game (0 = none). */
+    private volatile long announcedResultsId = 0L;
+
     public BridgeCore(Platform platform) {
         this.platform = platform;
     }
@@ -177,6 +183,67 @@ public final class BridgeCore {
                 }
             });
         }
+
+        // The same poll cycle also picks up activity polls and their results.
+        pollActivity();
+    }
+
+    /**
+     * Ask the forum for the current activity poll (if any) and announce new
+     * polls or their final results. Runs on the poller thread; broadcasting is
+     * handed back to the main thread / global region.
+     */
+    private void pollActivity() {
+        BridgeConfig current = this.config;
+
+        if (current == null || !current.isUsable()) {
+            return;
+        }
+
+        JsonObject response;
+
+        try {
+            response = client.fetchActivity();
+        } catch (BridgeException exception) {
+            // Activity polling is best-effort; a failure here must not break
+            // the outbox cycle that already ran above.
+            return;
+        }
+
+        JsonObject results = response.has("results") && response.get("results").isJsonObject()
+                ? response.getAsJsonObject("results")
+                : null;
+
+        JsonObject open = response.has("open") && response.get("open").isJsonObject()
+                ? response.getAsJsonObject("open")
+                : null;
+
+        platform.runSync(() -> {
+            // A poll has just closed: announce the final tally, but only once.
+            if (results != null) {
+                long resultsId = optLong(results, "id", 0L);
+
+                if (resultsId > 0L && resultsId != announcedResultsId) {
+                    announcedResultsId = resultsId;
+                    broadcast(renderActivityResults(results));
+                }
+
+                // The results replace whatever was open before.
+                if (activeActivityId == resultsId) {
+                    activeActivityId = 0L;
+                }
+            }
+
+            // A new poll is open: announce it once, then remember it for /vote.
+            if (open != null) {
+                long openId = optLong(open, "id", 0L);
+
+                if (openId > 0L && openId != activeActivityId && openId != announcedResultsId) {
+                    activeActivityId = openId;
+                    broadcast(renderActivityOpen(open));
+                }
+            }
+        });
     }
 
     /** Handle one message pulled from the forum. */
@@ -391,6 +458,67 @@ public final class BridgeCore {
     }
 
     /**
+     * Fetch the latest announcements for in-game display.
+     *
+     * Unlike {@link #outboxMessages()}, this filters to announcement type only
+     * and limits the count, suitable for showing to regular players.
+     *
+     * Blocking: call it off the main thread.
+     */
+    public List<Component> newsMessages(int limit) {
+        List<Component> reply = new ArrayList<>();
+
+        JsonObject response;
+
+        try {
+            response = client.fetchOutbox(true);
+        } catch (BridgeException exception) {
+            reply.add(messages.prefixed("status-unreachable", "reason", exception.getMessage()));
+            return reply;
+        }
+
+        JsonArray messages = response.has("messages") && response.get("messages").isJsonArray()
+                ? response.getAsJsonArray("messages")
+                : new JsonArray();
+
+        // Filter to announcements only and apply limit.
+        List<JsonObject> announcements = new ArrayList<>();
+        for (JsonElement element : messages) {
+            if (!element.isJsonObject()) {
+                continue;
+            }
+            JsonObject message = element.getAsJsonObject();
+            if ("announcement".equals(optString(message, "type", ""))) {
+                announcements.add(message);
+                if (announcements.size() >= limit) {
+                    break;
+                }
+            }
+        }
+
+        if (announcements.isEmpty()) {
+            reply.add(this.messages.prefixed("news-empty"));
+            return reply;
+        }
+
+        reply.add(this.messages.prefixed("news-header", "count", String.valueOf(announcements.size())));
+
+        for (JsonObject message : announcements) {
+            String title = optString(message, "title", "");
+            String body = optString(message, "body", "");
+
+            if (!title.isBlank()) {
+                reply.add(this.messages.legacy("&e" + title));
+            }
+            if (!body.isBlank()) {
+                reply.add(this.messages.legacy("&7" + body));
+            }
+        }
+
+        return reply;
+    }
+
+    /**
      * Submit a broadcast to the forum and render the outcome.
      *
      * Blocking: call it off the main thread.
@@ -402,6 +530,153 @@ public final class BridgeCore {
         } catch (BridgeException exception) {
             return messages.prefixed("status-unreachable", "reason", exception.getMessage());
         }
+    }
+
+    /**
+     * Report a player to the forum.
+     *
+     * Blocking: call it off the main thread.
+     */
+    public Component reportPlayer(UUID reporterUuid, String reporterName, String targetName, String reason) {
+        try {
+            client.reportPlayer(reporterUuid.toString(), reporterName, targetName, reason);
+            return messages.prefixed("report-sent", "target", targetName);
+        } catch (BridgeException exception) {
+            return messages.prefixed("status-unreachable", "reason", exception.getMessage());
+        }
+    }
+
+    /**
+     * Submit a vote in the current activity poll and render the outcome.
+     *
+     * Blocking: call it off the main thread. Returns the reply component; when
+     * the poll is unknown to the forum the forum's translated error is shown.
+     */
+    public Component voteResult(long activityId, UUID playerUuid, String playerName, int optionIndex) {
+        try {
+            JsonObject response = client.submitVote((int) activityId, playerUuid, playerName, optionIndex);
+
+            JsonElement total = response.get("total_votes");
+            int totalVotes = total != null && total.isJsonPrimitive() && total.getAsJsonPrimitive().isNumber()
+                    ? total.getAsInt()
+                    : 0;
+
+            return messages.prefixed("vote-sent",
+                    "option", String.valueOf(optionIndex + 1),
+                    "total", String.valueOf(totalVotes));
+        } catch (BridgeException exception) {
+            return messages.prefixed("vote-failed", "reason", exception.getMessage());
+        }
+    }
+
+    /** The id of the poll currently announced in game (0 = none). */
+    public long activeActivity() {
+        return activeActivityId;
+    }
+
+    // ------------------------------------------------------------------
+    // Activity rendering
+    // ------------------------------------------------------------------
+
+    private Component renderActivityOpen(JsonObject activity) {
+        String title = optString(activity, "title", "");
+        List<String> options = new ArrayList<>();
+
+        if (activity.has("options") && activity.get("options").isJsonArray()) {
+            int index = 1;
+
+            for (JsonElement option : activity.getAsJsonArray("options")) {
+                if (option.isJsonPrimitive() && option.getAsJsonPrimitive().isString()) {
+                    options.add("&e" + index + " &7" + option.getAsString());
+                    index++;
+                }
+            }
+        }
+
+        Component header = messages.prefixed("activity-open", "title", title.isBlank() ? "?" : title);
+
+        if (options.isEmpty()) {
+            return header;
+        }
+
+        Component component = header.append(Component.newline()).append(messages.legacy(String.join("\n", options)));
+        component = component.append(Component.newline()).append(messages.prefixed("activity-vote-hint"));
+
+        return component;
+    }
+
+    private Component renderActivityResults(JsonObject activity) {
+        String title = optString(activity, "title", "");
+        List<String> lines = new ArrayList<>();
+
+        if (activity.has("options") && activity.get("options").isJsonArray()
+                && activity.has("tally") && activity.get("tally").isJsonArray()) {
+            JsonArray options = activity.getAsJsonArray("options");
+            JsonArray tally = activity.getAsJsonArray("tally");
+            int total = 0;
+
+            for (JsonElement element : tally) {
+                if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isNumber()) {
+                    total += element.getAsInt();
+                }
+            }
+
+            for (int i = 0; i < options.size(); i++) {
+                JsonElement option = options.get(i);
+
+                if (!option.isJsonPrimitive() || !option.getAsJsonPrimitive().isString()) {
+                    continue;
+                }
+
+                int count = i < tally.size() && tally.get(i).isJsonPrimitive()
+                        ? tally.get(i).getAsInt()
+                        : 0;
+
+                int percent = total > 0 ? (count * 100) / total : 0;
+
+                lines.add(messages.plain("activity-result-line",
+                        "option", option.getAsString(),
+                        "count", String.valueOf(count),
+                        "percent", String.valueOf(percent)));
+            }
+        }
+
+        JsonElement winner = activity.get("winner");
+        String winnerOption = "";
+
+        if (winner != null && winner.isJsonPrimitive() && winner.getAsJsonPrimitive().isNumber()
+                && activity.has("options") && activity.get("options").isJsonArray()) {
+            int winnerIndex = winner.getAsInt();
+            JsonArray options = activity.getAsJsonArray("options");
+
+            if (winnerIndex >= 0 && winnerIndex < options.size()
+                    && options.get(winnerIndex).isJsonPrimitive()) {
+                winnerOption = options.get(winnerIndex).getAsString();
+            }
+        }
+
+        Component component = messages.prefixed("activity-results-header", "title", title.isBlank() ? "?" : title);
+
+        if (!lines.isEmpty()) {
+            component = component.append(Component.newline())
+                    .append(messages.legacy(String.join("\n", lines)));
+        }
+
+        if (!winnerOption.isEmpty()) {
+            component = component.append(Component.newline())
+                    .append(messages.prefixed("activity-winner", "option", winnerOption));
+        }
+
+        return component;
+    }
+
+    private static long optLong(JsonObject object, String key, long fallback) {
+        if (object == null || !object.has(key) || !object.get(key).isJsonPrimitive()
+                || !object.get(key).getAsJsonPrimitive().isNumber()) {
+            return fallback;
+        }
+
+        return object.get(key).getAsLong();
     }
 
     /** Local counters, no I/O: safe to build on any thread. */
@@ -426,6 +701,7 @@ public final class BridgeCore {
     public List<String> helpLines() {
         return List.of(
                 messages.string("help-header"),
+                messages.string("help-news"),
                 messages.string("help-outbox"),
                 messages.string("help-broadcast"),
                 messages.string("help-stats"),
@@ -435,7 +711,7 @@ public final class BridgeCore {
 
     /** Subcommands the admin command accepts, used for the unknown-subcommand reply. */
     public static List<String> subcommands() {
-        return List.of("outbox", "broadcast", "stats", "reload");
+        return List.of("news", "outbox", "broadcast", "stats", "reload");
     }
 
     private static boolean optBoolean(JsonObject object, String key) {

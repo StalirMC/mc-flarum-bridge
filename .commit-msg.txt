@@ -1,0 +1,14 @@
+feat: in-game news, player reports and activity polls
+
+- /mcbridge news (no permission needed) peeks the outbox and shows the
+  latest forum announcements in game
+- /report <player> <reason> submits a player report to the forum
+  (POST /api/mc-bridge/report, stored in mc_reports, HMAC-signed)
+- Activity polls: POST /api/mc-bridge/activity creates a poll with 2-10
+  options, players vote in game with /vote <n> (POST /api/mc-bridge/vote,
+  unique per player, re-voting replaces), the closed poll's results and
+  winner are announced once via GET /api/mc-bridge/activity
+- New mc_activities / mc_votes / mc_reports tables plus the two new
+  mc_outbox columns land in an incremental migration so existing forums
+  get them on the next php flarum migrate
+- Docs and verification tables updated (verify.mjs now 329 checks)

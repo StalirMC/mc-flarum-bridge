@@ -207,6 +207,130 @@ php flarum mc-bridge:selftest --url=...    # 全链路自检
 
 ---
 
+## POST /api/mc-bridge/report
+
+**认证：HMAC** — 从游戏服务器提交玩家举报，供论坛管理员处理。
+
+请求：
+
+```json
+{
+  "server_key": "survival",
+  "reporter_uuid": "069a79f4-44e9-4726-a5be-fca90e38aaf5",
+  "reporter_name": "Alex",
+  "target_name": "Steve",
+  "reason": "他在出生点恶意破坏"
+}
+```
+
+- `reporter_uuid` 必须是有效的 UUID。
+- `target_name` 与 `reason` 必填。
+- `reason` 最长 1000 字符。
+
+响应 `201`：
+
+```json
+{ "ok": true, "report_id": 42 }
+```
+
+举报存储在 `mc_reports` 表中，初始状态为 `pending`。论坛管理员可手动将状态改为
+`reviewed`（已处理）或 `dismissed`（已驳回）。
+
+---
+
+## GET /api/mc-bridge/activity
+
+**认证：HMAC** — 查询当前进行中的活动投票，或最近结束、尚未被领取结果的投票。
+
+请求：
+
+```
+GET /api/mc-bridge/activity?server_key=survival
+```
+
+响应 `200`：
+
+```json
+{
+  "ok": true,
+  "open": {
+    "id": 7,
+    "title": "下次活动玩什么？",
+    "options": ["建筑大赛", "PvP 锦标赛", "跑酷"],
+    "closes_at": "…",
+    "closed": false,
+    "open": true,
+    "total_votes": 12,
+    "tally": [5, 4, 3]
+  },
+  "results": null
+}
+```
+
+- `open` 为 `null` 表示当前没有进行中的投票。
+- 当某个投票刚到期时，服务端会把它标记为 `closed`，第一个来查询的服务器会拿到
+  `results`（含 `winner` 字段），之后 `results` 恢复为 `null`。这样结果只广播一次。
+
+---
+
+## POST /api/mc-bridge/activity
+
+**认证：HMAC 或管理员会话** — 发起一个活动投票（例如"下次活动玩什么"），
+投票会通过 outbox 轮询自动广播到游戏内。
+
+请求：
+
+```json
+{
+  "server_key": "survival",
+  "title": "下次活动玩什么？",
+  "options": ["建筑大赛", "PvP 锦标赛", "跑酷"],
+  "closes_in_minutes": 60
+}
+```
+
+- `server_key` 省略时向所有服务器广播。
+- `options` 需要 2–10 个非空字符串。
+- `closes_in_minutes` 可选，默认 60，范围 5–10080（7 天）。
+
+响应 `201`：
+
+```json
+{ "ok": true, "activity": { "id": 7, "title": "…", "options": ["…"], "closes_at": "…" } }
+```
+
+非管理员且无签名 → `401` / `403`。
+
+---
+
+## POST /api/mc-bridge/vote
+
+**认证：HMAC** — 记录一名玩家在某活动投票中的选择。
+
+请求：
+
+```json
+{
+  "server_key": "survival",
+  "activity_id": 7,
+  "player_uuid": "069a79f4-44e9-4726-a5be-fca90e38aaf5",
+  "player_name": "Alex",
+  "option_index": 0
+}
+```
+
+- `option_index` 从 0 开始，超出 `options` 范围 → `422`。
+- 投票已结束 → `409`。
+- 同一玩家重复投票会**覆盖**之前的选项（`(activity_id, player_uuid)` 唯一）。
+
+响应 `200`：
+
+```json
+{ "ok": true, "activity_id": 7, "option_index": 0, "total_votes": 13 }
+```
+
+---
+
 ## GET /api/mc-bridge/link
 
 **认证：论坛会话（需登录）** — 返回当前登录账号的 Minecraft 绑定，供论坛前端显示。

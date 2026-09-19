@@ -93,6 +93,10 @@ All errors share the shape:
 | `POST` | `/api/mc-bridge/bind/start` | HMAC | Issue a binding code |
 | `GET` | `/api/mc-bridge/bind/status` | HMAC | Is this UUID linked yet? |
 | `POST` | `/api/mc-bridge/broadcast` | HMAC **or** admin session | Queue a broadcast |
+| `POST` | `/api/mc-bridge/report` | HMAC | Submit a player report |
+| `GET` | `/api/mc-bridge/activity` | HMAC | Current poll, or results of a closed one |
+| `POST` | `/api/mc-bridge/activity` | HMAC **or** admin session | Start an activity poll |
+| `POST` | `/api/mc-bridge/vote` | HMAC | Record a player's vote |
 | `POST` | `/api/mc-bridge/link` | forum session | Consume a binding code |
 | `DELETE` | `/api/mc-bridge/link` | forum session | Remove the link |
 

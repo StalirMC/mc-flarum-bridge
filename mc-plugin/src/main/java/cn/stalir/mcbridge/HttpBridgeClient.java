@@ -71,6 +71,32 @@ public final class HttpBridgeClient {
         return post("/broadcast", payload);
     }
 
+    public JsonObject reportPlayer(String reporterUuid, String reporterName, String targetName, String reason) throws BridgeException {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("server_key", config.serverKey());
+        payload.addProperty("reporter_uuid", reporterUuid);
+        payload.addProperty("reporter_name", reporterName);
+        payload.addProperty("target_name", targetName);
+        payload.addProperty("reason", reason);
+
+        return post("/report", payload);
+    }
+
+    public JsonObject fetchActivity() throws BridgeException {
+        return get("/activity", "server_key=" + encode(config.serverKey()));
+    }
+
+    public JsonObject submitVote(int activityId, UUID playerUuid, String playerName, int optionIndex) throws BridgeException {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("server_key", config.serverKey());
+        payload.addProperty("activity_id", activityId);
+        payload.addProperty("player_uuid", playerUuid.toString());
+        payload.addProperty("player_name", playerName);
+        payload.addProperty("option_index", optionIndex);
+
+        return post("/vote", payload);
+    }
+
 
     // ------------------------------------------------------------------
     // Transport
