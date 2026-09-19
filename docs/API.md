@@ -238,14 +238,20 @@ php flarum mc-bridge:selftest --url=...    # 全链路自检
 
 ---
 
-## GET /api/mc-bridge/activity
+## GET /api/mc-bridge/polls
 
-**认证：HMAC** — 查询当前进行中的活动投票，或最近结束、尚未被领取结果的投票。
+**认证：HMAC** — 读取论坛 **fof/polls** 扩展里的投票，供游戏内广播。
+
+桥接自己**不创建也不拥有投票**：投票完全由 fof/polls 管理，这里只读。所以论坛页面
+与游戏内看到的内容永远一致，投票的创建、编辑、结束仍然都在论坛界面完成。
+
+只暴露**全局投票**（`post_id` 为 `null`，即在论坛 `/polls` 页面创建的独立投票）
+且**已发布**的投票；讨论内投票属于具体帖子，不进游戏。
 
 请求：
 
 ```
-GET /api/mc-bridge/activity?server_key=survival
+GET /api/mc-bridge/polls?server_key=survival
 ```
 
 响应 `200`：
@@ -253,81 +259,86 @@ GET /api/mc-bridge/activity?server_key=survival
 ```json
 {
   "ok": true,
-  "open": {
-    "id": 7,
-    "title": "下次活动玩什么？",
-    "options": ["建筑大赛", "PvP 锦标赛", "跑酷"],
-    "closes_at": "…",
-    "closed": false,
-    "open": true,
-    "total_votes": 12,
-    "tally": [5, 4, 3]
-  },
-  "results": null
+  "available": true,
+  "polls": [
+    {
+      "id": 7,
+      "question": "下次活动玩什么？",
+      "subtitle": null,
+      "options": [
+        { "number": 1, "id": 21, "answer": "建筑大赛" },
+        { "number": 2, "id": 22, "answer": "PvP 锦标赛" },
+        { "number": 3, "id": 23, "answer": "跑酷" }
+      ],
+      "multiple": false,
+      "max_votes": 0,
+      "can_change_vote": true,
+      "ends_at": "…",
+      "url": "/polls/view/7"
+    }
+  ],
+  "results": []
 }
 ```
 
-- `open` 为 `null` 表示当前没有进行中的投票。
-- 当某个投票刚到期时，服务端会把它标记为 `closed`，第一个来查询的服务器会拿到
-  `results`（含 `winner` 字段），之后 `results` 恢复为 `null`。这样结果只广播一次。
+- `available` 为 `false` 表示论坛**没有装 fof/polls**（此时两个数组都为空）。插件会把
+  游戏内投票标记为不可用并提示玩家，而不是报错——fof/polls 是可选的搭档，不是硬依赖。
+- `polls` 是当前进行中的投票（按 id 倒序，最多 5 个）。
+- `options[].number` 就是玩家在游戏里 `/vote` 时输入的编号。
+- `results` 是最近 **24 小时**内结束的投票，带每个选项的票数与 `winner_number`：
+
+```json
+{
+  "id": 6,
+  "question": "哪个整合包？",
+  "options": [
+    { "number": 1, "answer": "Vanilla+", "votes": 4 },
+    { "number": 2, "answer": "Kitchen sink", "votes": 9 }
+  ],
+  "total_votes": 13,
+  "winner_number": 2,
+  "url": "/polls/view/6"
+}
+```
+
+> 这里**故意不记录"是否已广播"**。多服务器网络里每台服务器都要给自己的玩家播报，
+> 一个论坛侧的"已播"标记只会让第一台抢到的服务器播报、其余全哑。去重放在插件侧的
+> 内存里，代价是插件重启后可能重播一次最新公告。
 
 ---
 
-## POST /api/mc-bridge/activity
+## POST /api/mc-bridge/polls/vote
 
-**认证：HMAC 或管理员会话** — 发起一个活动投票（例如"下次活动玩什么"），
-投票会通过 outbox 轮询自动广播到游戏内。
+**认证：HMAC** — 把游戏内投票记到**玩家绑定的论坛账号**名下。
+
+玩家要用 `/vote` 投票，必须先在游戏内 `/bind` 绑定论坛账号：票要算在某个人头上，
+没有绑定就没有可以记账的对象（返回 `409`）。
+
+投票由 fof/polls 自己的 `MultipleVotesPoll` 命令执行，因此单选/多选、最大可选数量、
+是否允许改票、是否已结束这些规则**完全按 fof/polls 自己的逻辑**判定，桥接不重新实现一套。
 
 请求：
 
 ```json
 {
   "server_key": "survival",
-  "title": "下次活动玩什么？",
-  "options": ["建筑大赛", "PvP 锦标赛", "跑酷"],
-  "closes_in_minutes": 60
-}
-```
-
-- `server_key` 省略时向所有服务器广播。
-- `options` 需要 2–10 个非空字符串。
-- `closes_in_minutes` 可选，默认 60，范围 5–10080（7 天）。
-
-响应 `201`：
-
-```json
-{ "ok": true, "activity": { "id": 7, "title": "…", "options": ["…"], "closes_at": "…" } }
-```
-
-非管理员且无签名 → `401` / `403`。
-
----
-
-## POST /api/mc-bridge/vote
-
-**认证：HMAC** — 记录一名玩家在某活动投票中的选择。
-
-请求：
-
-```json
-{
-  "server_key": "survival",
-  "activity_id": 7,
+  "poll_id": 7,
   "player_uuid": "069a79f4-44e9-4726-a5be-fca90e38aaf5",
-  "player_name": "Alex",
-  "option_index": 0
+  "option_ids": [21]
 }
 ```
 
-- `option_index` 从 0 开始，超出 `options` 范围 → `422`。
-- 投票已结束 → `409`。
-- 同一玩家重复投票会**覆盖**之前的选项（`(activity_id, player_uuid)` 唯一）。
+- `option_ids` 是 `poll_options.id` 的数组，至少一个。
+- 单选投票里重复投票会**替换**上一次选择（与论坛网页行为一致）。
+- 选项不属于该投票 → `422`；投票已结束或没有投票权限 → `403`；玩家未绑定 → `409`。
 
 响应 `200`：
 
 ```json
-{ "ok": true, "activity_id": 7, "option_index": 0, "total_votes": 13 }
+{ "ok": true, "poll_id": 7, "voter": "Alice", "total_votes": 13 }
 ```
+
+`voter` 是票所记的论坛用户名，便于排查"我投的票去哪了"。
 
 ---
 

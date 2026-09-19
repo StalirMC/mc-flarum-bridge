@@ -22,9 +22,11 @@
  *   9. bind/start returns an 8-character code from the unambiguous alphabet
  *  10. bind start/status round-trip, sub-directory installs, concurrency
  *  11. player reports: stored when signed, 422 without a reason or a bad UUID
- *  12. activity polls: created with 2-10 options, readable while open
- *  13. voting: one vote per player, re-voting replaces, 409 once closed, and
- *      the final tally with its winner is handed back exactly once
+ *  12. forum polls: only open global polls are offered, a closed one appears
+ *      solely as a recent result
+ *  13. voting as the bound forum account: 409 while unlinked, one vote per
+ *      player, re-voting replaces on a single-choice poll, the multi-choice
+ *      maximum is enforced, and closed polls are refused
  *
  * Every check prints PASS or FAIL; any failure exits with code 1.
  *
@@ -707,149 +709,222 @@ async function checkAgainstMock(mock) {
   });
 
   // -------------------------------------------------------------------------
-  // 12. Activity polls
+  // 12. Forum polls (fof/polls)
   // -------------------------------------------------------------------------
 
-  group('12. Activity polls');
+  group('12. Forum polls');
 
-  const POLL_OPTIONS = ['Build contest', 'PvP tournament', 'Parkour'];
-  let activityId = 0;
+  // The bridge never creates polls: fof/polls owns them. The mock seeds them
+  // the way the forum database would already hold them.
+  const openPoll = mock.store.addPoll({
+    question: 'What should the next event be?',
+    options: ['Build contest', 'PvP tournament', 'Parkour'],
+    endsInMinutes: 60,
+  });
 
-  await test('POST /api/mc-bridge/activity starts a poll', async () => {
+  const closedPoll = mock.store.addPoll({
+    question: 'Which modpack next?',
+    options: ['Vanilla+', 'Kitchen sink'],
+    endsInMinutes: -30,
+  });
+
+  // One vote on the closed poll, so its tally has something to report.
+  const closedOptionId = mock.store.optionsOf(closedPoll.id)[1].id;
+  mock.store.castPollVote(closedPoll.id, 7, [closedOptionId]);
+
+  await test('GET /api/mc-bridge/polls returns the open global poll', async () => {
+    const response = await request(baseUrl, {
+      method: 'GET',
+      path: '/api/mc-bridge/polls?server_key=survival',
+    });
+
+    assertStatus(response, 200, 'polls listed');
+    assertEqual(response.json.available, true, 'the polls extension is available');
+    assertEqual(response.json.polls.length, 1, 'exactly one open poll');
+
+    const poll = response.json.polls[0];
+    assertEqual(poll.id, openPoll.id, 'the open poll');
+    assertEqual(poll.question, 'What should the next event be?', 'question preserved');
+    assertEqualJson(
+      poll.options.map((option) => option.number),
+      [1, 2, 3],
+      'options are numbered 1..n so /vote can use them'
+    );
+    assertEqualJson(
+      poll.options.map((option) => option.answer),
+      ['Build contest', 'PvP tournament', 'Parkour'],
+      'answers stay in order'
+    );
+    assertEqual(poll.multiple, false, 'single choice by default');
+  });
+
+  await test('a closed poll is offered as a result, never as an open poll', async () => {
+    const response = await request(baseUrl, {
+      method: 'GET',
+      path: '/api/mc-bridge/polls?server_key=survival',
+    });
+
+    assertStatus(response, 200, 'polls listed');
+    assertEqual(response.json.results.length, 1, 'one recent result');
+    assertEqual(response.json.results[0].id, closedPoll.id, 'the closed poll');
+    assertEqual(response.json.results[0].total_votes, 1, 'its vote is counted');
+    assertEqual(response.json.results[0].winner_number, 2, 'the voted option wins');
+    assert(
+      response.json.polls.every((poll) => poll.id !== closedPoll.id),
+      'a closed poll must not appear as open'
+    );
+  });
+
+  await test('an unsigned request for polls is rejected with 401', async () => {
+    const response = await request(baseUrl, {
+      method: 'GET',
+      path: '/api/mc-bridge/polls?server_key=survival',
+      secret: null,
+    });
+
+    assertStatus(response, 401, 'machine endpoints require a signature');
+  });
+
+  // -------------------------------------------------------------------------
+  // 13. Voting as the bound forum account
+  // -------------------------------------------------------------------------
+
+  group('13. Voting as the bound account');
+
+  const VOTER_UUID = '11111111-2222-3333-4444-555555555555';
+  const openOptions = mock.store.optionsOf(openPoll.id);
+
+  await test('a vote from an unlinked player is refused with 409', async () => {
     const response = await request(baseUrl, {
       method: 'POST',
-      path: '/api/mc-bridge/activity',
+      path: '/api/mc-bridge/polls/vote',
       body: {
         server_key: 'survival',
-        title: 'What should the next event be?',
-        options: POLL_OPTIONS,
-        closes_in_minutes: 30,
+        poll_id: openPoll.id,
+        player_uuid: VOTER_UUID,
+        option_ids: [openOptions[0].id],
       },
     });
 
-    assertStatus(response, 201, 'poll created');
-    activityId = response.json.activity.id;
-    assertEqualJson(response.json.activity.options, POLL_OPTIONS, 'options echoed in order');
-    assertEqual(response.json.activity.total_votes, 0, 'a fresh poll has no votes');
+    assertStatus(response, 409, 'there is no account to attribute the vote to');
+    assertEqual(mock.store.pollVotes.length, 1, 'only the seeded vote exists');
   });
 
-  await test('a poll with fewer than two options is rejected with 422', async () => {
+  await test('after /bind the vote lands on the forum account', async () => {
+    mock.store.bind(VOTER_UUID, { user_id: 42, username: 'Alice', player_name: 'Alice' });
+
     const response = await request(baseUrl, {
       method: 'POST',
-      path: '/api/mc-bridge/activity',
-      body: { server_key: 'survival', title: 'Nope', options: ['only one'] },
-    });
-
-    assertStatus(response, 422, 'at least two options are required');
-  });
-
-  await test('GET /api/mc-bridge/activity returns the open poll', async () => {
-    const response = await request(baseUrl, {
-      method: 'GET',
-      path: '/api/mc-bridge/activity?server_key=survival',
-    });
-
-    assertStatus(response, 200, 'current poll');
-    assert(response.json.open !== null, 'an open poll is expected');
-    assertEqual(response.json.open.id, activityId, 'the poll we just created');
-    assertEqual(response.json.results, null, 'no results yet');
-  });
-
-  // -------------------------------------------------------------------------
-  // 13. Voting
-  // -------------------------------------------------------------------------
-
-  group('13. Voting');
-
-  await test('POST /api/mc-bridge/vote records a vote', async () => {
-    const response = await request(baseUrl, {
-      method: 'POST',
-      path: '/api/mc-bridge/vote',
+      path: '/api/mc-bridge/polls/vote',
       body: {
         server_key: 'survival',
-        activity_id: activityId,
-        player_uuid: REPORTER_UUID,
-        player_name: 'Alice',
-        option_index: 1,
+        poll_id: openPoll.id,
+        player_uuid: VOTER_UUID,
+        option_ids: [openOptions[1].id],
       },
     });
 
     assertStatus(response, 200, 'vote accepted');
-    assertEqual(response.json.total_votes, 1, 'one vote counted');
+    assertEqual(response.json.voter, 'Alice', 'attributed to the bound account');
+    assertEqual(response.json.total_votes, 1, 'one vote in the poll');
+
+    const stored = mock.store.votesOf(openPoll.id, 42);
+    assertEqual(stored.length, 1, 'stored against the forum user id');
+    assertEqual(stored[0].option_id, openOptions[1].id, 'for the requested option');
   });
 
-  await test('re-voting replaces the previous option instead of adding a second vote', async () => {
+  await test('re-voting on a single-choice poll replaces the earlier choice', async () => {
     const response = await request(baseUrl, {
       method: 'POST',
-      path: '/api/mc-bridge/vote',
+      path: '/api/mc-bridge/polls/vote',
       body: {
         server_key: 'survival',
-        activity_id: activityId,
-        player_uuid: REPORTER_UUID,
-        player_name: 'Alice',
-        option_index: 0,
+        poll_id: openPoll.id,
+        player_uuid: VOTER_UUID,
+        option_ids: [openOptions[0].id],
       },
     });
 
     assertStatus(response, 200, 're-vote accepted');
-    assertEqual(response.json.total_votes, 1, 'still a single vote');
-    assertEqualJson(mock.store.tally(activityId), [1, 0, 0], 'the vote moved to option 0');
+    assertEqual(response.json.total_votes, 1, 'still one vote, not two');
+
+    const stored = mock.store.votesOf(openPoll.id, 42);
+    assertEqual(stored.length, 1, 'the previous vote was replaced');
+    assertEqual(stored[0].option_id, openOptions[0].id, 'now on the new option');
+
+    const options = mock.store.optionsOf(openPoll.id);
+    assertEqual(options[0].vote_count, 1, 'the new option counted');
+    assertEqual(options[1].vote_count, 0, 'the abandoned option cleared');
   });
 
-  await test('an out-of-range option is rejected with 422', async () => {
+  await test('an option belonging to another poll is rejected with 422', async () => {
     const response = await request(baseUrl, {
       method: 'POST',
-      path: '/api/mc-bridge/vote',
+      path: '/api/mc-bridge/polls/vote',
       body: {
         server_key: 'survival',
-        activity_id: activityId,
-        player_uuid: '11111111-2222-3333-4444-555555555555',
-        option_index: 9,
+        poll_id: openPoll.id,
+        player_uuid: VOTER_UUID,
+        option_ids: [closedOptionId],
       },
     });
 
-    assertStatus(response, 422, 'the option index must exist');
+    assertStatus(response, 422, 'the option must belong to the poll');
   });
 
-  await test('a closed poll rejects new votes with 409', async () => {
-    // Push the deadline into the past, exactly like an expired poll.
-    const activity = mock.store.activities.find((record) => record.id === activityId);
-    activity.closes_at = Math.floor(Date.now() / 1000) - 1;
-
+  await test('voting in a closed poll is refused with 403', async () => {
     const response = await request(baseUrl, {
       method: 'POST',
-      path: '/api/mc-bridge/vote',
+      path: '/api/mc-bridge/polls/vote',
       body: {
         server_key: 'survival',
-        activity_id: activityId,
-        player_uuid: '11111111-2222-3333-4444-555555555555',
-        option_index: 0,
+        poll_id: closedPoll.id,
+        player_uuid: VOTER_UUID,
+        option_ids: [mock.store.optionsOf(closedPoll.id)[0].id],
       },
     });
 
-    assertStatus(response, 409, 'voting is over');
+    assertStatus(response, 403, 'voting is over');
   });
 
-  await test('GET /api/mc-bridge/activity hands the results back exactly once', async () => {
-    const first = await request(baseUrl, {
-      method: 'GET',
-      path: '/api/mc-bridge/activity?server_key=survival',
+  await test('a multi-choice poll enforces its maximum', async () => {
+    const multi = mock.store.addPoll({
+      question: 'Pick two games',
+      options: ['Minecraft', 'Terraria', 'Factorio'],
+      endsInMinutes: 60,
+      multiple: true,
+      maxVotes: 2,
     });
 
-    assertStatus(first, 200, 'first read');
-    assert(first.json.results !== null, 'a closed poll must surrender its results');
-    assertEqual(first.json.open, null, 'nothing is open any more');
-    assertEqual(first.json.results.total_votes, 1, 'the single vote is counted');
-    assertEqualJson(first.json.results.tally, [1, 0, 0], 'final tally');
-    assertEqual(first.json.results.winner, 0, 'the only voted option wins');
+    const optionIds = mock.store.optionsOf(multi.id).map((option) => option.id);
 
-    const second = await request(baseUrl, {
-      method: 'GET',
-      path: '/api/mc-bridge/activity?server_key=survival',
+    const tooMany = await request(baseUrl, {
+      method: 'POST',
+      path: '/api/mc-bridge/polls/vote',
+      body: {
+        server_key: 'survival',
+        poll_id: multi.id,
+        player_uuid: VOTER_UUID,
+        option_ids: optionIds,
+      },
     });
 
-    assertStatus(second, 200, 'second read');
-    assertEqual(second.json.results, null, 'results must not be replayed');
+    assertStatus(tooMany, 422, 'three choices exceed the maximum of two');
+
+    const allowed = await request(baseUrl, {
+      method: 'POST',
+      path: '/api/mc-bridge/polls/vote',
+      body: {
+        server_key: 'survival',
+        poll_id: multi.id,
+        player_uuid: VOTER_UUID,
+        option_ids: optionIds.slice(0, 2),
+      },
+    });
+
+    assertStatus(allowed, 200, 'two choices are allowed');
+    assertEqual(allowed.json.total_votes, 2, 'both selections stored');
+    assertEqual(mock.store.votesOf(multi.id, 42).length, 2, 'two rows for the multi-choice vote');
   });
 }
 

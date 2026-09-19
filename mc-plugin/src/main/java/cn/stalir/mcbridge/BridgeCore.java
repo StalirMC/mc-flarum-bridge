@@ -8,7 +8,9 @@ import net.kyori.adventure.text.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -45,11 +47,29 @@ public final class BridgeCore {
     private final AtomicLong receivedMessages = new AtomicLong();
     private final AtomicLong outboxFailures = new AtomicLong();
 
-    /** Id of the activity poll currently announced in game (0 = none). */
-    private volatile long activeActivityId = 0L;
+    /** The fof/polls poll a player can vote in right now (0 = none). */
+    private volatile long activePollId = 0L;
 
-    /** Id of the last poll whose results were announced in game (0 = none). */
-    private volatile long announcedResultsId = 0L;
+    /**
+     * Option ids of {@link #activePollId}, in the order the poll lists them.
+     *
+     * Players vote by number (1-based) because they never see database ids;
+     * this maps that number back to the option id the forum expects.
+     */
+    private volatile List<Integer> activePollOptionIds = List.of();
+
+    /**
+     * Poll ids already announced in this process.
+     *
+     * De-duplication happens here rather than on the forum on purpose: every
+     * server in a network polls the same endpoint, and all of them must show
+     * the poll to their own players. A forum-side "announced" flag would let
+     * exactly one server through and silence the rest.
+     */
+    private final Set<Long> announcedPollIds = ConcurrentHashMap.newKeySet();
+
+    /** Poll ids whose final tally was already announced. */
+    private final Set<Long> announcedResultIds = ConcurrentHashMap.newKeySet();
 
     public BridgeCore(Platform platform) {
         this.platform = platform;
@@ -184,16 +204,16 @@ public final class BridgeCore {
             });
         }
 
-        // The same poll cycle also picks up activity polls and their results.
-        pollActivity();
+        // The same poll cycle also picks up the forum's polls and their results.
+        pollPolls();
     }
 
     /**
-     * Ask the forum for the current activity poll (if any) and announce new
-     * polls or their final results. Runs on the poller thread; broadcasting is
-     * handed back to the main thread / global region.
+     * Ask the forum for its fof/polls polls, then announce new ones or their
+     * final tallies. Runs on the poller thread; broadcasting and the shared
+     * state update are handed back to the main thread / global region.
      */
-    private void pollActivity() {
+    private void pollPolls() {
         BridgeConfig current = this.config;
 
         if (current == null || !current.isUsable()) {
@@ -203,47 +223,112 @@ public final class BridgeCore {
         JsonObject response;
 
         try {
-            response = client.fetchActivity();
+            response = client.fetchPolls();
         } catch (BridgeException exception) {
-            // Activity polling is best-effort; a failure here must not break
-            // the outbox cycle that already ran above.
+            // Best-effort: a failure here must not break the outbox cycle that
+            // already ran above.
             return;
         }
 
-        JsonObject results = response.has("results") && response.get("results").isJsonObject()
-                ? response.getAsJsonObject("results")
-                : null;
+        // The forum does not have the polls extension installed. There is
+        // nothing to announce, and /vote reports that instead of failing.
+        if (!optBoolean(response, "available")) {
+            platform.runSync(() -> forgetVotablePoll());
+            return;
+        }
 
-        JsonObject open = response.has("open") && response.get("open").isJsonObject()
-                ? response.getAsJsonObject("open")
-                : null;
+        JsonArray polls = response.has("polls") && response.get("polls").isJsonArray()
+                ? response.getAsJsonArray("polls")
+                : new JsonArray();
+
+        JsonArray results = response.has("results") && response.get("results").isJsonArray()
+                ? response.getAsJsonArray("results")
+                : new JsonArray();
 
         platform.runSync(() -> {
-            // A poll has just closed: announce the final tally, but only once.
-            if (results != null) {
-                long resultsId = optLong(results, "id", 0L);
-
-                if (resultsId > 0L && resultsId != announcedResultsId) {
-                    announcedResultsId = resultsId;
-                    broadcast(renderActivityResults(results));
+            // Closed polls first: their tally is the newest information.
+            for (JsonElement element : results) {
+                if (!element.isJsonObject()) {
+                    continue;
                 }
 
-                // The results replace whatever was open before.
-                if (activeActivityId == resultsId) {
-                    activeActivityId = 0L;
+                JsonObject result = element.getAsJsonObject();
+                long id = optLong(result, "id", 0L);
+
+                if (id > 0L && announcedResultIds.add(id)) {
+                    broadcast(renderPollResults(result));
+                }
+            }
+
+            for (JsonElement element : polls) {
+                if (!element.isJsonObject()) {
+                    continue;
+                }
+
+                JsonObject poll = element.getAsJsonObject();
+                long id = optLong(poll, "id", 0L);
+
+                if (id > 0L && announcedPollIds.add(id)) {
+                    broadcast(renderPollOpen(poll));
                 }
             }
 
-            // A new poll is open: announce it once, then remember it for /vote.
-            if (open != null) {
-                long openId = optLong(open, "id", 0L);
-
-                if (openId > 0L && openId != activeActivityId && openId != announcedResultsId) {
-                    activeActivityId = openId;
-                    broadcast(renderActivityOpen(open));
-                }
-            }
+            rememberVotablePoll(polls);
         });
+    }
+
+    private void forgetVotablePoll() {
+        activePollId = 0L;
+        activePollOptionIds = List.of();
+    }
+
+    /**
+     * Point /vote at the newest open poll, or at nothing when none is open.
+     *
+     * Players type the option number they see in chat, so the ids are kept in
+     * display order for {@link #pollVoteResult}.
+     */
+    private void rememberVotablePoll(JsonArray polls) {
+        JsonObject newest = null;
+        long newestId = 0L;
+
+        for (JsonElement element : polls) {
+            if (!element.isJsonObject()) {
+                continue;
+            }
+
+            JsonObject poll = element.getAsJsonObject();
+            long id = optLong(poll, "id", 0L);
+
+            if (id > newestId) {
+                newestId = id;
+                newest = poll;
+            }
+        }
+
+        if (newest == null) {
+            forgetVotablePoll();
+            return;
+        }
+
+        List<Integer> optionIds = new ArrayList<>();
+
+        if (newest.has("options") && newest.get("options").isJsonArray()) {
+            for (JsonElement element : newest.getAsJsonArray("options")) {
+                if (!element.isJsonObject()) {
+                    continue;
+                }
+
+                long optionId = optLong(element.getAsJsonObject(), "id", 0L);
+
+                if (optionId > 0L) {
+                    optionIds.add((int) optionId);
+                }
+            }
+        }
+
+        activePollId = newestId;
+        activePollOptionIds = List.copyOf(optionIds);
     }
 
     /** Handle one message pulled from the forum. */
@@ -547,14 +632,34 @@ public final class BridgeCore {
     }
 
     /**
-     * Submit a vote in the current activity poll and render the outcome.
+     * Cast the player's vote in the forum's own poll and render the outcome.
      *
-     * Blocking: call it off the main thread. Returns the reply component; when
-     * the poll is unknown to the forum the forum's translated error is shown.
+     * @param optionNumbers the 1-based option numbers exactly as the player
+     *                      typed them, mapped here to the option ids the forum
+     *                      knows.
+     *
+     * Blocking: call it off the main thread. A player without a linked forum
+     * account, a closed poll or a missing permission all come back as the
+     * forum's own translated message.
      */
-    public Component voteResult(long activityId, UUID playerUuid, String playerName, int optionIndex) {
+    public Component pollVoteResult(long pollId, UUID playerUuid, List<Integer> optionNumbers) {
+        List<Integer> available = activePollOptionIds;
+        List<Integer> optionIds = new ArrayList<>();
+        List<String> chosen = new ArrayList<>();
+
+        for (Integer number : optionNumbers) {
+            // The plugin cannot know a number is valid without the poll's own
+            // option list, and that list is what /vote shows.
+            if (number == null || number < 1 || number > available.size()) {
+                return messages.prefixed("vote-out-of-range", "max", String.valueOf(available.size()));
+            }
+
+            optionIds.add(available.get(number - 1));
+            chosen.add(String.valueOf(number));
+        }
+
         try {
-            JsonObject response = client.submitVote((int) activityId, playerUuid, playerName, optionIndex);
+            JsonObject response = client.submitPollVote((int) pollId, playerUuid, optionIds);
 
             JsonElement total = response.get("total_votes");
             int totalVotes = total != null && total.isJsonPrimitive() && total.getAsJsonPrimitive().isNumber()
@@ -562,109 +667,103 @@ public final class BridgeCore {
                     : 0;
 
             return messages.prefixed("vote-sent",
-                    "option", String.valueOf(optionIndex + 1),
+                    "options", String.join(", ", chosen),
                     "total", String.valueOf(totalVotes));
         } catch (BridgeException exception) {
             return messages.prefixed("vote-failed", "reason", exception.getMessage());
         }
     }
 
-    /** The id of the poll currently announced in game (0 = none). */
-    public long activeActivity() {
-        return activeActivityId;
+    /** The id of the poll /vote currently targets (0 = none). */
+    public long activePoll() {
+        return activePollId;
     }
 
     // ------------------------------------------------------------------
-    // Activity rendering
+    // Poll rendering
     // ------------------------------------------------------------------
 
-    private Component renderActivityOpen(JsonObject activity) {
-        String title = optString(activity, "title", "");
-        List<String> options = new ArrayList<>();
-
-        if (activity.has("options") && activity.get("options").isJsonArray()) {
-            int index = 1;
-
-            for (JsonElement option : activity.getAsJsonArray("options")) {
-                if (option.isJsonPrimitive() && option.getAsJsonPrimitive().isString()) {
-                    options.add("&e" + index + " &7" + option.getAsString());
-                    index++;
-                }
-            }
-        }
-
-        Component header = messages.prefixed("activity-open", "title", title.isBlank() ? "?" : title);
-
-        if (options.isEmpty()) {
-            return header;
-        }
-
-        Component component = header.append(Component.newline()).append(messages.legacy(String.join("\n", options)));
-        component = component.append(Component.newline()).append(messages.prefixed("activity-vote-hint"));
-
-        return component;
-    }
-
-    private Component renderActivityResults(JsonObject activity) {
-        String title = optString(activity, "title", "");
+    private Component renderPollOpen(JsonObject poll) {
+        String question = optString(poll, "question", "");
+        String subtitle = optString(poll, "subtitle", "");
         List<String> lines = new ArrayList<>();
 
-        if (activity.has("options") && activity.get("options").isJsonArray()
-                && activity.has("tally") && activity.get("tally").isJsonArray()) {
-            JsonArray options = activity.getAsJsonArray("options");
-            JsonArray tally = activity.getAsJsonArray("tally");
-            int total = 0;
-
-            for (JsonElement element : tally) {
-                if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isNumber()) {
-                    total += element.getAsInt();
-                }
-            }
-
-            for (int i = 0; i < options.size(); i++) {
-                JsonElement option = options.get(i);
-
-                if (!option.isJsonPrimitive() || !option.getAsJsonPrimitive().isString()) {
+        if (poll.has("options") && poll.get("options").isJsonArray()) {
+            for (JsonElement element : poll.getAsJsonArray("options")) {
+                if (!element.isJsonObject()) {
                     continue;
                 }
 
-                int count = i < tally.size() && tally.get(i).isJsonPrimitive()
-                        ? tally.get(i).getAsInt()
-                        : 0;
+                JsonObject option = element.getAsJsonObject();
+                long number = optLong(option, "number", 0L);
+                String answer = optString(option, "answer", "");
 
-                int percent = total > 0 ? (count * 100) / total : 0;
+                if (number > 0L && !answer.isBlank()) {
+                    lines.add("&e" + number + " &7" + answer);
+                }
+            }
+        }
 
-                lines.add(messages.plain("activity-result-line",
-                        "option", option.getAsString(),
-                        "count", String.valueOf(count),
+        Component component = messages.prefixed("poll-open",
+                "question", question.isBlank() ? "?" : question);
+
+        if (!subtitle.isBlank()) {
+            component = component.append(Component.newline()).append(messages.legacy("&7" + subtitle));
+        }
+
+        if (lines.isEmpty()) {
+            return component;
+        }
+
+        component = component.append(Component.newline()).append(messages.legacy(String.join("\n", lines)));
+
+        if (optBoolean(poll, "multiple")) {
+            return component.append(Component.newline()).append(messages.prefixed("poll-vote-hint-multiple"));
+        }
+
+        return component.append(Component.newline()).append(messages.prefixed("poll-vote-hint"));
+    }
+
+    private Component renderPollResults(JsonObject poll) {
+        String question = optString(poll, "question", "");
+        List<String> lines = new ArrayList<>();
+        long total = optLong(poll, "total_votes", 0L);
+        long winnerNumber = optLong(poll, "winner_number", 0L);
+        String winnerAnswer = "";
+
+        if (poll.has("options") && poll.get("options").isJsonArray()) {
+            for (JsonElement element : poll.getAsJsonArray("options")) {
+                if (!element.isJsonObject()) {
+                    continue;
+                }
+
+                JsonObject option = element.getAsJsonObject();
+                String answer = optString(option, "answer", "");
+                long votes = optLong(option, "votes", 0L);
+                long percent = total > 0L ? (votes * 100L) / total : 0L;
+
+                lines.add(messages.plain("poll-result-line",
+                        "answer", answer,
+                        "votes", String.valueOf(votes),
                         "percent", String.valueOf(percent)));
+
+                if (optLong(option, "number", 0L) == winnerNumber && winnerNumber > 0L) {
+                    winnerAnswer = answer;
+                }
             }
         }
 
-        JsonElement winner = activity.get("winner");
-        String winnerOption = "";
-
-        if (winner != null && winner.isJsonPrimitive() && winner.getAsJsonPrimitive().isNumber()
-                && activity.has("options") && activity.get("options").isJsonArray()) {
-            int winnerIndex = winner.getAsInt();
-            JsonArray options = activity.getAsJsonArray("options");
-
-            if (winnerIndex >= 0 && winnerIndex < options.size()
-                    && options.get(winnerIndex).isJsonPrimitive()) {
-                winnerOption = options.get(winnerIndex).getAsString();
-            }
-        }
-
-        Component component = messages.prefixed("activity-results-header", "title", title.isBlank() ? "?" : title);
+        Component component = messages.prefixed("poll-results-header",
+                "question", question.isBlank() ? "?" : question);
 
         if (!lines.isEmpty()) {
             component = component.append(Component.newline())
                     .append(messages.legacy(String.join("\n", lines)));
         }
 
-        if (!winnerOption.isEmpty()) {
+        if (!winnerAnswer.isBlank()) {
             component = component.append(Component.newline())
-                    .append(messages.prefixed("activity-winner", "option", winnerOption));
+                    .append(messages.prefixed("poll-winner", "answer", winnerAnswer));
         }
 
         return component;

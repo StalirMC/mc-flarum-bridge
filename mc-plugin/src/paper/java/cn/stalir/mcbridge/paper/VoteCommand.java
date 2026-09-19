@@ -8,11 +8,20 @@ import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 /**
- * {@code /vote <编号>} - votes in the activity poll currently announced in
- * game.
+ * {@code /vote <编号> [编号...]} - votes in the forum poll currently announced
+ * in game.
+ *
+ * The vote is cast as the forum account the player bound with {@code /bind}, so
+ * it appears on the forum exactly as if they had used the website. Players who
+ * have not linked an account get the forum's own explanation back.
+ *
+ * Multiple numbers (space or comma separated) support multi-choice polls: the
+ * forum decides whether that many selections are allowed.
  *
  * The request is blocking, so it runs on the platform's asynchronous pool and
  * the rendered reply is handed back to the main thread / global region.
@@ -37,15 +46,15 @@ public final class VoteCommand implements CommandExecutor {
             return true;
         }
 
-        long activityId = core.activeActivity();
-
-        if (activityId <= 0L) {
-            player.sendMessage(core.messages().prefixed("vote-none"));
+        if (args.length < 1) {
+            player.sendMessage(core.messages().prefixed("vote-usage"));
             return true;
         }
 
-        if (args.length < 1) {
-            player.sendMessage(core.messages().prefixed("vote-usage"));
+        long pollId = core.activePoll();
+
+        if (pollId <= 0L) {
+            player.sendMessage(core.messages().prefixed("vote-none"));
             return true;
         }
 
@@ -57,26 +66,36 @@ public final class VoteCommand implements CommandExecutor {
             return true;
         }
 
-        int optionIndex;
+        List<Integer> numbers = new ArrayList<>();
 
-        try {
-            optionIndex = Integer.parseInt(args[0]) - 1;
-        } catch (NumberFormatException exception) {
-            player.sendMessage(core.messages().prefixed("vote-usage"));
-            return true;
+        for (String argument : args) {
+            for (String part : argument.split(",")) {
+                String trimmed = part.trim();
+
+                if (trimmed.isEmpty()) {
+                    continue;
+                }
+
+                try {
+                    numbers.add(Integer.parseInt(trimmed));
+                } catch (NumberFormatException exception) {
+                    // Not a number at all: show the usage instead of guessing.
+                    player.sendMessage(core.messages().prefixed("vote-usage"));
+                    return true;
+                }
+            }
         }
 
-        if (optionIndex < 0) {
+        if (numbers.isEmpty()) {
             player.sendMessage(core.messages().prefixed("vote-usage"));
             return true;
         }
 
         // Read the player state before leaving the main thread.
         UUID playerUuid = player.getUniqueId();
-        String playerName = player.getName();
 
         core.platform().runAsync(() -> {
-            Component reply = core.voteResult(activityId, playerUuid, playerName, optionIndex);
+            Component reply = core.pollVoteResult(pollId, playerUuid, numbers);
 
             core.platform().runSync(() -> player.sendMessage(reply));
         });

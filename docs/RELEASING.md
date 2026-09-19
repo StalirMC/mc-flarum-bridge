@@ -10,7 +10,7 @@
 #    mc-plugin/gradle.properties      version=X.Y.Z
 #    mc-plugin/src/main/java/cn/stalir/mcbridge/Version.java   VERSION = "X.Y.Z"
 
-# 2) 本地校验（三个模块编译 + 51 项共享核心自测 + verifyJar + 320 项静态检查）
+# 2) 本地校验（三个模块编译 + 37 项构建自测 + verifyJar + 316 项静态检查 + 41 项协议测试）
 cd mc-plugin && ./gradlew build && cd ..
 node tools/verify.mjs
 node tools/protocol-test.mjs

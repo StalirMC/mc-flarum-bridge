@@ -21,8 +21,8 @@ commands:
     usage: /report <player> <reason>
     permission: mcbridge.report
   vote:
-    description: Vote in the current activity poll
-    usage: /vote <number>
+    description: Vote in the forum poll announced in game
+    usage: /vote <number> [number...]
     permission: mcbridge.vote
 
 permissions:

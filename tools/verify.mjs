@@ -885,9 +885,8 @@ section('13. Flarum 2.x framework contracts');
     'mc-bridge.bind.status',
     'mc-bridge.broadcast',
     'mc-bridge.report',
-    'mc-bridge.activity',
-    'mc-bridge.activity.create',
-    'mc-bridge.vote',
+    'mc-bridge.polls',
+    'mc-bridge.polls.vote',
   ];
 
   const SESSION_ROUTES = ['mc-bridge.link', 'mc-bridge.unlink'];

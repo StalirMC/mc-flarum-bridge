@@ -651,7 +651,7 @@ Packagist 会认为最高版本是 1.0.0，于是不带约束的 `composer requi
 0.0.10 曾被撤回重发一次：维护者要求作者名改为 `StalirMC`，而当时 Packagist 只抓到 `v0.0.6`，
 所以撤回是干净的 —— 删除 tag 后在新提交上重建，Release 就地更新（资产已替换并实测）。
 
-### 2.17 游戏内查公告、举报与活动投票（未发版）
+### 2.17 游戏内查公告、举报与论坛投票联动（0.0.12）
 
 三个新功能，都由游戏侧命令发起：
 
@@ -659,36 +659,45 @@ Packagist 会认为最高版本是 1.0.0，于是不带约束的 `composer requi
 |------|-----------|--------|------|
 | 查公告 | `/mcbridge news`（**无需权限**） | 复用 `GET /outbox`，插件只筛 `announcement` 并取前 5 条 | — |
 | 举报 | `/report <玩家> <原因>` | `POST /api/mc-bridge/report` | `mc_reports` |
-| 活动投票 | `/vote <编号>` | `POST/GET /api/mc-bridge/activity`、`POST /api/mc-bridge/vote` | `mc_activities`、`mc_votes` |
+| 投票 | `/vote <编号>` | `GET /api/mc-bridge/polls`、`POST /api/mc-bridge/polls/vote` | 无（读 fof/polls 自己的表） |
 
-设计要点：
+**投票是联动，不是自建。** 最初实现了一套 `mc_activities` / `mc_votes` 自建投票，
+维护者指出要的是**与论坛已有的 `fof/polls` 联动**，于是整套自建表、控制器、模型被删除，
+改为：
 
-1. **论坛侧没有定时任务**。活动投票的"到期关闭 + 回传结果"发生在**读**的时候：
-   任何服务器来 `GET /activity` 时，`closes_at` 已过的投票会被标记 `closed`，
-   第一个来拿的服务器收到最终票数与获胜选项，同时盖上 `announced_at` ——
-   所以结果**只广播一次**（`protocol-test.mjs` 第 13 组专门断言了这一点）。
-2. **一人一票可改票**：`mc_votes` 的 `(activity_id, player_uuid)` 唯一，
-   `VoteController` 用 `firstOrNew` 覆盖旧选项，而不是新增一行。
-3. **投票与公告复用同一轮询**：`BridgeCore.pollOutbox()` 成功后在同一个周期里调用
-   `pollActivity()`；活动轮询失败**不影响**已经完成的公告投递。
-4. **增量迁移**：新的三张表与 `mc_outbox` 的 `target_uuid` / `actor_id` 两列同时写进了
-   创建迁移与 `2025_06_28_000000_add_bridge_features.php`。**已装过旧版的论坛必须跑一次
-   `php flarum migrate` 才会建表加列** —— 创建迁移在旧论坛上是"已执行"状态，不会再跑，
-   这正是那份增量迁移存在的原因（每一步都有 `hasTable` / `hasColumn` 守卫，
-   新装论坛执行它是空操作）。
-5. `X-MC-Diagnostic` 头在这次联调里直接派上用场：本机缺 PHP，但与线上论坛比对规范字符串时，
+1. **投票由 fof/polls 拥有**，桥接只读。`PollsController` 读 `polls` / `poll_options`，
+   只暴露**全局投票**（`post_id IS NULL`）且**已发布**（`published_at IS NOT NULL`）的行。
+   讨论内投票属于具体帖子，不进游戏。
+2. **投票写回走 fof/polls 自己的命令**：`PollVoteController` 通过 `mc_bindings` 把
+   `player_uuid` 解析成论坛用户，然后 `dispatch(new MultipleVotesPoll($actor, $pollId, ...))`。
+   单选/多选、`max_votes`、能否改票、是否已结束这些规则因此**完全由 fof/polls 判定**，
+   桥接不重新实现一套，也不可能与论坛网页行为漂移。
+3. **投票必须先绑定**：票要算在具体论坛用户名下，未绑定的玩家拿到 `409`，插件把它
+   渲染成引导信息。这条把已有的 `/bind` 功能变成了投票的前置条件。
+4. **fof/polls 是可选依赖**：`class_exists(Poll::class)` 为假时 `GET /polls` 返回
+   `available: false`（而不是报错），插件据此提示"论坛未启用投票"，不影响其它功能。
+5. **故意不做"已广播"标记**。第一版在论坛侧记录"这个投票播过了"，但多服务器网络里
+   每台服务器都要给自己玩家播报，论坛侧标记只会让第一台抢到的服务器播、其余全哑。
+   去重改到插件侧内存（`announcedPollIds` / `announcedResultIds`），代价是插件重启可能
+   重播一次最新公告。`protocol-test.mjs` 第 12 组断言"已结束的投票只作为 result 出现，
+   绝不作为 open poll 出现"。
+6. **论坛侧没有定时任务**：结果窗口是"最近 24 小时内结束的投票"，由插件轮询自然触发播报。
+7. **增量迁移**：`mc_reports` 与 `mc_outbox` 的 `target_uuid` / `actor_id` 两列写进了创建
+   迁移与 `2025_06_28_000000_add_bridge_features.php`。**已装过旧版的论坛必须跑一次
+   `php flarum migrate` 才会建表加列** —— 创建迁移在旧论坛上是"已执行"状态不会再跑，
+   这正是那份增量迁移存在的原因（每步都有 `hasTable` / `hasColumn` 守卫，新装论坛执行它是空操作）。
+8. `X-MC-Diagnostic` 头在联调里派上了用场：本机缺 PHP，但与线上论坛比对规范字符串时，
    服务端回显的 `canonical` 与本地构造的**逐字节一致**，从而确认"签名不匹配"是密钥不同，
    而不是算法或路径写错。
 
-规模：mock 与协议测试 28 → **40 项**（新增举报 4、活动 3、投票 5），`verify.mjs` 284 → **329 项**
-（新路由纳入 CSRF 豁免与文档比对），构建自测仍 37 项。
+规模：mock 与协议测试 28 → **41 项**（举报 4、投票联动 8；原自建投票的 5 项已删除），
+`verify.mjs` **316 项**（自建投票的三条路由被两条 polls 路由取代），构建自测仍 37 项。
 `gradle build`、`verify.mjs`、`protocol-test.mjs` 全部通过。
 
 **线上实测（forum.kxkl2024.cn）**：用 `DeepSeekHarness` 账号换取 Flarum token 后确认
-`GET /api/mc-bridge/link` 正常返回，而 `GET /api/mc-bridge/activity` 返回 `404` ——
-即论坛侧仍是旧版，**这三个功能尚未上线**，需要先部署（见第 4 节）。
-
-> 本次同样**不发版**：改动只进 `main`。
+`GET /api/mc-bridge/link` 正常返回，`GET /api/polls` 返回合法的空 JSON:API 文档
+（说明 fof/polls 已安装、当时还没有投票），而 `GET /api/mc-bridge/activity` 返回 `404`
+—— 即论坛侧仍是旧版，这些功能需要先部署（见第 4 节）。
 
 ## 3. 无法在本机验证的内容（现由 CI 覆盖）
 
@@ -700,7 +709,7 @@ Packagist 会认为最高版本是 1.0.0，于是不带约束的 `composer requi
 | PHP 语法 | `find flarum-extension -name '*.php' -exec php -l {} \;` | 无 `Parse error` | ✅ CI 已执行通过 |
 | Java 编译 | `cd mc-plugin && gradle wrapper --gradle-version 8.10 && ./gradlew build` | `BUILD SUCCESSFUL` | ✅ CI 已执行通过，jar 已上传为 artifact |
 | Flarum 安装 | `composer require stalirmc/mc-flarum-bridge` | 扩展出现在管理后台 | ⬜ 需在真实论坛执行（CI 不安装 Flarum） |
-| 迁移执行 | `php flarum migrate` | 8 张表建立 | ⬜ 需真实数据库（CI 仅反射校验迁移契约） |
+| 迁移执行 | `php flarum migrate` | 6 张表建立 | ⬜ 需真实数据库（CI 仅反射校验迁移契约） |
 | **桥接自检** | `php flarum mc-bridge:selftest --url=https://你的域名` | 全部 `OK` | ⬜ 需在真实论坛执行 |
 | 插件加载（Paper） | 放入 jar 后启动服务器 | 日志出现 `McBridge enabled on paper as server ...` | ⬜ 需在真实服务器执行 |
 | 插件加载（Folia） | 同一个 jar 放入 Folia 的 `plugins/` | 日志出现 `on folia`，且无 `UnsupportedOperationException` | ⬜ 需真实 Folia 服务端 |
@@ -709,7 +718,7 @@ Packagist 会认为最高版本是 1.0.0，于是不带约束的 `composer requi
 
 其中 `mc-bridge:selftest` 是专为此设计的：它在**运行论坛的那台机器**上检查密钥
 长度、HMAC 签名/验签/篡改检测、规范化字符串格式、路径规范化（含子目录安装）、
-8 张表是否存在、查询路径是否可用、绑定码字符集，并在给出 `--url` 时发起一次
+6 张表是否存在、查询路径是否可用、绑定码字符集，并在给出 `--url` 时发起一次
 **真实的带签名 HTTP 回环请求**，从而覆盖路由、中间件、签名校验、持久化的
 完整链路。
 
@@ -733,7 +742,9 @@ cd mc-plugin && gradle wrapper --gradle-version 8.10 && ./gradlew build
 #   /mcbridge news      -> 应列出论坛最新公告（所有玩家都可用）
 #   /bind               -> 应返回 8 位绑定码
 #   /report <玩家> <原因> -> 应提示已提交，论坛后台出现 pending 记录
-#   （先在论坛发起活动投票）-> 游戏内广播公告，/vote <编号> 应提示投票成功
+#   （先在论坛 /polls 建一个全局投票）-> 游戏内广播公告
+#   /vote <编号>        -> 需先 /bind；成功后论坛投票页出现该票
+#   （未绑定时 /vote）  -> 应提示需要先绑定论坛账号
 ```
 
 在论坛发一个新讨论，20 秒内游戏内应出现 `[论坛] <标题>`。
