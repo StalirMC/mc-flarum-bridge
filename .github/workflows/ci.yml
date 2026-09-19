@@ -10,8 +10,23 @@ name: CI
 on:
   push:
     branches: [main, master]
+    # A commit that only touches documentation does not need a full run. The
+    # suite checks code, and the few documentation claims it does verify - the
+    # route tables in docs/API.md - change together with the code, not on their
+    # own. Pull requests are deliberately not filtered: opening one is a
+    # deliberate act, so it always gets validated.
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
   pull_request:
   workflow_dispatch:
+
+# Pushing twice in a row supersedes the older run instead of queueing behind it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
