@@ -20,10 +20,10 @@ help-reload: "&7/mcbridge reload &8- &fReload the configuration"
 # ---- account binding ----
 bind-requesting: "&7Requesting a binding code from the forum..."
 bind-code: "&aBinding code &e{code} &a- valid for &e{minutes} &aminutes."
-bind-hint: "&7Open &e{url} &7in a browser and enter the code to finish linking."
+bind-hint: "&7Open the forum, click your avatar in the top right → &eSettings&7, scroll down to &eMinecraft account&7 and enter the code above."
 bind-already: "&aYour account is already linked to the forum user &e{user}&a."
-bind-prompt: "&7Your forum account is not linked yet. Type &e/bind &7for a code, then open &e{url} &7to finish."
-bind-prompt-code: "&7Your binding code is &e{code} &7- open &e{url} &7soon to finish linking."
+bind-prompt: "&7Your forum account is not linked yet. Type &e/bind &7for a code, then click your avatar in the forum's top right → &eSettings&7 and enter it there."
+bind-prompt-code: "&7Your binding code is &e{code} &7- enter it under your avatar → &eSettings&7 to finish linking."
 bind-failed: "&cCould not obtain a binding code: {reason}"
 bind-failed-no-code: "&cThe forum did not return a binding code."
 

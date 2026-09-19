@@ -348,10 +348,21 @@ curl -s https://forum.kxkl2024.cn/api/mc-bridge/status | jq
 
 ### 3.4 账号绑定
 
-1. 玩家在游戏内执行 `/bind`，聊天栏出现 8 位绑定码（10 分钟内有效）。
-2. 玩家登录论坛，调用绑定接口（或由你提供的页面/表单提交）。
-   这是**会话**端点，除 Cookie 外还需带 `X-CSRF-Token`（详见
-   [`API.md` 的 CSRF 一节](API.md#csrf-行为重要)）：
+**玩家侧（正常流程）**
+
+1. 在游戏内执行 `/bind`，聊天栏出现 8 位绑定码（10 分钟内有效）。
+2. 打开论坛 → **右上角点击头像 → 设置** → 往下翻到「Minecraft 账号」区块，
+   把绑定码填进去提交即可。绑定后该区块会显示已绑定的游戏昵称，
+   个人资料页与帖子作者名旁也会出现 MC 徽章。
+3. 再次 `/bind` 会提示已绑定，并显示论坛用户名。
+4. 解除绑定：在同一区块点「解除绑定」。
+
+> 首次进服且未绑定的玩家会被提示一次该流程（`game.prompt-unbound`，默认开启）。
+
+**接口侧（自动化脚本或自建表单）**
+
+这是**会话**端点，除 Cookie 外还需带 `X-CSRF-Token`（详见
+[`API.md` 的 CSRF 一节](API.md#csrf-行为重要)）：
 
 ```bash
 TOKEN=$(curl -s -c jar.txt https://forum.kxkl2024.cn/ -o /dev/null; \
@@ -362,8 +373,10 @@ curl -s -X POST https://forum.kxkl2024.cn/api/mc-bridge/link \
   -d '{"code":"ABCD2345"}'
 ```
 
-3. 再次 `/bind` 会提示已绑定，并显示论坛用户名。
-4. 解绑：`DELETE /api/mc-bridge/link`（同样需要登录会话）。
+解绑同样是接口调用：`DELETE /api/mc-bridge/link`（需要一个已登录的会话）。
+
+> 扩展仍保留一个免构建的绑定页面 `/mc-bridge/link`（登录后直接访问），
+> 适合把链接发给找不到设置页的玩家；正常流程用上面的「头像 → 设置」即可。
 
 ## 4. 从 Flarum 推送到游戏
 

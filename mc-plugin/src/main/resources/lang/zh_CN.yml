@@ -19,10 +19,10 @@ help-reload: "&7/mcbridge reload &8- &f重新加载配置"
 # ---- 账号绑定 ----
 bind-requesting: "&7正在向论坛申请绑定码…"
 bind-code: "&a绑定码 &e{code} &a，有效期 &e{minutes} &a分钟。"
-bind-hint: "&7请在浏览器打开 &e{url} &7并输入该绑定码完成绑定。"
+bind-hint: "&7请到论坛右上角点击头像 → &e设置&7，往下翻找到 &eMinecraft 账号&7，把上面的绑定码填进去即可。"
 bind-already: "&a你的账号已绑定论坛用户 &e{user}&a。"
-bind-prompt: "&7你还没有绑定论坛账号。输入 &e/bind &7获取绑定码，然后打开 &e{url} &7完成绑定。"
-bind-prompt-code: "&7你的绑定码是 &e{code} &7，有效期有限，请尽快打开 &e{url} &7完成绑定。"
+bind-prompt: "&7你还没有绑定论坛账号。输入 &e/bind &7获取绑定码，再到论坛右上角点开头像 → &e设置&7，往下翻填入绑定码。"
+bind-prompt-code: "&7你的绑定码是 &e{code} &7，请到论坛右上角头像 → &e设置&7 里填入完成绑定。"
 bind-failed: "&c获取绑定码失败：{reason}"
 bind-failed-no-code: "&c论坛没有返回绑定码。"
 
