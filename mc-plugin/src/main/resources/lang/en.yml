@@ -56,6 +56,9 @@ log:
   outbox-failed: "Outbox poll failed ({count} in a row): {reason}"
   relayed: "Relayed {type} from the forum: {title}"
   outbox-handle-failed: "Failed to handle an outbox message"
+  bind-feedback-sent: "Sent binding feedback to player {uuid} ({type})"
+  bind-feedback-uuid-invalid: "Invalid UUID in binding feedback: {uuid}"
+  bind-feedback-no-uuid: "Binding feedback message missing target_uuid ({type})"
 
 # ---- configuration validation ----
 config:

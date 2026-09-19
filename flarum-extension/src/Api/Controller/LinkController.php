@@ -105,6 +105,15 @@ class LinkController extends AbstractBridgeController
             $binding->server_key = $record->server_key;
             $binding->save();
 
+            // Queue an instant feedback message for the player.
+            $feedback = new McOutboxMessage();
+            $feedback->server_key = $record->server_key;
+            $feedback->type = 'bind_success';
+            $feedback->title = '账号绑定成功';
+            $feedback->body = '你的 Minecraft 账号已绑定到论坛账号 ' . $actor->username;
+            $feedback->target_uuid = $record->player_uuid;
+            $feedback->save();
+
             return $binding;
         });
 
@@ -122,7 +131,17 @@ class LinkController extends AbstractBridgeController
             return $this->fail('link_not_bound', 404);
         }
 
+        $playerUuid = $binding->player_uuid;
         $binding->delete();
+
+        // Queue an instant feedback message for the player.
+        $feedback = new McOutboxMessage();
+        $feedback->server_key = null; // deliver to all servers
+        $feedback->type = 'bind_unlinked';
+        $feedback->title = '账号已解除绑定';
+        $feedback->body = '你的 Minecraft 账号已与论坛账号解除绑定';
+        $feedback->target_uuid = $playerUuid;
+        $feedback->save();
 
         return $this->json(['ok' => true]);
     }

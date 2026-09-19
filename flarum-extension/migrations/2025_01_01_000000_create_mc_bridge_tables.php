@@ -55,6 +55,11 @@ return [
                 $table->text('body')->nullable();
                 $table->string('url', 255)->nullable();
                 $table->json('payload')->nullable();
+                // Optional: deliver only to the player with this UUID.
+                // Used for bind-success/failure feedback.
+                $table->string('target_uuid', 36)->nullable()->index();
+                // Who queued this message (for audit). Null for machine calls.
+                $table->unsignedInteger('actor_id')->nullable();
                 $table->dateTime('delivered_at')->nullable();
                 $table->timestamps();
 

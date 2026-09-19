@@ -55,6 +55,9 @@ log:
   outbox-failed: "拉取公告失败（连续 {count} 次）：{reason}"
   relayed: "已投递来自论坛的 {type}：{title}"
   outbox-handle-failed: "处理公告消息时出错"
+  bind-feedback-sent: "已向玩家 {uuid} 发送绑定反馈（{type}）"
+  bind-feedback-uuid-invalid: "绑定反馈的 UUID 无效：{uuid}"
+  bind-feedback-no-uuid: "绑定反馈消息缺少 target_uuid（{type}）"
 
 # ---- 配置校验提示 ----
 config:

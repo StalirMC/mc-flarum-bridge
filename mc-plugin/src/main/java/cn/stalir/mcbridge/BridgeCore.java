@@ -187,6 +187,24 @@ public final class BridgeCore {
         String title = optString(message, "title", "");
         String body = optString(message, "body", "");
         String url = optString(message, "url", "");
+        String targetUuid = optString(message, "target_uuid", "");
+
+        // Instant feedback for binding: deliver only to the player who bound.
+        if ("bind_success".equals(type) || "bind_unlinked".equals(type)) {
+            if (!targetUuid.isBlank()) {
+                try {
+                    UUID uuid = UUID.fromString(targetUuid);
+                    Component feedback = messages.legacy("&a" + title + "&r\n&7" + body);
+                    platform.sendToPlayer(uuid, feedback);
+                    platform.log().info(logText("log.bind-feedback-sent", "uuid", targetUuid, "type", type));
+                } catch (IllegalArgumentException exception) {
+                    platform.log().warn(logText("log.bind-feedback-uuid-invalid", "uuid", targetUuid));
+                }
+            } else {
+                platform.log().warn(logText("log.bind-feedback-no-uuid", "type", type));
+            }
+            return;
+        }
 
         String rendered = config.announceFormat()
                 .replace("{title}", title)

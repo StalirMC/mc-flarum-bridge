@@ -96,6 +96,11 @@ class BroadcastController extends AbstractBridgeController
         $message->url = isset($body['url']) ? mb_substr((string) $body['url'], 0, 255) : null;
         $payload = $body['payload'] ?? null;
         $message->payload = is_array($payload) ? $payload : [];
+        // Record who queued this message (for audit). Machine calls leave it null.
+        if (! $claimsMachine) {
+            $actor = RequestUtil::getActor($request);
+            $message->actor_id = $actor->id;
+        }
         $message->save();
 
         return $this->json([

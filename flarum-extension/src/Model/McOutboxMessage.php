@@ -14,6 +14,8 @@ use Flarum\Database\AbstractModel;
  * @property string $body
  * @property string $url
  * @property array  $payload
+ * @property string $target_uuid
+ * @property int    $actor_id
  * @property \Carbon\Carbon $delivered_at
  */
 class McOutboxMessage extends AbstractModel
@@ -31,6 +33,8 @@ class McOutboxMessage extends AbstractModel
         'body',
         'url',
         'payload',
+        'target_uuid',
+        'actor_id',
         'delivered_at',
     ];
 
@@ -45,6 +49,7 @@ class McOutboxMessage extends AbstractModel
     public const TYPE_ANNOUNCEMENT = 'announcement';
     public const TYPE_BROADCAST = 'broadcast';
     public const TYPE_COMMAND = 'command';
+    public const TYPE_BIND_SUCCESS = 'bind_success';
 
     public function toApiPayload(): array
     {
@@ -55,6 +60,8 @@ class McOutboxMessage extends AbstractModel
             'body' => $this->body,
             'url' => $this->url,
             'payload' => $this->payload ?: [],
+            'target_uuid' => $this->target_uuid,
+            'actor_id' => $this->actor_id,
             'created_at' => $this->created_at?->toIso8601String(),
         ];
     }
