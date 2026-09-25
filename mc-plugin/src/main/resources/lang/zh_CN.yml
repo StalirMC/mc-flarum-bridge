@@ -30,6 +30,7 @@ bind-failed-no-code: "&c论坛没有返回绑定码。"
 report-usage: "&c用法：/report <玩家> <原因>"
 report-sent: "&a已举报玩家 &e{target}&a，论坛管理员会尽快处理。"
 report-failed: "&c举报失败：{reason}"
+report-uncertain: "&e论坛没有及时回应，举报&f可能已经提交&e。&7为避免重复，请先不要再次举报。&8({reason})"
 
 # ---- 状态与公告 ----
 status-unreachable: "&c无法连接论坛：{reason}"

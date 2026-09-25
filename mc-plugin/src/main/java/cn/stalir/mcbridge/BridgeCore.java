@@ -478,21 +478,57 @@ public final class BridgeCore {
             String reason,
             String titleTemplate
     ) {
+        String title = renderReportTitle(titleTemplate, reporterName, targetName, reason);
+
+        // One id for both attempts: the forum keys its idempotency on it, so a
+        // retry can never file the same report twice.
+        String reportUid = UUID.randomUUID().toString();
+
         try {
-            client.reportPlayer(
-                    reporterUuid.toString(),
-                    reporterName,
-                    targetName,
-                    reason,
-                    renderReportTitle(titleTemplate, reporterName, targetName, reason),
-                    config.reportTags(),
-                    config.reportActor()
-            );
+            submitReport(reporterUuid, reporterName, targetName, reason, title, reportUid);
 
             return messages.prefixed("report-sent", "target", targetName);
-        } catch (BridgeException exception) {
-            return messages.prefixed("status-unreachable", "reason", exception.getMessage());
+        } catch (BridgeException first) {
+            // A status code means the forum answered, so the outcome is known -
+            // nothing was filed and retrying would only repeat the same error.
+            if (first.statusCode() >= 0) {
+                return messages.prefixed("status-unreachable", "reason", first.getMessage());
+            }
+
+            // No answer at all, which says nothing about whether the forum did the
+            // work: a request that times out client side is very often processed
+            // anyway. Retry once with the same id and let idempotency sort it out.
+            try {
+                submitReport(reporterUuid, reporterName, targetName, reason, title, reportUid);
+
+                return messages.prefixed("report-sent", "target", targetName);
+            } catch (BridgeException second) {
+                // Still nothing. The report may well have been filed by the first
+                // attempt, so this must not read as a plain failure: a player who
+                // believes it failed simply reports again.
+                return messages.prefixed("report-uncertain", "reason", second.getMessage());
+            }
         }
+    }
+
+    private void submitReport(
+            UUID reporterUuid,
+            String reporterName,
+            String targetName,
+            String reason,
+            String title,
+            String reportUid
+    ) throws BridgeException {
+        client.reportPlayer(
+                reporterUuid.toString(),
+                reporterName,
+                targetName,
+                reason,
+                title,
+                config.reportTags(),
+                config.reportActor(),
+                reportUid
+        );
     }
 
     /**

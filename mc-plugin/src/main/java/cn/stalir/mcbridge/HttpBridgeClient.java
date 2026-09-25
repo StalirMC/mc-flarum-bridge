@@ -34,6 +34,13 @@ public final class HttpBridgeClient {
         this.config = config;
         this.http = HttpClient.newBuilder()
                 .connectTimeout(config.requestTimeout())
+                // Pinned to HTTP/1.1 on purpose. Java's client negotiates HTTP/2
+                // through ALPN, and when a proxy or CDN in front of the forum
+                // closes such a connection while a request is in flight the call
+                // can sit there until the timeout expires - intermittently, and
+                // with the server having processed the request anyway. The bridge
+                // makes a handful of small requests; multiplexing buys nothing.
+                .version(HttpClient.Version.HTTP_1_1)
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .build();
     }
@@ -88,7 +95,8 @@ public final class HttpBridgeClient {
             String reason,
             String title,
             List<String> tags,
-            String actor
+            String actor,
+            String reportUid
     ) throws BridgeException {
         JsonObject payload = new JsonObject();
         payload.addProperty("server_key", config.serverKey());
@@ -97,6 +105,9 @@ public final class HttpBridgeClient {
         payload.addProperty("target_name", targetName);
         payload.addProperty("reason", reason);
 
+        // Idempotency key: the forum refuses to file a second report for the same
+        // id, which is what makes a retry after a timeout safe.
+        addIfPresent(payload, "report_uid", reportUid);
         addIfPresent(payload, "title", title);
         addIfPresent(payload, "actor", actor);
 

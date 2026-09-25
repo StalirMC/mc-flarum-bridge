@@ -474,6 +474,7 @@ curl -s -X POST https://forum.kxkl2024.cn/api/mc-bridge/broadcast \
 | `401 Duplicate nonce detected` | 通常意味着请求被重放或代理重复发送 |
 | `403` + Cloudflare 页面 | 关闭该路径的 WAF/挑战 |
 | 游戏内无公告 | 用 `/mcbridge outbox` 看队列；确认 `announcement_tag_ids` 包含该标签 |
+| 游戏内偶尔提示「论坛没有及时回应，举报**可能**已经提交」 | 客户端超时但服务端很可能已处理完。插件已在同一个 `report_uid` 下重试过一次，重复提交也不会产生第二条记录，所以按提示**不要再举报一次**即可。频繁出现时查论坛的 PHP-FPM 是否被占满 / CDN 是否在拖慢 `/api/mc-bridge/*` |
 
 ### 6.1 `composer update` 被 minimum-stability 拒绝
 

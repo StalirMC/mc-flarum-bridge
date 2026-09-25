@@ -23,8 +23,8 @@
  *  10. bind start/status round-trip, sub-directory installs, concurrency
  *  11. player reports: stored when signed and filed as a discussion in the forum
  *      under the report tags, the optional config.yml hints (title, tag list,
- *      author) honoured without ever failing the report, 422 without a reason or
- *      a bad UUID
+ *      author) honoured without ever failing the report, a retry under the same
+ *      report_uid filed only once, 422 without a reason or a bad UUID
  *
  * Every check prints PASS or FAIL; any failure exits with code 1.
  *
@@ -729,6 +729,43 @@ async function checkAgainstMock(mock) {
 
     assertStatus(response, 201, 'the report is still accepted');
     assert(response.json.report_id > 0, 'the report is still stored');
+  });
+
+  await test('a report retried with the same report_uid is filed only once', async () => {
+    const body = {
+      server_key: 'survival',
+      reporter_uuid: REPORTER_UUID,
+      reporter_name: 'Alice',
+      target_name: 'Steve',
+      reason: 'Griefing at spawn',
+      report_uid: '11111111-2222-3333-4444-555555555555',
+    };
+
+    const first = await request(baseUrl, {
+      method: 'POST',
+      path: '/api/mc-bridge/report',
+      body,
+    });
+
+    assertStatus(first, 201, 'the first attempt is filed normally');
+
+    const reportsBefore = mock.store.reports.length;
+    const discussionsBefore = mock.store.discussions.length;
+
+    // Exactly what the plugin does when the forum did not answer in time: it
+    // resends the same report under the same uid. Without the uid this would
+    // file a second report and create a second discussion for one /report.
+    const second = await request(baseUrl, {
+      method: 'POST',
+      path: '/api/mc-bridge/report',
+      body,
+    });
+
+    assertStatus(second, 200, 'the retry is answered from the idempotency record');
+    assertEqual(second.json.duplicate, true, 'the retry is flagged as a duplicate');
+    assertEqual(second.json.report_id, first.json.report_id, 'the same report id comes back');
+    assertEqual(mock.store.reports.length, reportsBefore, 'no second report was stored');
+    assertEqual(mock.store.discussions.length, discussionsBefore, 'no second discussion was created');
   });
 
   await test('a report without a reason is rejected with 422', async () => {

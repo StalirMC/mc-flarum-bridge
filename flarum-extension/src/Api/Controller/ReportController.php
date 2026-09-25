@@ -21,6 +21,15 @@ use Stalir\McBridge\Service\ReportDiscussion;
  */
 class ReportController extends AbstractBridgeController
 {
+    /**
+     * How long a report_uid stays claimed, in seconds.
+     *
+     * Matches the signature nonce window (BridgeCrypto::MAX_SKEW * 2), which is
+     * as long as a client-side retry can realistically arrive after the original
+     * request timed out.
+     */
+    private const IDEMPOTENCY_SECONDS = 600;
+
     public function __construct(
         SettingsRepositoryInterface $settings,
         CacheRepository $cache,
@@ -69,6 +78,29 @@ class ReportController extends AbstractBridgeController
             return $this->fail('reason_required', 422);
         }
 
+        // Idempotency. The plugin retries a report when the forum does not answer
+        // in time, and a client-side timeout says nothing about whether the first
+        // request was processed - in practice it usually was. The uid it sends
+        // makes that retry harmless: the second request reuses the first result
+        // instead of filing the report twice.
+        $reportUid = $this->sanitizeUuid($body['report_uid'] ?? null);
+        $seenKey = $reportUid === null
+            ? null
+            : 'mc-bridge:report:' . hash('sha256', $reportUid);
+
+        if ($seenKey !== null) {
+            $seen = $this->cache->get($seenKey);
+
+            if (is_array($seen)) {
+                return $this->json([
+                    'ok' => true,
+                    'report_id' => $seen['report_id'] ?? null,
+                    'discussion_id' => $seen['discussion_id'] ?? null,
+                    'duplicate' => true,
+                ]);
+            }
+        }
+
         $report = new McReport();
         $report->server_key = $serverKey;
         $report->reporter_uuid = $reporterUuid;
@@ -78,6 +110,15 @@ class ReportController extends AbstractBridgeController
         $report->status = 'pending';
         $report->save();
 
+        if ($seenKey !== null) {
+            // Claimed before the slow half: a retry that arrives while the
+            // discussion is still being created must not file a second report.
+            $this->cache->add($seenKey, [
+                'report_id' => $report->id,
+                'discussion_id' => null,
+            ], self::IDEMPOTENCY_SECONDS);
+        }
+
         // File it where moderators actually work. The report is already on
         // record, so this is best-effort: a problem here is logged and reported
         // as a null discussion_id rather than failing the player's /report.
@@ -86,6 +127,13 @@ class ReportController extends AbstractBridgeController
             'tags' => $this->optionalTokenList($body, 'tags', 100, 10),
             'actor' => $this->optionalToken($body, 'actor', 64),
         ]);
+
+        if ($seenKey !== null) {
+            $this->cache->put($seenKey, [
+                'report_id' => $report->id,
+                'discussion_id' => $discussionId,
+            ], self::IDEMPOTENCY_SECONDS);
+        }
 
         return $this->json([
             'ok' => true,

@@ -31,6 +31,7 @@ bind-failed-no-code: "&cThe forum did not return a binding code."
 report-usage: "&cUsage: /report <player> <reason>"
 report-sent: "&aReported player &e{target}&a. Forum moderators will review it soon."
 report-failed: "&cCould not submit the report: {reason}"
+report-uncertain: "&eThe forum did not answer in time, so the report &fmay already have been filed&e. &7Please do not report again yet. &8({reason})"
 
 # ---- status and announcements ----
 status-unreachable: "&cCannot reach the forum: {reason}"

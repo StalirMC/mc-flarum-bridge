@@ -267,6 +267,12 @@ export function createStore(options = {}) {
     defaultReportTagIds: [4],
     /** Usernames the optional actor hint can resolve to. */
     reportActorsByName: { Moderator: 7, Admin: 1 },
+    /**
+     * report_uid -> { report_id, discussion_id }. The plugin retries a report
+     * whose request timed out, and the forum must answer the retry from this
+     * record instead of filing the report twice.
+     */
+    reportUids: new Map(),
 
     nextOutboxId: 1,
     nextReportId: 1,
@@ -279,6 +285,7 @@ export function createStore(options = {}) {
       store.bindCodes.length = 0;
       store.reports.length = 0;
       store.discussions.length = 0;
+      store.reportUids.clear();
       store.nextOutboxId = 1;
       store.nextReportId = 1;
       store.nextDiscussionId = 1;
@@ -670,6 +677,20 @@ export function createServer(options = {}) {
       return sendError(response, 422, 'reason is required.');
     }
 
+    // Idempotency, mirroring the controller: an optional report_uid that has been
+    // seen already is answered from the record rather than filed again.
+    const reportUid = sanitizeUuid(body.report_uid);
+    const seen = reportUid === null ? undefined : store.reportUids.get(reportUid);
+
+    if (seen !== undefined) {
+      return sendJson(response, 200, {
+        ok: true,
+        report_id: seen.report_id,
+        discussion_id: seen.discussion_id,
+        duplicate: true,
+      });
+    }
+
     const report = store.addReport({
       server_key: serverKey,
       reporter_uuid: reporterUuid,
@@ -689,6 +710,13 @@ export function createServer(options = {}) {
       tagIds: resolveTagHints(body.tags),
       authorId: resolveActorHint(body.actor),
     });
+
+    if (reportUid !== null) {
+      store.reportUids.set(reportUid, {
+        report_id: report.id,
+        discussion_id: discussion.id,
+      });
+    }
 
     return sendJson(response, 201, {
       ok: true,
