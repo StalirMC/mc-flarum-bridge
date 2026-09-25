@@ -259,8 +259,14 @@ export function createStore(options = {}) {
      * just a database row, so the mock models it.
      */
     discussions: [],
-    /** The tag id reports are filed under (found by its slug on a real forum). */
-    reportTagId: 4,
+    /**
+     * Tags reports are filed under, by slug, plus the ids used when the game
+     * server sends no hint of its own (mirrors the forum's own setting).
+     */
+    reportTagsBySlug: { reports: 4, pending: 14 },
+    defaultReportTagIds: [4],
+    /** Usernames the optional actor hint can resolve to. */
+    reportActorsByName: { Moderator: 7, Admin: 1 },
 
     nextOutboxId: 1,
     nextReportId: 1,
@@ -363,9 +369,10 @@ export function createStore(options = {}) {
     fileReportDiscussion(report, options = {}) {
       const discussion = {
         id: store.nextDiscussionId++,
-        title: `[举报] ${report.target_name}`,
+        // The game server may send its own title; otherwise the forum renders one.
+        title: options.title ?? `[举报] ${report.target_name}`,
         report_id: report.id,
-        tag_id: options.tagId ?? store.reportTagId,
+        tag_ids: [...(options.tagIds ?? store.defaultReportTagIds)],
         author_id: options.authorId ?? 1,
       };
 
@@ -671,15 +678,79 @@ export function createServer(options = {}) {
       reason,
     });
 
-    // A stored report is filed as a discussion in the report tag; the real
+    // A stored report is filed as a discussion under the report tags; the real
     // controller does this through the forum's API and reports the new id back.
-    const discussion = store.fileReportDiscussion(report);
+    //
+    // `tags` and `title` are the optional layout hints from the game server's
+    // config.yml: slugs or ids here, and anything that does not resolve falls
+    // back to this mock's own default - exactly like Service\ReportDiscussion.
+    const discussion = store.fileReportDiscussion(report, {
+      title: clampText(body.title, 255)?.trim() || null,
+      tagIds: resolveTagHints(body.tags),
+      authorId: resolveActorHint(body.actor),
+    });
 
     return sendJson(response, 201, {
       ok: true,
       report_id: report.id,
       discussion_id: discussion.id,
     });
+  }
+
+  /**
+   * Turn the hint list into tag ids, dropping anything unknown.
+   *
+   * @returns {number[]|null} null when there was no usable hint at all
+   */
+  function resolveTagHints(hints) {
+    if (!Array.isArray(hints)) {
+      return null;
+    }
+
+    const ids = [];
+
+    for (const hint of hints) {
+      if (typeof hint !== 'string') continue;
+
+      const value = hint.trim();
+      if (value === '') continue;
+
+      const id = /^[0-9]+$/.test(value)
+        ? Number(value)
+        : store.reportTagsBySlug[value];
+
+      if (id !== undefined && !ids.includes(id)) {
+        ids.push(id);
+      }
+    }
+
+    return ids.length > 0 ? ids : null;
+  }
+
+  /**
+   * Turn the optional actor hint into a user id.
+   *
+   * The real controller looks a username up in the users table; the mock only
+   * needs to show that the field is read, so it resolves from a fixed table.
+   *
+   * @returns {number|null} null when there is no usable hint
+   */
+  function resolveActorHint(hint) {
+    if (typeof hint === 'number' && Number.isInteger(hint) && hint > 0) {
+      return hint;
+    }
+
+    if (typeof hint !== 'string') {
+      return null;
+    }
+
+    const value = hint.trim();
+
+    if (/^[0-9]+$/.test(value)) {
+      return Number(value);
+    }
+
+    return store.reportActorsByName[value] ?? null;
   }
 
   // -------------------------------------------------------------------------

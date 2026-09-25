@@ -471,13 +471,50 @@ public final class BridgeCore {
      *
      * Blocking: call it off the main thread.
      */
-    public Component reportPlayer(UUID reporterUuid, String reporterName, String targetName, String reason) {
+    public Component reportPlayer(
+            UUID reporterUuid,
+            String reporterName,
+            String targetName,
+            String reason,
+            String titleTemplate
+    ) {
         try {
-            client.reportPlayer(reporterUuid.toString(), reporterName, targetName, reason);
+            client.reportPlayer(
+                    reporterUuid.toString(),
+                    reporterName,
+                    targetName,
+                    reason,
+                    renderReportTitle(titleTemplate, reporterName, targetName, reason),
+                    config.reportTags(),
+                    config.reportActor()
+            );
+
             return messages.prefixed("report-sent", "target", targetName);
         } catch (BridgeException exception) {
             return messages.prefixed("status-unreachable", "reason", exception.getMessage());
         }
+    }
+
+    /**
+     * Fill this plugin's own tokens in the report title.
+     *
+     * PlaceholderAPI {@code %placeholders%} were already expanded in game - they
+     * need the live player, so the command does that on the main thread before
+     * handing the template over. Only the plain tokens are left here.
+     *
+     * A template that renders to nothing returns null, which drops the field from
+     * the request so the forum renders the title from its own setting rather than
+     * posting an untitled discussion.
+     */
+    private String renderReportTitle(String template, String reporter, String target, String reason) {
+        String rendered = template
+                .replace("{target}", target)
+                .replace("{reporter}", reporter)
+                .replace("{reason}", reason)
+                .replace("{server}", config.serverName())
+                .trim();
+
+        return rendered.isEmpty() ? null : rendered;
     }
 
     /** Local counters, no I/O: safe to build on any thread. */

@@ -62,8 +62,20 @@ public final class ReportCommand implements CommandExecutor {
         UUID reporterUuid = player.getUniqueId();
         String reporterName = player.getName();
 
+        // PlaceholderAPI needs the live player and its expansions carry no
+        // threading guarantees, so %placeholders% are expanded here on the main
+        // thread. The plugin's own {tokens} are filled in off-thread, together
+        // with the rest of the report.
+        String titleTemplate = config.reportTitleFormat();
+
+        if (PlaceholderApiHook.available()) {
+            titleTemplate = PlaceholderApiHook.resolve(player, titleTemplate);
+        }
+
+        String resolvedTemplate = titleTemplate;
+
         core.platform().runAsync(() -> {
-            Component reply = core.reportPlayer(reporterUuid, reporterName, targetName, reason);
+            Component reply = core.reportPlayer(reporterUuid, reporterName, targetName, reason, resolvedTemplate);
 
             core.platform().runSync(() -> player.sendMessage(reply));
         });

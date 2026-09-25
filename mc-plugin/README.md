@@ -89,6 +89,19 @@ security:
 
 game:
   prompt-unbound: true          # 未绑定玩家进服时提示一次怎么绑定（论坛不可达时保持沉默）
+
+report:
+  # /report 在论坛创建的讨论的标题模板。
+  #   {target} {reporter} {reason} {server}  由插件填充
+  #   %...%                                  PlaceholderAPI（装了才有；没装则原样保留）
+  # 留空 = 让论坛按自己的模板渲染。
+  title-format: "[举报] {target}（由 {reporter} 提交）"
+  # 举报讨论归入哪些论坛标签，逗号分隔，每项可填 slug（如 reports）或标签 ID，
+  # 例如 tags: "reports,pending"。注意 flarum/tags 对主/次标签数量有限制，
+  # 超出时发布账号需要 bypassTagCounts 权限。留空 = 用论坛侧设置。
+  tags: ""
+  # 举报讨论以哪个论坛账号发布，可填用户名或用户 ID。留空 = 用论坛侧设置。
+  actor: ""
 ```
 
 ## 平台能力对照
@@ -99,6 +112,7 @@ game:
 | 死亡 / 成就事件 | ✅ | — 代理看不到 |
 | 论坛公告广播 | ✅ | ✅ |
 | `/bind`、`/mcbridge` | ✅ | ✅ |
+| `/report` 举报到论坛 | ✅ 标题支持 PlaceholderAPI | — 代理没有游戏内举报 |
 
 所有请求都由共享核心生成，三个平台的报文逐字节一致，因此论坛侧无需区分平台；
 平台名会出现在 `/mcbridge stats` 与启动日志里。

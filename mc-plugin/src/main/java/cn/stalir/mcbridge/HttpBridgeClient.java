@@ -15,6 +15,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -71,7 +72,24 @@ public final class HttpBridgeClient {
         return post("/broadcast", payload);
     }
 
-    public JsonObject reportPlayer(String reporterUuid, String reporterName, String targetName, String reason) throws BridgeException {
+    /**
+     * Submit a player report.
+     *
+     * {@code title}, {@code tags} and {@code actor} are layout hints taken from
+     * config.yml. Anything left blank is omitted from the request, and the forum
+     * then falls back to its own settings - so an older forum simply ignores the
+     * fields it does not know, and a minimal client can still send just the
+     * report itself.
+     */
+    public JsonObject reportPlayer(
+            String reporterUuid,
+            String reporterName,
+            String targetName,
+            String reason,
+            String title,
+            List<String> tags,
+            String actor
+    ) throws BridgeException {
         JsonObject payload = new JsonObject();
         payload.addProperty("server_key", config.serverKey());
         payload.addProperty("reporter_uuid", reporterUuid);
@@ -79,7 +97,28 @@ public final class HttpBridgeClient {
         payload.addProperty("target_name", targetName);
         payload.addProperty("reason", reason);
 
+        addIfPresent(payload, "title", title);
+        addIfPresent(payload, "actor", actor);
+
+        // Sent as an array: the forum resolves each entry (slug or id) and files
+        // the discussion under all of the ones that exist.
+        if (tags != null && !tags.isEmpty()) {
+            JsonArray list = new JsonArray();
+
+            for (String tag : tags) {
+                list.add(tag);
+            }
+
+            payload.add("tags", list);
+        }
+
         return post("/report", payload);
+    }
+
+    private static void addIfPresent(JsonObject payload, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            payload.addProperty(key, value);
+        }
     }
 
 

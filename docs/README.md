@@ -392,26 +392,51 @@ curl -s -X POST https://forum.kxkl2024.cn/api/mc-bridge/link \
 **管理员在论坛处理，不在数据库里处理。** 一条举报会产生两样东西：
 
 1. `mc_reports` 表里的一行记录（状态 `pending`，用于留档）；
-2. **论坛里的一条讨论**，挂上举报标签，标题形如 `[举报] Steve（由 Alex 提交）`，
+2. **论坛里的一条讨论**，挂上举报标签（**可以挂多个**），标题如 `[举报] Steve（由 Alex 提交）`，
    正文写明被举报人、举报人、服务器、时间、记录编号与举报原因。
 
 所以管理员只要打开举报标签就能看到全部待处理举报，不需要查库。
 
+标题、标签、发布账号都可以自定义，而且**两侧都能配**：游戏侧 `config.yml` 的值优先，
+留空时用论坛侧设置兜底。
+
+**游戏侧**（`plugins/McBridge/config.yml`，改完 `/mcbridge reload`）：
+
+```yaml
+report:
+  # {target} {reporter} {reason} {server} 由插件填充；%...% 交给 PlaceholderAPI
+  title-format: "[举报] {target}（由 {reporter} 提交）"
+  # 逗号分隔，每项是 slug 或标签 ID
+  tags: "reports,pending"
+  actor: ""            # 用户名或用户 ID
+```
+
+> **PlaceholderAPI**：装了 PlaceholderAPI 与对应扩展时，`title-format` 里的 `%...%`
+> 会以**举报人**的身份展开（如 `%player_name%`）；没装则原样保留。
+> 标题是在**游戏内**渲染好再随举报发给论坛的 —— 论坛端拿不到游戏占位符。
+> `/report` 只在 Paper/Folia 上存在（代理没有游戏内举报），因此这一项只在这两个平台生效。
+
+**论坛侧**（`php flarum mc-bridge:config ...`）：
+
 | 设置 | 默认行为 | 修改方式 |
 |------|---------|---------|
-| 举报标签 | 先读设置；否则按 slug `reports` / 名称 `举报` 查找；装了 `flarum/tags` 但一个都没有时**自动创建一个次级标签** | `php flarum mc-bridge:config --report-tag=4` |
-| 发布账号 | **最早的管理员**（普通成员未必有在举报标签下发帖的权限；用举报人自己的账号还会把举报人身份公开） | `php flarum mc-bridge:config --report-actor=3` |
-| 恢复自动 | 上面两个参数传空值即可回到自动识别 | `--report-tag= --report-actor=` |
+| 举报标签 | 先读设置；否则按 slug `reports` / 名称 `举报` 查找；装了 `flarum/tags` 但一个都没有时**自动创建一个次级标签** | `--report-tags=4,14` |
+| 发布账号 | **最早的管理员**（普通成员未必有在举报标签下发帖的权限；用举报人自己的账号还会把举报人身份公开） | `--report-actor=3` |
+| 标题模板 | `[举报] {target}（由 {reporter} 提交）`，仅在游戏侧没有发来标题时使用 | `--report-title="[举报] {target}"` |
+| 恢复自动 | 传空值即可回到自动识别 | `--report-tags= --report-actor= --report-title=` |
 
 首次举报时解析到的账号与标签会**写回设置**，因此 `php flarum mc-bridge:config --show`
-显示的就是真实生效值。
+显示的就是真实生效值 —— 这一步也是必需的：公告同步正是靠它识别举报讨论（见下）。
+
+> **多标签的注意点**：`flarum/tags` 限制一条讨论能挂多少个主标签 / 次标签
+> （后台 → 标签 → 设置）。超出限制时创建会失败，失败原因写进 Flarum 日志；
+> 要么少挂一个，要么给发布账号 `bypassTagCounts` 权限。
 
 > **举报不会被广播进游戏。** 举报讨论含有举报人身份，因此插件在同步公告时会跳过
-> 带举报标签的讨论，以及由举报发布账号发起的讨论 —— 这两条是独立的兜底，任一条生效即可。
+> 带**任一**举报标签的讨论，以及由举报发布账号发起的讨论 —— 这两条是独立的兜底，任一条生效即可。
 >
-> 讨论创建是**尽力而为**：举报已经入库，论坛侧若出错（例如没人有权限在举报标签下发帖），
-> 玩家的 `/report` 仍然返回成功，失败原因写进 Flarum 日志，接口响应里的
-> `discussion_id` 为 `null`。
+> 讨论创建是**尽力而为**：举报已经入库，论坛侧若出错（标签超限、没人有权限发帖等），
+> 玩家的 `/report` 仍然返回成功，`discussion_id` 为 `null`。
 
 ## 4. 从 Flarum 推送到游戏
 

@@ -43,3 +43,33 @@ game:
   announce-body-format: "&7{body}"
   # Tell a player who has not linked a forum account how to do it when they join.
   prompt-unbound: true
+
+report:
+  # Title of the discussion that /report creates on the forum.
+  #
+  # Two kinds of placeholder:
+  #   {target} {reporter} {reason} {server}  filled in by this plugin
+  #   %...%                                  PlaceholderAPI, if that plugin and
+  #                                          the matching expansion are
+  #                                          installed; otherwise left as typed
+  #
+  # Leave empty to let the forum render the title itself
+  # (php flarum mc-bridge:config --report-title).
+  title-format: "[举报] {target}（由 {reporter} 提交）"
+
+  # Which forum tags the report discussion is filed under, comma separated; each
+  # entry is a slug ("reports") or a numeric tag id. Example:
+  #   tags: "reports,pending"
+  #
+  # flarum/tags limits how many primary/secondary tags a discussion may carry
+  # (Admin -> Tags -> Settings). The report author needs the "bypassTagCounts"
+  # permission if the list exceeds those limits.
+  #
+  # Empty = use the forum's own setting
+  # (php flarum mc-bridge:config --report-tags).
+  tags: ""
+
+  # Which forum account the report is published as: a username or a numeric user
+  # id. Empty = use the forum's own setting
+  # (php flarum mc-bridge:config --report-actor).
+  actor: ""

@@ -15,6 +15,9 @@ public final class BridgeConfig {
 
     public static final int MIN_SECRET_LENGTH = 32;
 
+    /** Default title of the discussion a player report creates on the forum. */
+    public static final String DEFAULT_REPORT_TITLE_FORMAT = "[举报] {target}（由 {reporter} 提交）";
+
     private final String language;
     private final String forumUrl;
     private final String apiPrefix;
@@ -26,6 +29,9 @@ public final class BridgeConfig {
     private final String announceFormat;
     private final String announceBodyFormat;
     private final boolean promptUnbound;
+    private final String reportTitleFormat;
+    private final List<String> reportTags;
+    private final String reportActor;
     private final List<String> problems;
 
     private BridgeConfig(
@@ -40,6 +46,9 @@ public final class BridgeConfig {
             String announceFormat,
             String announceBodyFormat,
             boolean promptUnbound,
+            String reportTitleFormat,
+            List<String> reportTags,
+            String reportActor,
             List<String> problems
     ) {
         this.language = language;
@@ -53,6 +62,9 @@ public final class BridgeConfig {
         this.announceFormat = announceFormat;
         this.announceBodyFormat = announceBodyFormat;
         this.promptUnbound = promptUnbound;
+        this.reportTitleFormat = reportTitleFormat;
+        this.reportTags = reportTags;
+        this.reportActor = reportActor;
         this.problems = problems;
     }
 
@@ -98,6 +110,20 @@ public final class BridgeConfig {
 
         int outboxPoll = Math.max(5, config.getInt("sync.outbox-poll-interval-seconds", 20));
 
+        // Report layout. The title template is expanded by the plugin because it
+        // may contain PlaceholderAPI placeholders, which only exist server side;
+        // tag and actor are hints the forum resolves and validates - a hint it
+        // cannot resolve is logged and ignored there rather than failing the
+        // player's report.
+        String reportTitleFormat = config.getString("report.title-format", DEFAULT_REPORT_TITLE_FORMAT).trim();
+
+        if (reportTitleFormat.isEmpty()) {
+            reportTitleFormat = DEFAULT_REPORT_TITLE_FORMAT;
+        }
+
+        List<String> reportTagList = splitList(config.getString("report.tags", ""), 100, 10);
+        String reportActor = cap(config.getString("report.actor", "").trim(), 64);
+
         BridgeConfig built = new BridgeConfig(
                 language,
                 forumUrl,
@@ -110,6 +136,9 @@ public final class BridgeConfig {
                 config.getString("game.announce-format", "&e[论坛] &f{title}"),
                 config.getString("game.announce-body-format", "&7{body}"),
                 config.getBoolean("game.prompt-unbound", true),
+                reportTitleFormat,
+                reportTagList,
+                reportActor,
                 Collections.unmodifiableList(problems)
         );
 
@@ -118,6 +147,38 @@ public final class BridgeConfig {
         }
 
         return built;
+    }
+
+    /** Trim a configured value to the length the forum will accept. */
+    private static String cap(String value, int max) {
+        return value.length() <= max ? value : value.substring(0, max);
+    }
+
+    /**
+     * Split a comma separated config value into at most {@code maxItems} entries.
+     *
+     * Used for the report tag list. Each entry is resolved by the forum, so one
+     * that does not exist there is logged and skipped instead of breaking the
+     * report.
+     */
+    private static List<String> splitList(String raw, int maxLength, int maxItems) {
+        List<String> items = new ArrayList<>();
+
+        for (String part : raw.split(",")) {
+            String trimmed = part.trim();
+
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+
+            items.add(cap(trimmed, maxLength));
+
+            if (items.size() == maxItems) {
+                break;
+            }
+        }
+
+        return Collections.unmodifiableList(items);
     }
 
     /** True when the plugin has everything it needs to talk to the forum. */
@@ -181,5 +242,26 @@ public final class BridgeConfig {
     /** Whether an unlinked player is told how to link an account when they join. */
     public boolean promptUnbound() {
         return promptUnbound;
+    }
+
+    /**
+     * Template for the report discussion title.
+     *
+     * May contain this plugin's own tokens ({@code {target}} and friends) and
+     * PlaceholderAPI {@code %placeholders%}; the latter are expanded in game,
+     * before the report is sent.
+     */
+    public String reportTitleFormat() {
+        return reportTitleFormat;
+    }
+
+    /** Tag slugs or ids for the report discussion; empty means the forum decides. */
+    public List<String> reportTags() {
+        return reportTags;
+    }
+
+    /** Forum username or id the report is published as; empty means the forum decides. */
+    public String reportActor() {
+        return reportActor;
     }
 }

@@ -86,24 +86,44 @@ class QueueAnnouncement
      */
     private function isModerationDiscussion($discussion, int $authorId): bool
     {
-        $reportActorId = (int) $this->settings->get(ReportDiscussion::ACTOR_SETTING, '');
-
-        if ($reportActorId > 0 && $authorId === $reportActorId) {
+        if (in_array($authorId, $this->settingIds(ReportDiscussion::ACTOR_SETTING), true)) {
             return true;
         }
 
-        $reportTagId = (int) $this->settings->get(ReportDiscussion::TAG_SETTING, '');
+        $reportTagIds = $this->settingIds(ReportDiscussion::TAGS_SETTING);
 
-        if ($reportTagId <= 0) {
+        if ($reportTagIds === []) {
             return false;
         }
 
         try {
-            return $discussion->tags()->where('id', $reportTagId)->exists();
+            // Any of them is enough: a report is filed under the whole list, and a
+            // moderator may add or remove one afterwards.
+            return $discussion->tags()->whereIn('id', $reportTagIds)->exists();
         } catch (\Throwable) {
             // flarum/tags is not installed.
             return false;
         }
+    }
+
+    /**
+     * Read a comma separated id setting as a list of positive integers.
+     *
+     * @return array<int, int>
+     */
+    private function settingIds(string $key): array
+    {
+        $ids = [];
+
+        foreach (explode(',', (string) $this->settings->get($key, '')) as $part) {
+            $part = trim($part);
+
+            if ($part !== '' && ctype_digit($part) && (int) $part > 0) {
+                $ids[] = (int) $part;
+            }
+        }
+
+        return $ids;
     }
 
     /**

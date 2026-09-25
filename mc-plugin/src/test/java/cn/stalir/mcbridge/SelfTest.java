@@ -76,6 +76,10 @@ public final class SelfTest {
         check("security.secret parses as empty", "", config.getString("security.secret", "missing"));
         check("sync.outbox-poll-interval-seconds", 20, config.getInt("sync.outbox-poll-interval-seconds", 0));
         check("game.announce-format", "&e[论坛] &f{title}", config.getString("game.announce-format", ""));
+        check("report.title-format keeps its tokens",
+                "[举报] {target}（由 {reporter} 提交）", config.getString("report.title-format", ""));
+        check("report.tags parses as empty", "", config.getString("report.tags", "missing"));
+        check("report.actor parses as empty", "", config.getString("report.actor", "missing"));
 
         // Unknown keys must come back as the caller's fallback, never as null.
         check("missing key falls back", "fallback", config.getString("nope.nothing", "fallback"));
@@ -172,6 +176,25 @@ public final class SelfTest {
         check("server key is read", "survival", config.serverKey());
         check("outbox poll interval", 20, config.outboxPollIntervalSeconds());
         check("announce body format", "&7{body}", config.announceBodyFormat());
+        check("report title format", "[举报] {target}（由 {reporter} 提交）", config.reportTitleFormat());
+        check("no report tags by default (the forum decides)", true, config.reportTags().isEmpty());
+        check("report actor is empty by default (the forum decides)", "", config.reportActor());
+
+        // The tag list is split on commas, trimmed, and keeps its order.
+        Yaml multiTag = Yaml.parse(text
+                .replace("secret: \"\"", "secret: \"" + secret + "\"")
+                .replace("tags: \"\"", "tags: \"reports, 5 ,,\""));
+        BridgeConfig tagged = BridgeConfig.from(multiTag, platform.log(), messages);
+        check("report tags are split, trimmed and ordered",
+                "[reports, 5]", tagged.reportTags().toString());
+
+        // A blank template must fall back rather than producing untitled reports.
+        Yaml blankTitle = Yaml.parse(text
+                .replace("secret: \"\"", "secret: \"" + secret + "\"")
+                .replace("title-format: \"[举报] {target}（由 {reporter} 提交）\"", "title-format: \"\""));
+        BridgeConfig defaulted = BridgeConfig.from(blankTitle, platform.log(), messages);
+        check("a blank report title format falls back to the built-in default",
+                BridgeConfig.DEFAULT_REPORT_TITLE_FORMAT, defaulted.reportTitleFormat());
 
         // A too short secret must be reported.
         Yaml shortSecret = Yaml.parse(text.replace("secret: \"\"", "secret: \"tooshort\""));

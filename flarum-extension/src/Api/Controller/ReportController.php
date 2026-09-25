@@ -81,13 +81,103 @@ class ReportController extends AbstractBridgeController
         // File it where moderators actually work. The report is already on
         // record, so this is best-effort: a problem here is logged and reported
         // as a null discussion_id rather than failing the player's /report.
-        $discussionId = $this->discussions->create($report);
+        $discussionId = $this->discussions->create($report, [
+            'title' => $this->optionalText($body, 'title', 255),
+            'tags' => $this->optionalTokenList($body, 'tags', 100, 10),
+            'actor' => $this->optionalToken($body, 'actor', 64),
+        ]);
 
         return $this->json([
             'ok' => true,
             'report_id' => $report->id,
             'discussion_id' => $discussionId,
         ], 201);
+    }
+
+    /**
+     * Optional free-text field from the game server, trimmed.
+     *
+     * Returns null for anything absent, blank or not a string, which is how the
+     * layout hints stay optional: a malformed one degrades the discussion layout
+     * instead of costing the player their report.
+     */
+    private function optionalText(array $body, string $key, int $maxLength): ?string
+    {
+        $value = $body[$key] ?? null;
+
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $value = trim($value);
+
+        return $value === '' ? null : mb_substr($value, 0, $maxLength);
+    }
+
+    /**
+     * Optional list of identifiers: the tag slugs or ids the report is filed
+     * under.
+     *
+     * Anything that is not a string, or that contains a character a slug or a tag
+     * name cannot, is dropped here rather than handed to the resolver.
+     *
+     * @return array<int, string>
+     */
+    private function optionalTokenList(array $body, string $key, int $maxLength, int $maxItems): array
+    {
+        $value = $body[$key] ?? null;
+
+        if (! is_array($value)) {
+            return [];
+        }
+
+        $items = [];
+
+        foreach ($value as $entry) {
+            if (! is_string($entry)) {
+                continue;
+            }
+
+            $entry = trim($entry);
+
+            if ($entry === '' || ! $this->isToken($entry)) {
+                continue;
+            }
+
+            $items[] = mb_substr($entry, 0, $maxLength);
+
+            if (count($items) === $maxItems) {
+                break;
+            }
+        }
+
+        return $items;
+    }
+
+    /**
+     * Optional identifier field: a tag slug, a username or a numeric id.
+     *
+     * Anything that cannot be one of those shapes is dropped here rather than
+     * handed to the resolver, so a stray quote or newline never reaches a
+     * database query.
+     */
+    private function optionalToken(array $body, string $key, int $maxLength): ?string
+    {
+        $value = $this->optionalText($body, $key, $maxLength);
+
+        return $value !== null && $this->isToken($value) ? $value : null;
+    }
+
+    /**
+     * A tag slug, a tag name, a username or a numeric id.
+     *
+     * Letters, digits, dots, dashes, underscores and spaces only - which is every
+     * shape a slug, a Flarum username or an id can take, and nothing that would
+     * need escaping anywhere it is used.
+     */
+    private function isToken(string $value): bool
+    {
+        return preg_match('/^[\p{L}\p{N}._\- ]+$/u', $value) === 1;
     }
 
     private function sanitizeUuid(mixed $uuid): ?string

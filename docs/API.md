@@ -228,6 +228,17 @@ php flarum mc-bridge:selftest --url=...    # 全链路自检
 - `target_name` 与 `reason` 必填。
 - `reason` 最长 1000 字符。
 
+**可选字段**（游戏侧 `config.yml` 的 `report:` 段随请求发来；全部可省略）：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `title` | string | 讨论标题。由插件在**游戏内**渲染，因此可以包含 PlaceholderAPI 的输出。缺省时论坛按自己的模板渲染 |
+| `tags` | string[] | 讨论归入哪些标签，每项是 slug 或标签 ID（最多 10 项）。缺省时用论坛设置 |
+| `actor` | string | 以哪个论坛账号发布，填用户名或用户 ID。缺省时用论坛设置 |
+
+三者都是**提示**：无法解析的项会被记进 Flarum 日志并跳过，**不会**让这次举报失败 ——
+举报本身已经入库，玩家不该因为论坛侧的配置笔误看到 500。
+
 响应 `201`：
 
 ```json
@@ -237,7 +248,7 @@ php flarum mc-bridge:selftest --url=...    # 全链路自检
 举报会做两件事：
 
 1. **落库**到 `mc_reports` 表，初始状态 `pending`（留档与审计）。
-2. **发一条讨论**到论坛的举报标签下，标题形如 `[举报] Steve（由 Alex 提交）`，
+2. **发一条讨论**到论坛的举报标签下（可挂多个），标题如 `[举报] Steve（由 Alex 提交）`，
    正文列出被举报人、举报人、服务器、时间、记录编号与举报原因。
 
 讨论是通过 Flarum 自己的 JSON:API 管道创建的（和用户在论坛发帖走同一条路径），
@@ -245,14 +256,18 @@ php flarum mc-bridge:selftest --url=...    # 全链路自检
 
 | 行为 | 说明 |
 |------|------|
-| 发布账号 | 默认取**最早的管理员**；可用 `mc-bridge:config --report-actor=<用户ID>` 指定 |
-| 举报标签 | 默认先读设置，其次按 slug `reports` / 名称 `举报` 查找；找不到且装了 `flarum/tags` 时自动创建（次级标签）。可用 `--report-tag=<标签ID>` 指定 |
-| 自配置 | 首次使用时解析到的账号与标签会写回设置，因此 `--show` 看到的是真实生效值 |
-| 失败处理 | 讨论创建是**尽力而为**：举报已经入库，论坛侧出错不会让玩家的 `/report` 变成 500。失败会写进 Flarum 日志，响应里的 `discussion_id` 为 `null` |
+| 发布账号 | 请求里的 `actor` 优先；否则用设置；否则取**最早的管理员**（`--report-actor=<用户ID>`） |
+| 举报标签 | 请求里的 `tags` 优先；否则用设置；否则按 slug `reports` / 名称 `举报` 查找；都没有且装了 `flarum/tags` 时自动创建一个次级标签（`--report-tags=4,14`） |
+| 标题 | 请求里的 `title` 优先；否则按设置里的模板渲染（`--report-title="..."`） |
+| 自配置 | 实际生效的账号与标签会**写回设置**，因此 `--show` 看到的是真实值 |
+| 失败处理 | 讨论创建是**尽力而为**：举报已经入库，论坛侧出错不会让玩家的 `/report` 变成 500。失败写进 Flarum 日志，响应里的 `discussion_id` 为 `null` |
 | 不会广播 | 举报讨论永远不会被推送到游戏（见下） |
 
-> **不会进游戏**：`QueueAnnouncement` 会跳过举报讨论 —— 只要它带有举报标签，
+> **不会进游戏**：`QueueAnnouncement` 会跳过举报讨论 —— 只要它带有**任一**举报标签，
 > 或作者是举报发布账号。否则举报内容（含举报人身份）会被广播给所有在线玩家。
+>
+> 注意 `flarum/tags` 对一条讨论能挂的主/次标签数量有限制，超出时那次创建会失败；
+> 失败原因会写进 Flarum 日志。
 
 `discussion_id` 在论坛侧创建失败时为 `null`；调用方可以忽略它。
 
@@ -358,11 +373,12 @@ payload 里看到它们；游客的响应里根本不包含这些字段（不是
 | `php flarum mc-bridge:secret` | 生成并保存新的共享密钥 |
 | `php flarum mc-bridge:secret --show` | 打印当前密钥 |
 | `php flarum mc-bridge:secret <值>` | 写入指定密钥（至少 32 字符） |
-| `php flarum mc-bridge:config --show` | 查看公告标签过滤、回复同步、保留天数、输出语言、举报标签与举报发布账号 |
+| `php flarum mc-bridge:config --show` | 查看公告标签过滤、回复同步、保留天数、输出语言、举报标签、举报发布账号与举报标题模板 |
 | `php flarum mc-bridge:config --locale=en` | 切换输出语言（默认 `zh-Hans`，可选 `en`） |
 | `php flarum mc-bridge:config --tags=1,3` | 只把标签 1、3 的新讨论推送到游戏（空值 = 全部） |
 | `php flarum mc-bridge:config --sync-replies=1` | 连回复也推送 |
-| `php flarum mc-bridge:config --report-tag=4` | 指定举报讨论归入哪个标签（空值 = 自动识别 slug `reports` / 名称 `举报`） |
+| `php flarum mc-bridge:config --report-tags=4,14` | 指定举报讨论归入哪些标签，逗号分隔（空值 = 自动识别 slug `reports` / 名称 `举报`） |
 | `php flarum mc-bridge:config --report-actor=3` | 指定举报讨论以哪个账号发布（空值 = 最早的管理员） |
+| `php flarum mc-bridge:config --report-title="[举报] {target}"` | 游戏侧没发来标题时使用的模板（空值 = 内置默认） |
 | `php flarum mc-bridge:selftest` | 离线自检：密钥、HMAC、表结构、查询、绑定码格式 |
 | `php flarum mc-bridge:selftest --url=https://your.forum` | 追加一次真实的带签名 HTTP 回环请求 |

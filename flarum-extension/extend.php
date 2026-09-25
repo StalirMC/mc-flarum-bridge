@@ -17,6 +17,7 @@ use Stalir\McBridge\Console\SecretCommand;
 use Stalir\McBridge\Console\SelfTestCommand;
 use Stalir\McBridge\Listener\QueueAnnouncement;
 use Stalir\McBridge\Service\BridgeMessages;
+use Stalir\McBridge\Service\ReportDiscussion;
 
 return [
     // ---------------------------------------------------------------------
@@ -137,10 +138,12 @@ return [
         ->default('mc-bridge.announcement_tag_ids', '')
         ->default('mc-bridge.sync_replies', '0')
         ->default('mc-bridge.max_announcement_age_days', '30')
-        // Where a player report is filed and who it is filed as. Both are
-        // resolved automatically on first use (see Service\ReportDiscussion)
-        // and written back, so they are declared here to keep every
-        // mc-bridge.* key discoverable in one place.
-        ->default('mc-bridge.report_tag_id', '')
-        ->default('mc-bridge.report_actor_id', ''),
+        // Where a player report is filed, who it is filed as, and the title used
+        // when the game server does not send one of its own. All three are
+        // resolved automatically on first use (see Service\ReportDiscussion) and
+        // written back, so they are declared here to keep every mc-bridge.* key
+        // discoverable in one place.
+        ->default('mc-bridge.report_tag_ids', '')
+        ->default('mc-bridge.report_actor_id', '')
+        ->default('mc-bridge.report_title_format', ReportDiscussion::DEFAULT_TITLE_FORMAT),
 ];

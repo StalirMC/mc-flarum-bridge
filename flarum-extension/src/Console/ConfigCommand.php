@@ -50,16 +50,23 @@ class ConfigCommand extends AbstractBridgeCommand
                 'Retention window for queued announcements'
             )
             ->addOption(
-                'report-tag',
+                'report-tags',
                 null,
                 InputOption::VALUE_REQUIRED,
-                'Tag id that player reports are filed under (empty = detect the tag by its "reports" slug)'
+                'Comma separated tag ids that player reports are filed under '
+                . '(empty = detect the tag by its "reports" slug)'
             )
             ->addOption(
                 'report-actor',
                 null,
                 InputOption::VALUE_REQUIRED,
                 'User id that report discussions are authored as (empty = the oldest administrator)'
+            )
+            ->addOption(
+                'report-title',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'Title template used when the game server sends none; tokens: {target} {reporter} {reason} {server}'
             );
     }
 
@@ -72,11 +79,11 @@ class ConfigCommand extends AbstractBridgeCommand
             $changed += $this->applyTags();
             $changed += $this->applySyncReplies();
             $changed += $this->applyMaxAge();
-            $changed += $this->applyId(
-                'report-tag',
-                ReportDiscussion::TAG_SETTING,
-                'console.config.report_tag_set',
-                'console.config.report_tag_cleared'
+            $changed += $this->applyIdList(
+                'report-tags',
+                ReportDiscussion::TAGS_SETTING,
+                'console.config.report_tags_set',
+                'console.config.report_tags_cleared'
             );
             $changed += $this->applyId(
                 'report-actor',
@@ -84,6 +91,7 @@ class ConfigCommand extends AbstractBridgeCommand
                 'console.config.report_actor_set',
                 'console.config.report_actor_cleared'
             );
+            $changed += $this->applyReportTitle();
         }
 
         $this->render();
@@ -263,14 +271,103 @@ class ConfigCommand extends AbstractBridgeCommand
         return 1;
     }
 
+    /**
+     * Set or clear a setting that holds a comma separated list of positive ids.
+     *
+     * An empty value means "work it out automatically", which is what
+     * Service\ReportDiscussion does when the key is blank.
+     */
+    private function applyIdList(string $option, string $setting, string $setKey, string $clearKey): int
+    {
+        $raw = $this->option($option);
+
+        if ($raw === null) {
+            return 0;
+        }
+
+        $raw = trim((string) $raw);
+
+        if ($raw === '') {
+            $this->settings->set($setting, '');
+            $this->info($this->messages->get($clearKey));
+
+            return 1;
+        }
+
+        $ids = [];
+
+        foreach (explode(',', $raw) as $part) {
+            $part = trim($part);
+
+            if ($part === '') {
+                continue;
+            }
+
+            if (! ctype_digit($part) || (int) $part <= 0) {
+                $this->error($this->messages->get('console.config.must_be_positive_id', [
+                    'option' => $option,
+                    'value' => $part,
+                ]));
+
+                return 0;
+            }
+
+            $ids[] = (int) $part;
+        }
+
+        if ($ids === []) {
+            $this->error($this->messages->get('console.config.must_be_positive_id', [
+                'option' => $option,
+                'value' => $raw,
+            ]));
+
+            return 0;
+        }
+
+        $unique = array_values(array_unique($ids));
+
+        $this->settings->set($setting, implode(',', $unique));
+        $this->info($this->messages->get($setKey, ['ids' => implode(', #', $unique)]));
+
+        return 1;
+    }
+
+    /**
+     * The report title template is free text rather than an id, so an empty
+     * value means "go back to the built-in default" instead of being invalid.
+     */
+    private function applyReportTitle(): int
+    {
+        $raw = $this->option('report-title');
+
+        if ($raw === null) {
+            return 0;
+        }
+
+        $raw = trim((string) $raw);
+
+        if ($raw === '') {
+            $this->settings->set(ReportDiscussion::TITLE_SETTING, '');
+            $this->info($this->messages->get('console.config.report_title_cleared'));
+
+            return 1;
+        }
+
+        $this->settings->set(ReportDiscussion::TITLE_SETTING, $raw);
+        $this->info($this->messages->get('console.config.report_title_set', ['format' => $raw]));
+
+        return 1;
+    }
+
     private function render(): void
     {
         $secret = (string) $this->settings->get('mc-bridge.secret', '');
         $tags = (string) $this->settings->get('mc-bridge.announcement_tag_ids', '');
         $syncReplies = (string) $this->settings->get('mc-bridge.sync_replies', '0');
         $maxAge = (string) $this->settings->get('mc-bridge.max_announcement_age_days', '30');
-        $reportTag = (string) $this->settings->get(ReportDiscussion::TAG_SETTING, '');
+        $reportTags = (string) $this->settings->get(ReportDiscussion::TAGS_SETTING, '');
         $reportActor = (string) $this->settings->get(ReportDiscussion::ACTOR_SETTING, '');
+        $reportTitle = (string) $this->settings->get(ReportDiscussion::TITLE_SETTING, '');
         $locale = BridgeMessages::resolveLocale($this->settings);
 
         $secretValue = $secret === ''
@@ -297,16 +394,22 @@ class ConfigCommand extends AbstractBridgeCommand
                 $this->messages->get('console.config.value_retention', ['days' => $maxAge]),
             ],
             [
-                $this->messages->get('console.config.label_report_tag'),
-                $reportTag === ''
+                $this->messages->get('console.config.label_report_tags'),
+                $reportTags === ''
                     ? $this->messages->get('console.config.value_report_auto')
-                    : '#' . $reportTag,
+                    : '#' . str_replace(',', ', #', $reportTags),
             ],
             [
                 $this->messages->get('console.config.label_report_actor'),
                 $reportActor === ''
                     ? $this->messages->get('console.config.value_report_auto')
                     : '#' . $reportActor,
+            ],
+            [
+                $this->messages->get('console.config.label_report_title'),
+                $reportTitle === ''
+                    ? $this->messages->get('console.config.value_report_title_default')
+                    : $reportTitle,
             ],
         ];
 

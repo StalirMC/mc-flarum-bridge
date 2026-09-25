@@ -21,8 +21,10 @@
  *   8. outbox: peek=true does not consume, peek=false does
  *   9. bind/start returns an 8-character code from the unambiguous alphabet
  *  10. bind start/status round-trip, sub-directory installs, concurrency
- *  11. player reports: stored when signed and filed as a tagged discussion in the
- *      forum, 422 without a reason or a bad UUID
+ *  11. player reports: stored when signed and filed as a discussion in the forum
+ *      under the report tags, the optional config.yml hints (title, tag list,
+ *      author) honoured without ever failing the report, 422 without a reason or
+ *      a bad UUID
  *
  * Every check prints PASS or FAIL; any failure exits with code 1.
  *
@@ -667,7 +669,66 @@ async function checkAgainstMock(mock) {
       response.json.report_id,
       'the discussion links back to the report'
     );
-    assertEqual(mock.store.discussions[0].tag_id, mock.store.reportTagId, 'filed under the report tag');
+    assertEqual(
+      mock.store.discussions[0].tag_ids.join(','),
+      mock.store.defaultReportTagIds.join(','),
+      'filed under the forum default tags when the plugin sends no hint'
+    );
+    assert(
+      mock.store.discussions[0].title.includes('Steve'),
+      'the forum renders a title mentioning the reported player'
+    );
+  });
+
+  await test('the report layout hints from config.yml are honoured', async () => {
+    const response = await request(baseUrl, {
+      method: 'POST',
+      path: '/api/mc-bridge/report',
+      body: {
+        server_key: 'survival',
+        reporter_uuid: REPORTER_UUID,
+        reporter_name: 'Alice',
+        target_name: 'Steve',
+        reason: 'Griefing at spawn',
+        // Exactly what config.yml report.* sends: the title is already rendered
+        // in game (so it may contain PlaceholderAPI output), the tags are slugs
+        // or ids, and the actor is a username or id.
+        title: '[举报] Steve（由 Alice 提交）',
+        tags: ['reports', 'pending', 'no-such-tag'],
+        actor: 'Moderator',
+      },
+    });
+
+    assertStatus(response, 201, 'report with hints accepted');
+
+    const discussion = mock.store.discussions.at(-1);
+
+    assertEqual(discussion.title, '[举报] Steve（由 Alice 提交）', 'the plugin title is used as is');
+    assertEqual(discussion.tag_ids.join(','), '4,14', 'every resolvable tag is attached');
+    assertEqual(discussion.author_id, 7, 'the actor hint is resolved to that user');
+  });
+
+  await test('a report with nonsense hints still succeeds', async () => {
+    const response = await request(baseUrl, {
+      method: 'POST',
+      path: '/api/mc-bridge/report',
+      body: {
+        server_key: 'survival',
+        reporter_uuid: REPORTER_UUID,
+        reporter_name: 'Alice',
+        target_name: 'Steve',
+        reason: 'Griefing at spawn',
+        // Hints are hints: an unusable one must degrade the layout, never the
+        // player's report. The mock mirrors the controller, which drops anything
+        // that is not a slug-shaped string.
+        title: '',
+        tags: 'reports',
+        actor: 42,
+      },
+    });
+
+    assertStatus(response, 201, 'the report is still accepted');
+    assert(response.json.report_id > 0, 'the report is still stored');
   });
 
   await test('a report without a reason is rejected with 422', async () => {

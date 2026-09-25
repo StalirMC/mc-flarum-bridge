@@ -24,11 +24,20 @@ use Throwable;
  */
 class ReportDiscussion
 {
-    /** Explicit tag id. When empty, the tag is found by slug/name instead. */
-    public const TAG_SETTING = 'mc-bridge.report_tag_id';
+    /** Comma separated tag ids. When empty, tags are detected by slug/name. */
+    public const TAGS_SETTING = 'mc-bridge.report_tag_ids';
 
     /** Explicit author. When empty, the oldest administrator is used. */
     public const ACTOR_SETTING = 'mc-bridge.report_actor_id';
+
+    /**
+     * Title template used when the game server does not send one.
+     *
+     * Tokens: {target} {reporter} {reason} {server}.
+     */
+    public const TITLE_SETTING = 'mc-bridge.report_title_format';
+
+    public const DEFAULT_TITLE_FORMAT = '[举报] {target}（由 {reporter} 提交）';
 
     /** Slug and name used to recognise the report tag automatically. */
     public const TAG_SLUG = 'reports';
@@ -48,12 +57,16 @@ class ReportDiscussion
      * problem here must not turn a recorded report into a 500 for the player who
      * submitted it. The failure is logged instead.
      *
+     * @param  array{title?: string|null, tags?: array<int, string>|null, actor?: string|null}  $overrides
+     *         Layout hints from the game server's config.yml. Whatever is absent
+     *         or cannot be resolved falls back to this forum's own settings, so a
+     *         server that sends nothing behaves exactly as before.
      * @return int|null the new discussion id, or null when it could not be made
      */
-    public function create(McReport $report): ?int
+    public function create(McReport $report, array $overrides = []): ?int
     {
         try {
-            return $this->dispatch($report);
+            return $this->dispatch($report, $overrides);
         } catch (Throwable $exception) {
             $this->log->error(
                 '[mc-bridge] could not turn a player report into a forum discussion',
@@ -68,9 +81,9 @@ class ReportDiscussion
         }
     }
 
-    private function dispatch(McReport $report): ?int
+    private function dispatch(McReport $report, array $overrides): ?int
     {
-        $actor = $this->actor();
+        $actor = $this->actor($overrides['actor'] ?? null);
 
         if ($actor === null) {
             $this->log->warning(
@@ -81,48 +94,61 @@ class ReportDiscussion
             return null;
         }
 
-        $tag = $this->tag();
+        $tags = $this->tags($overrides['tags'] ?? null);
 
-        // Remember what was resolved. Without this the auto-detected tag would
-        // exist only in memory, and QueueAnnouncement - which has to decide
-        // whether a discussion is moderation material - would have nothing to
-        // match on and would broadcast the report into in-game chat. Writing the
-        // values also makes `mc-bridge:config --show` tell the truth, and an
-        // admin can still point either one somewhere else at any time.
-        $this->remember(self::ACTOR_SETTING, (int) $actor->id);
+        // Remember what is actually in use. This is not cosmetic: the announcement
+        // listener decides whether a discussion is moderation material from these
+        // two settings, so a value that only existed for one request would let the
+        // report - and the reporter's name - be broadcast into in-game chat.
+        $this->rememberIds(self::ACTOR_SETTING, [(int) $actor->id]);
+        $this->rememberIds(self::TAGS_SETTING, array_map(
+            static fn (Tag $tag) => (int) $tag->id,
+            $tags
+        ));
 
-        if ($tag !== null) {
-            $this->remember(self::TAG_SETTING, (int) $tag->id);
+        // The game server's title wins when it sends one: it may contain
+        // PlaceholderAPI values that only exist in game.
+        $title = trim((string) ($overrides['title'] ?? ''));
+
+        if ($title === '') {
+            $title = $this->renderTitle($report);
         }
 
         $data = [
             'type' => 'discussions',
             'attributes' => [
-                'title' => $this->title($report),
+                'title' => $title,
                 'content' => $this->content($report),
             ],
         ];
 
-        if ($tag !== null) {
-            // The tags resource is only present when flarum/tags is enabled, and
-            // sending an unknown relationship would fail validation, so the key
-            // is only added when a tag was actually resolved.
+        if ($tags !== []) {
+            // The tags resource only exists when flarum/tags is enabled, and an
+            // unknown relationship fails validation, so the key is only added
+            // when at least one tag was resolved.
+            //
+            // Note that flarum/tags enforces how many primary and secondary tags a
+            // discussion may carry. Exceeding that limit makes the create call
+            // throw, which is logged below with the way out.
             $data['relationships'] = [
                 'tags' => [
-                    'data' => [
-                        ['type' => 'tags', 'id' => (string) $tag->id],
-                    ],
+                    'data' => array_map(
+                        static fn (Tag $tag) => ['type' => 'tags', 'id' => (string) $tag->id],
+                        $tags
+                    ),
                 ],
             ];
 
-            if ($actor->cannot('startDiscussion', $tag)) {
-                $this->log->error(
-                    '[mc-bridge] the report author may not start discussions in the report tag, ' .
-                    'so the discussion was not created',
-                    ['tag_id' => $tag->id, 'user_id' => $actor->id]
-                );
+            foreach ($tags as $tag) {
+                if ($actor->cannot('startDiscussion', $tag)) {
+                    $this->log->error(
+                        '[mc-bridge] the report author may not start discussions in every report ' .
+                        'tag, so the discussion was not created',
+                        ['tag_id' => $tag->id, 'user_id' => $actor->id]
+                    );
 
-                return null;
+                    return null;
+                }
             }
         }
 
@@ -140,11 +166,29 @@ class ReportDiscussion
      * Who the report discussion is filed as.
      *
      * A privileged account is required: a member may not be allowed to start a
-     * discussion in the report tag, and filing the report as the reporter would
-     * publish their identity to everyone who can read that tag.
+     * discussion in the report tags, and filing the report as the reporter would
+     * publish their identity to everyone who can read them.
+     *
+     * @param  string|null  $hint  username or id from the game server's config.yml
      */
-    private function actor(): ?User
+    private function actor(?string $hint): ?User
     {
+        if ($hint !== null) {
+            $user = ctype_digit($hint)
+                ? User::find((int) $hint)
+                : User::where('username', $hint)->first();
+
+            if ($user !== null) {
+                return $user;
+            }
+
+            $this->log->warning(
+                '[mc-bridge] the report author configured on the game server does not exist on this ' .
+                'forum; falling back to the setting here',
+                ['actor' => $hint]
+            );
+        }
+
         $configured = (int) $this->settings->get(self::ACTOR_SETTING, '');
 
         if ($configured > 0) {
@@ -164,40 +208,63 @@ class ReportDiscussion
     }
 
     /**
-     * The tag every report is filed under.
+     * Every tag the report is filed under, in the order they should appear.
      *
-     * The explicit setting wins; otherwise a tag with the conventional slug is
-     * adopted, which is how the tag on an existing forum gets used without any
-     * configuration. When flarum/tags is enabled but no report tag exists yet,
-     * one is created: discussions require at least one tag unless the actor may
-     * bypass tag counts, so without it the report could not be filed at all.
+     * The game server's hints win; then this forum's own setting; otherwise a tag
+     * with the conventional slug is adopted, which is how the tag on an existing
+     * forum gets used without any configuration. When flarum/tags is enabled but
+     * no report tag exists at all, one is created: discussions require at least
+     * one tag unless the actor may bypass tag counts, so without it the report
+     * could not be filed.
+     *
+     * @param  array<int, string>|null  $hints  slugs or ids from the game server
+     * @return array<int, Tag>
      */
-    private function tag(): ?Tag
+    private function tags(?array $hints): array
     {
         if (! class_exists(Tag::class)) {
-            return null;
+            return [];
         }
 
-        $configured = (int) $this->settings->get(self::TAG_SETTING, '');
+        $tags = [];
 
-        if ($configured > 0) {
-            $tag = Tag::find($configured);
+        foreach ($hints ?? [] as $hint) {
+            $tag = $this->resolveTag($hint);
 
-            if ($tag !== null) {
-                return $tag;
+            if ($tag === null) {
+                $this->log->warning(
+                    '[mc-bridge] a report tag configured on the game server does not exist on this ' .
+                    'forum; skipping it',
+                    ['tag' => $hint]
+                );
+
+                continue;
             }
 
-            $this->log->warning(
-                '[mc-bridge] the configured report tag no longer exists; falling back to detection',
-                ['tag_id' => $configured]
-            );
+            $tags[$tag->id] = $tag;
+        }
+
+        if ($tags !== []) {
+            return array_values($tags);
+        }
+
+        foreach ($this->splitIds((string) $this->settings->get(self::TAGS_SETTING, '')) as $id) {
+            $tag = Tag::find($id);
+
+            if ($tag !== null) {
+                $tags[$tag->id] = $tag;
+            }
+        }
+
+        if ($tags !== []) {
+            return array_values($tags);
         }
 
         $existing = Tag::where('slug', self::TAG_SLUG)->first()
             ?? Tag::where('name', self::TAG_NAME)->first();
 
         if ($existing !== null) {
-            return $existing;
+            return [$existing];
         }
 
         $tag = Tag::build(self::TAG_NAME, self::TAG_SLUG, '', '#e9fe48', 'fas fa-exclamation-triangle', false);
@@ -208,36 +275,89 @@ class ReportDiscussion
 
         $this->log->info(
             '[mc-bridge] created the report tag; point the bridge elsewhere with: ' .
-            'php flarum mc-bridge:config --report-tag=<tag id>',
+            'php flarum mc-bridge:config --report-tags=<tag ids>',
             ['tag_id' => $tag->id]
         );
 
-        return $tag;
+        return [$tag];
+    }
+
+    /** Resolve one slug or id; null when no such tag exists here. */
+    private function resolveTag(string $hint): ?Tag
+    {
+        return ctype_digit($hint)
+            ? Tag::find((int) $hint)
+            : Tag::where('slug', $hint)->first();
     }
 
     /**
-     * Store a resolved id so later runs - and the announcement listener - see
-     * the concrete value instead of having to repeat the detection.
+     * Store resolved ids so later runs - and the announcement listener - see the
+     * concrete values instead of having to repeat the detection.
+     *
+     * @param  array<int, int>  $ids
      */
-    private function remember(string $key, int $value): void
+    private function rememberIds(string $key, array $ids): void
     {
-        if ($value <= 0) {
-            return;
-        }
+        $ids = array_values(array_unique(array_filter($ids, static fn (int $id) => $id > 0)));
+        $stored = implode(',', $ids);
 
-        if ((int) $this->settings->get($key, '') !== $value) {
-            $this->settings->set($key, (string) $value);
+        if ($stored !== '' && (string) $this->settings->get($key, '') !== $stored) {
+            $this->settings->set($key, $stored);
         }
     }
 
-    private function title(McReport $report): string
+    /**
+     * Parse a comma separated id setting into a list of positive integers.
+     *
+     * @return array<int, int>
+     */
+    private function splitIds(string $raw): array
     {
-        $target = (string) $report->target_name;
+        $ids = [];
+
+        foreach (explode(',', $raw) as $part) {
+            $part = trim($part);
+
+            if ($part !== '' && ctype_digit($part) && (int) $part > 0) {
+                $ids[] = (int) $part;
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
+     * Render the title from this forum's template.
+     *
+     * Only used when the game server sent no title of its own: that template is
+     * preferred because it may contain PlaceholderAPI values that exist only in
+     * game.
+     */
+    private function renderTitle(McReport $report): string
+    {
+        $format = trim((string) $this->settings->get(self::TITLE_SETTING, self::DEFAULT_TITLE_FORMAT));
+
+        if ($format === '') {
+            $format = self::DEFAULT_TITLE_FORMAT;
+        }
+
         $reporter = trim((string) $report->reporter_name);
 
-        return $reporter === ''
-            ? sprintf('[举报] %s', $target)
-            : sprintf('[举报] %s（由 %s 提交）', $target, $reporter);
+        $title = trim(strtr($format, [
+            '{target}' => (string) $report->target_name,
+            '{reporter}' => $reporter === '' ? '（未提供）' : $reporter,
+            '{reason}' => (string) $report->reason,
+            '{server}' => (string) $report->server_key,
+        ]));
+
+        // discussions.title is 255 characters and cannot be empty, so an
+        // over-long template is cut and a template that renders to nothing falls
+        // back to something that still identifies the report.
+        if ($title === '') {
+            $title = sprintf('[举报] %s', (string) $report->target_name);
+        }
+
+        return mb_substr($title, 0, 255);
     }
 
     private function content(McReport $report): string

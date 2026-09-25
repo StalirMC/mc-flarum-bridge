@@ -6,6 +6,9 @@ authors: [StalirMC]
 description: Reports server status to Flarum and relays forum announcements back into the game.
 website: https://forum.kxkl2024.cn
 folia-supported: true
+# Optional: only used to expand %placeholders% in report.title-format. Without
+# it those placeholders are left exactly as written.
+softdepend: [PlaceholderAPI]
 
 commands:
   bind:
