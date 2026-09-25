@@ -84,35 +84,43 @@
 
 ## 快速开始
 
+
+### 1.论坛侧
+
+声明为扩展，因此整个仓库可作为单个包安装，且已上架 Packagist：
+
+https://packagist.org/packages/stalirmc/mc-flarum-bridge
 ```bash
-# 1) 论坛侧
-#    Flarum 2.x 没有 extensions/ 目录，扩展必须经 Composer 安装。
-#    仓库根的 composer.json 用 flarum-subextensions 把 flarum-extension/
-#    声明为扩展，因此整个仓库可作为单个包安装，且已上架 Packagist：
-#    https://packagist.org/packages/stalirmc/mc-flarum-bridge
-cd /path/to/flarum
 composer require stalirmc/mc-flarum-bridge
-#    没有 SSH？后台 Extension Manager → 安装一个新的扩展程序 →
-#    填 stalirmc/mc-flarum-bridge 即可（Packagist 是默认源，无需加仓库）
 php flarum migrate
 php flarum extension:enable stalirmc-mc-bridge   # 用 php flarum extension:list 核对确切 ID
 php flarum cache:clear
 php flarum assets:publish            # 扩展前端 bundle 变了就要跑这一步
 php flarum mc-bridge:secret          # 生成共享密钥，填到插件配置里
 php flarum mc-bridge:selftest --url=https://forum.kxkl2024.cn   # 论坛侧全链路自检
-
-# 2) 游戏侧（两个发行包，按服务端类型选一个）
-cd mc-plugin && gradle build
-#    Paper/Folia：复制 build/libs/McBridge-<版本>.jar 到 server/plugins/
-#                 编辑 plugins/McBridge/config.yml
-#    NeoForge   ：复制 neoforge/build/libs/McBridge-neoforge-<版本>.jar 到 server/mods/
-#                 编辑 config/mc-bridge/config.yml
-#    填入论坛地址与密钥，然后 /mcbridge reload
-#
-#    首次构建 NeoForge 模组要下载 Minecraft 1.21.1 并跑一遍 NeoForm
-#    （反编译 → 打补丁 → 重编译），约 5-10 分钟且需要网络；之后有缓存。
-#    只想要 Paper 插件时可以只跑：gradle :build
 ```
+
+### 2.游戏侧（两个发行包，按服务端类型选一个）
+
+[https://github.com/StalirMC/mc-flarum-bridge/releases](https://github.com/StalirMC/mc-flarum-bridge/releases)
+
+自己下
+
+
+## 关于构建
+```bash
+cd mc-plugin && gradle build
+```
+Paper/Folia：复制 build/libs/McBridge-<版本>.jar 到 server/plugins/
+             编辑 plugins/McBridge/config.yml
+NeoForge   ：复制 neoforge/build/libs/McBridge-neoforge-<版本>.jar 到 server/mods/
+             编辑 config/mc-bridge/config.yml
+填入论坛地址与密钥，然后 /mcbridge reload
+
+首次构建 NeoForge 模组要下载 Minecraft 1.21.1 并跑一遍 NeoForm
+（反编译 → 打补丁 → 重编译），约 5-10 分钟且需要网络；之后有缓存。
+只想要 Paper 插件时可以只跑：gradle :build
+
 
 详见 [`docs/README.md`](docs/README.md)，端点细节见 [`docs/API.md`](docs/API.md)。
 
