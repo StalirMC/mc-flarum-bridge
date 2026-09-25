@@ -22,7 +22,8 @@
  * (cached for 600 seconds).
  *
  * Storage is a plain in-memory object standing in for the `mc_outbox`,
- * `mc_bindings`, `mc_bind_codes` and `mc_reports` tables.
+ * `mc_bindings`, `mc_bind_codes` and `mc_reports` tables, plus the discussion a
+ * player report is filed as.
  *
  * Environment variables:
  *   MOCK_SECRET  shared secret (default: the TEST_SECRET constant below)
@@ -252,9 +253,18 @@ export function createStore(options = {}) {
     bindCodes: [],
     /** mc_reports */
     reports: [],
+    /**
+     * Stand-in for Flarum's `discussions`: one row per report that the bridge
+     * filed in the forum. Filing a report is a side effect of the endpoint, not
+     * just a database row, so the mock models it.
+     */
+    discussions: [],
+    /** The tag id reports are filed under (found by its slug on a real forum). */
+    reportTagId: 4,
 
     nextOutboxId: 1,
     nextReportId: 1,
+    nextDiscussionId: 1,
 
     /** Reset every table; a demo message is seeded unless suppressed. */
     reset(resetOptions = {}) {
@@ -262,8 +272,10 @@ export function createStore(options = {}) {
       store.bindings.clear();
       store.bindCodes.length = 0;
       store.reports.length = 0;
+      store.discussions.length = 0;
       store.nextOutboxId = 1;
       store.nextReportId = 1;
+      store.nextDiscussionId = 1;
 
       // null  -> never seed;  true/undefined -> seed;  false -> seed only when
       // the server was created with seedOutbox enabled.
@@ -339,6 +351,26 @@ export function createStore(options = {}) {
       };
       store.reports.push(record);
       return record;
+    },
+
+    /**
+     * File a stored report as a discussion, mirroring Service\ReportDiscussion.
+     *
+     * The real forum creates this through Flarum's own JSON:API pipeline, so the
+     * first post, tag pivot and counters are all handled for it; only the shape
+     * the wire contract exposes is modelled here.
+     */
+    fileReportDiscussion(report, options = {}) {
+      const discussion = {
+        id: store.nextDiscussionId++,
+        title: `[举报] ${report.target_name}`,
+        report_id: report.id,
+        tag_id: options.tagId ?? store.reportTagId,
+        author_id: options.authorId ?? 1,
+      };
+
+      store.discussions.push(discussion);
+      return discussion;
     },
 
   };
@@ -639,7 +671,15 @@ export function createServer(options = {}) {
       reason,
     });
 
-    return sendJson(response, 201, { ok: true, report_id: report.id });
+    // A stored report is filed as a discussion in the report tag; the real
+    // controller does this through the forum's API and reports the new id back.
+    const discussion = store.fileReportDiscussion(report);
+
+    return sendJson(response, 201, {
+      ok: true,
+      report_id: report.id,
+      discussion_id: discussion.id,
+    });
   }
 
   // -------------------------------------------------------------------------

@@ -209,7 +209,8 @@ php flarum mc-bridge:selftest --url=...    # 全链路自检
 
 ## POST /api/mc-bridge/report
 
-**认证：HMAC** — 从游戏服务器提交玩家举报，供论坛管理员处理。
+**认证：HMAC** — 从游戏服务器提交玩家举报，并**在论坛里发成一个带举报标签的讨论**，
+供管理员在论坛界面直接处理。
 
 请求：
 
@@ -230,11 +231,30 @@ php flarum mc-bridge:selftest --url=...    # 全链路自检
 响应 `201`：
 
 ```json
-{ "ok": true, "report_id": 42 }
+{ "ok": true, "report_id": 42, "discussion_id": 128 }
 ```
 
-举报存储在 `mc_reports` 表中，初始状态为 `pending`。论坛管理员可手动将状态改为
-`reviewed`（已处理）或 `dismissed`（已驳回）。
+举报会做两件事：
+
+1. **落库**到 `mc_reports` 表，初始状态 `pending`（留档与审计）。
+2. **发一条讨论**到论坛的举报标签下，标题形如 `[举报] Steve（由 Alex 提交）`，
+   正文列出被举报人、举报人、服务器、时间、记录编号与举报原因。
+
+讨论是通过 Flarum 自己的 JSON:API 管道创建的（和用户在论坛发帖走同一条路径），
+所以首帖、标签关联、回复计数与作者的已读状态都由框架负责，扩展不去手写这些行。
+
+| 行为 | 说明 |
+|------|------|
+| 发布账号 | 默认取**最早的管理员**；可用 `mc-bridge:config --report-actor=<用户ID>` 指定 |
+| 举报标签 | 默认先读设置，其次按 slug `reports` / 名称 `举报` 查找；找不到且装了 `flarum/tags` 时自动创建（次级标签）。可用 `--report-tag=<标签ID>` 指定 |
+| 自配置 | 首次使用时解析到的账号与标签会写回设置，因此 `--show` 看到的是真实生效值 |
+| 失败处理 | 讨论创建是**尽力而为**：举报已经入库，论坛侧出错不会让玩家的 `/report` 变成 500。失败会写进 Flarum 日志，响应里的 `discussion_id` 为 `null` |
+| 不会广播 | 举报讨论永远不会被推送到游戏（见下） |
+
+> **不会进游戏**：`QueueAnnouncement` 会跳过举报讨论 —— 只要它带有举报标签，
+> 或作者是举报发布账号。否则举报内容（含举报人身份）会被广播给所有在线玩家。
+
+`discussion_id` 在论坛侧创建失败时为 `null`；调用方可以忽略它。
 
 ---
 
@@ -338,9 +358,11 @@ payload 里看到它们；游客的响应里根本不包含这些字段（不是
 | `php flarum mc-bridge:secret` | 生成并保存新的共享密钥 |
 | `php flarum mc-bridge:secret --show` | 打印当前密钥 |
 | `php flarum mc-bridge:secret <值>` | 写入指定密钥（至少 32 字符） |
-| `php flarum mc-bridge:config --show` | 查看公告标签过滤、回复同步、保留天数、输出语言 |
+| `php flarum mc-bridge:config --show` | 查看公告标签过滤、回复同步、保留天数、输出语言、举报标签与举报发布账号 |
 | `php flarum mc-bridge:config --locale=en` | 切换输出语言（默认 `zh-Hans`，可选 `en`） |
 | `php flarum mc-bridge:config --tags=1,3` | 只把标签 1、3 的新讨论推送到游戏（空值 = 全部） |
 | `php flarum mc-bridge:config --sync-replies=1` | 连回复也推送 |
+| `php flarum mc-bridge:config --report-tag=4` | 指定举报讨论归入哪个标签（空值 = 自动识别 slug `reports` / 名称 `举报`） |
+| `php flarum mc-bridge:config --report-actor=3` | 指定举报讨论以哪个账号发布（空值 = 最早的管理员） |
 | `php flarum mc-bridge:selftest` | 离线自检：密钥、HMAC、表结构、查询、绑定码格式 |
 | `php flarum mc-bridge:selftest --url=https://your.forum` | 追加一次真实的带签名 HTTP 回环请求 |

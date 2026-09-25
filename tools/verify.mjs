@@ -437,6 +437,88 @@ section('4. extend.php references');
 }
 
 // ---------------------------------------------------------------------------
+// 4b. mc-bridge.* settings keys
+// ---------------------------------------------------------------------------
+
+section('4b. mc-bridge settings keys');
+
+{
+  // Every mc-bridge.* key the PHP code mentions has to be declared as a default
+  // in extend.php. An undeclared key is not an error to Flarum - get() simply
+  // returns the caller's fallback - which is exactly what makes a typo so
+  // expensive: the feature it feeds goes quiet and nothing says why.
+  //
+  // Keys reach the settings repository in two shapes: as a string literal, and
+  // through a class constant (BridgeMessages::SETTING_KEY, ReportDiscussion::
+  // TAG_SETTING). Only calls on a settings repository count - extend.php is full
+  // of other mc-bridge.* strings, because route names look exactly like settings
+  // keys.
+  const declared = new Set(
+    [...read(join(EXT, 'extend.php')).matchAll(/->default\('([^']+)'/g)].map((m) => m[1])
+  );
+
+  // Pass 1: the constants that hold a settings key, wherever they are defined.
+  const constants = new Map(); // CONST_NAME -> key
+
+  for (const file of phpFiles) {
+    for (const match of stripPhpComments(read(file)).matchAll(
+      /\bconst\s+([A-Za-z0-9_]+)\s*=\s*'(mc-bridge\.[A-Za-z0-9_.]+)'/g
+    )) {
+      constants.set(match[1], match[2]);
+    }
+  }
+
+  // Pass 2: every key actually handed to a settings repository.
+  const mentioned = new Map(); // key -> file that uses it
+
+  const note = (key, file) => {
+    if (key.startsWith('mc-bridge.') && !mentioned.has(key)) mentioned.set(key, file);
+  };
+
+  for (const file of phpFiles) {
+    const source = stripPhpComments(read(file));
+
+    for (const match of source.matchAll(/settings->(?:get|set)\(\s*'([^']+)'/g)) {
+      note(match[1], file);
+    }
+
+    for (const match of source.matchAll(/settings->(?:get|set)\(\s*[A-Za-z0-9_\\]*::([A-Za-z0-9_]+)/g)) {
+      note(constants.get(match[1]) ?? '', file);
+    }
+  }
+
+  if (declared.size === 0) {
+    fail('extend.php', 'no mc-bridge.* defaults declared');
+  }
+
+  let undeclared = 0;
+
+  for (const [key, file] of mentioned) {
+    if (declared.has(key)) {
+      pass(`${key} is declared in extend.php (used by ${basename(file)})`);
+    } else {
+      fail(
+        basename(file),
+        `uses "${key}", which extend.php does not declare via Extend\Settings()->default(); ` +
+          'Flarum would silently hand back the local fallback instead of the stored value'
+      );
+      undeclared++;
+    }
+  }
+
+  // The reverse direction: a declared key nothing reads is usually a leftover.
+  for (const key of declared) {
+    if (!mentioned.has(key)) {
+      warn('settings', `${key} is declared in extend.php but no settings call reads it`);
+    }
+  }
+
+  if (undeclared === 0 && mentioned.size > 0) {
+    pass(`all ${mentioned.size} mc-bridge settings keys used in PHP are declared`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // 5/6. Java layout and imports
 // ---------------------------------------------------------------------------
 

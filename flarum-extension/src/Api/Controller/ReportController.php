@@ -3,19 +3,33 @@
 namespace Stalir\McBridge\Api\Controller;
 
 use Flarum\Http\RequestUtil;
+use Flarum\Settings\SettingsRepositoryInterface;
+use Illuminate\Cache\Repository as CacheRepository;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Stalir\McBridge\Model\McReport;
+use Stalir\McBridge\Service\BridgeMessages;
+use Stalir\McBridge\Service\ReportDiscussion;
 
 /**
  * POST /api/mc-bridge/report
  *
- * Accepts a player report from the game server and stores it for forum
- * moderators to review. Only machine-authenticated requests are accepted
- * (HMAC signature required).
+ * Accepts a player report from the game server, stores it for the record and
+ * files it as a discussion in the forum's report tag so moderators actually see
+ * it. Only machine-authenticated requests are accepted (HMAC signature
+ * required).
  */
 class ReportController extends AbstractBridgeController
 {
+    public function __construct(
+        SettingsRepositoryInterface $settings,
+        CacheRepository $cache,
+        BridgeMessages $messages,
+        protected ReportDiscussion $discussions
+    ) {
+        parent::__construct($settings, $cache, $messages);
+    }
+
     public function handle(ServerRequestInterface $request): ResponseInterface
     {
         if ($error = $this->assertMachine($request)) {
@@ -64,9 +78,15 @@ class ReportController extends AbstractBridgeController
         $report->status = 'pending';
         $report->save();
 
+        // File it where moderators actually work. The report is already on
+        // record, so this is best-effort: a problem here is logged and reported
+        // as a null discussion_id rather than failing the player's /report.
+        $discussionId = $this->discussions->create($report);
+
         return $this->json([
             'ok' => true,
             'report_id' => $report->id,
+            'discussion_id' => $discussionId,
         ], 201);
     }
 

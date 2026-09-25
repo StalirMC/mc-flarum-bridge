@@ -755,6 +755,41 @@ Packagist 会认为最高版本是 1.0.0，于是不带约束的 `composer requi
 
 规模：`verify.mjs` **301 项**、协议 32 项、构建自测 37 项，全部通过。
 
+### 2.20 举报自动发讨论并挂举报标签（0.0.15）
+
+**这是用户在线上提出的需求**：举报只写进 `mc_reports`，论坛界面里什么都看不到，管理员得去查库。
+
+| 项目 | 内容 |
+|------|------|
+| 需求 | 举报后自动在论坛发一条讨论，挂上举报标签 |
+| 原来 | `POST /api/mc-bridge/report` 只做 `McReport::save()`，论坛侧零可见性 |
+| 线上事实 | 该论坛**已有**举报标签（id 4、slug `reports`、主标签），另有「待处理」14 /「已完成」13 /「拒绝处理」19 等流转标签 —— 所以不必新建标签，能识别已有标签即可 |
+| 实现 | 新增 `Service\ReportDiscussion`：解析发布账号与标签 → 用 `Flarum\Api\JsonApi` 的 `forResource(DiscussionResource::class)->forEndpoint('create')->process([...], [], ['actor' => $actor])` 建讨论。走框架自己的 JSON:API 管道，而不是手写 `discussions` / `posts` / `discussion_tag` 三张表的行，因此首帖、标签关联、回复计数、作者已读状态都交给框架 |
+| 发布账号 | 默认最早的管理员（可用 `--report-actor=<用户ID>` 指定）。**不能**用举报人自己的账号：普通成员未必有在该标签下发帖的权限，而且那会把举报人身份公开 |
+| 标签 | 设置 → slug `reports` → 名称 `举报` → （装了 `flarum/tags` 却一个都没有时）自动创建次级标签。`--report-tag=<标签ID>` 可指定 |
+| 自配置 | 首次解析出的账号与标签**写回设置**，因此 `--show` 显示真实生效值 |
+| 尽力而为 | 讨论创建失败只写日志，`/report` 仍返回 201、`discussion_id` 为 `null` —— 举报已经入库，不该因为论坛侧的问题让玩家看到 500 |
+
+**新增的两条防护**
+
+1. **举报不进游戏**：`QueueAnnouncement` 会跳过举报讨论。不这样做的话，举报会被当成普通新讨论
+   广播给所有在线玩家，等于直接公开举报人身份。判定用两条独立信号 —— 举报标签与举报发布账号 ——
+   因为两者都可能只有一个可用（标签是自动识别出来的，不一定在设置里）。
+2. **设置键必须声明**：新增 `verify.mjs` section 4b。Flarum 对未声明的 `mc-bridge.*` 键不报错，
+   `get()` 只是返回调用方给的默认值 —— 正因如此，把 `mc-bridge.report_tag_id` 误写成
+   `mc-bridge.report_tagid` 会让整个功能静默失效且毫无提示。该检查收集**所有**交给 settings
+   仓库的键（既含字符串字面量，也含类常量形态，如 `BridgeMessages::SETTING_KEY`），
+   要求它们在 `extend.php` 中有 `->default()`。
+   - 第一版实现误报了 11 处：正则把 `mc-bridge.outbox` 这类**路由名**也当成了设置键。收窄为
+     「只统计 `settings->get` / `settings->set` 调用中出现过的键」后归零 —— 路由名与设置键长得
+     一模一样，这已是本仓库第二次被「同名不同物」坑到。
+   - 回归自证：把 `report_tag_id` 改成 `report_tagid`，检查立刻报 1 个 FAIL；还原后 315 项全绿。
+
+**契约同步**：`mock-flarum.mjs` 增加 `discussions` 与 `fileReportDiscussion()`，`/report` 现在返回
+`discussion_id`；协议测试第 11 组多断言 4 条（讨论已创建、能回指原举报、挂在举报标签下）。
+
+规模：`verify.mjs` **315 项**、协议 32 项、构建自测 37 项，全部通过。
+
 ## 3. 无法在本机验证的内容（现由 CI 覆盖）
 
 > 本机没有 PHP / JDK，这些检查**已全部由 CI 在带 PHP 8.3 / JDK 21 的真实环境中

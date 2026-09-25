@@ -3,6 +3,7 @@
 namespace Stalir\McBridge\Console;
 
 use Stalir\McBridge\Service\BridgeMessages;
+use Stalir\McBridge\Service\ReportDiscussion;
 use Symfony\Component\Console\Input\InputOption;
 
 /**
@@ -47,6 +48,18 @@ class ConfigCommand extends AbstractBridgeCommand
                 null,
                 InputOption::VALUE_REQUIRED,
                 'Retention window for queued announcements'
+            )
+            ->addOption(
+                'report-tag',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'Tag id that player reports are filed under (empty = detect the tag by its "reports" slug)'
+            )
+            ->addOption(
+                'report-actor',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'User id that report discussions are authored as (empty = the oldest administrator)'
             );
     }
 
@@ -59,6 +72,18 @@ class ConfigCommand extends AbstractBridgeCommand
             $changed += $this->applyTags();
             $changed += $this->applySyncReplies();
             $changed += $this->applyMaxAge();
+            $changed += $this->applyId(
+                'report-tag',
+                ReportDiscussion::TAG_SETTING,
+                'console.config.report_tag_set',
+                'console.config.report_tag_cleared'
+            );
+            $changed += $this->applyId(
+                'report-actor',
+                ReportDiscussion::ACTOR_SETTING,
+                'console.config.report_actor_set',
+                'console.config.report_actor_cleared'
+            );
         }
 
         $this->render();
@@ -199,12 +224,53 @@ class ConfigCommand extends AbstractBridgeCommand
         return 1;
     }
 
+    /**
+     * Set or clear a setting that holds a positive id.
+     *
+     * An empty value is meaningful for both report settings: it means "work it
+     * out automatically", which is what Service\ReportDiscussion does when the
+     * key is blank.
+     */
+    private function applyId(string $option, string $setting, string $setKey, string $clearKey): int
+    {
+        $raw = $this->option($option);
+
+        if ($raw === null) {
+            return 0;
+        }
+
+        $raw = trim((string) $raw);
+
+        if ($raw === '') {
+            $this->settings->set($setting, '');
+            $this->info($this->messages->get($clearKey));
+
+            return 1;
+        }
+
+        if (! ctype_digit($raw) || (int) $raw <= 0) {
+            $this->error($this->messages->get('console.config.must_be_positive_id', [
+                'option' => $option,
+                'value' => $raw,
+            ]));
+
+            return 0;
+        }
+
+        $this->settings->set($setting, $raw);
+        $this->info($this->messages->get($setKey, ['id' => $raw]));
+
+        return 1;
+    }
+
     private function render(): void
     {
         $secret = (string) $this->settings->get('mc-bridge.secret', '');
         $tags = (string) $this->settings->get('mc-bridge.announcement_tag_ids', '');
         $syncReplies = (string) $this->settings->get('mc-bridge.sync_replies', '0');
         $maxAge = (string) $this->settings->get('mc-bridge.max_announcement_age_days', '30');
+        $reportTag = (string) $this->settings->get(ReportDiscussion::TAG_SETTING, '');
+        $reportActor = (string) $this->settings->get(ReportDiscussion::ACTOR_SETTING, '');
         $locale = BridgeMessages::resolveLocale($this->settings);
 
         $secretValue = $secret === ''
@@ -229,6 +295,18 @@ class ConfigCommand extends AbstractBridgeCommand
             [
                 $this->messages->get('console.config.label_retention'),
                 $this->messages->get('console.config.value_retention', ['days' => $maxAge]),
+            ],
+            [
+                $this->messages->get('console.config.label_report_tag'),
+                $reportTag === ''
+                    ? $this->messages->get('console.config.value_report_auto')
+                    : '#' . $reportTag,
+            ],
+            [
+                $this->messages->get('console.config.label_report_actor'),
+                $reportActor === ''
+                    ? $this->messages->get('console.config.value_report_auto')
+                    : '#' . $reportActor,
             ],
         ];
 

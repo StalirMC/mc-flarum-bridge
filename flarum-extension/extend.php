@@ -136,5 +136,11 @@ return [
         ->default('mc-bridge.locale', BridgeMessages::DEFAULT_LOCALE)
         ->default('mc-bridge.announcement_tag_ids', '')
         ->default('mc-bridge.sync_replies', '0')
-        ->default('mc-bridge.max_announcement_age_days', '30'),
+        ->default('mc-bridge.max_announcement_age_days', '30')
+        // Where a player report is filed and who it is filed as. Both are
+        // resolved automatically on first use (see Service\ReportDiscussion)
+        // and written back, so they are declared here to keep every
+        // mc-bridge.* key discoverable in one place.
+        ->default('mc-bridge.report_tag_id', '')
+        ->default('mc-bridge.report_actor_id', ''),
 ];

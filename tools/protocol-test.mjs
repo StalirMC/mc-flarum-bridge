@@ -21,7 +21,8 @@
  *   8. outbox: peek=true does not consume, peek=false does
  *   9. bind/start returns an 8-character code from the unambiguous alphabet
  *  10. bind start/status round-trip, sub-directory installs, concurrency
- *  11. player reports: stored when signed, 422 without a reason or a bad UUID
+ *  11. player reports: stored when signed and filed as a tagged discussion in the
+ *      forum, 422 without a reason or a bad UUID
  *
  * Every check prints PASS or FAIL; any failure exits with code 1.
  *
@@ -656,6 +657,17 @@ async function checkAgainstMock(mock) {
     assertEqual(mock.store.reports.length, 1, 'exactly one report stored');
     assertEqual(mock.store.reports[0].status, 'pending', 'new reports start pending');
     assertEqual(mock.store.reports[0].target_name, 'Steve', 'target kept');
+
+    // The report must also land in the forum as a discussion in the report tag,
+    // otherwise moderators never see it.
+    assert(response.json.discussion_id > 0, 'the report is filed as a discussion');
+    assertEqual(mock.store.discussions.length, 1, 'exactly one report discussion created');
+    assertEqual(
+      mock.store.discussions[0].report_id,
+      response.json.report_id,
+      'the discussion links back to the report'
+    );
+    assertEqual(mock.store.discussions[0].tag_id, mock.store.reportTagId, 'filed under the report tag');
   });
 
   await test('a report without a reason is rejected with 422', async () => {

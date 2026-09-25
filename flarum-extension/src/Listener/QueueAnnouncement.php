@@ -5,6 +5,7 @@ namespace Stalir\McBridge\Listener;
 use Flarum\Post\Event\Posted;
 use Flarum\Settings\SettingsRepositoryInterface;
 use Stalir\McBridge\Model\McOutboxMessage;
+use Stalir\McBridge\Service\ReportDiscussion;
 
 /**
  * Queues new discussions (and optionally the forum's own replies) for delivery
@@ -37,6 +38,12 @@ class QueueAnnouncement
             return;
         }
 
+        // A player report is moderation material and names the reporter, so it
+        // must never be pushed into in-game chat.
+        if ($this->isModerationDiscussion($discussion, (int) $post->user_id)) {
+            return;
+        }
+
         if (! $this->matchesConfiguredTags($discussion)) {
             return;
         }
@@ -58,6 +65,37 @@ class QueueAnnouncement
             'is_op' => (int) $post->number === 1,
         ];
         $message->save();
+    }
+
+    /**
+     * Is this the discussion the bridge filed for a player report?
+     *
+     * Two independent signals on purpose: the account reports are filed as, and
+     * the tag they are filed under. Either one can be the only thing that is
+     * configured (the tag is auto-detected on a forum that already has one), and
+     * a false negative here would leak the report - and the reporter - to every
+     * player online.
+     */
+    private function isModerationDiscussion($discussion, int $authorId): bool
+    {
+        $reportActorId = (int) $this->settings->get(ReportDiscussion::ACTOR_SETTING, '');
+
+        if ($reportActorId > 0 && $authorId === $reportActorId) {
+            return true;
+        }
+
+        $reportTagId = (int) $this->settings->get(ReportDiscussion::TAG_SETTING, '');
+
+        if ($reportTagId <= 0) {
+            return false;
+        }
+
+        try {
+            return $discussion->tags()->where('id', $reportTagId)->exists();
+        } catch (\Throwable) {
+            // flarum/tags is not installed.
+            return false;
+        }
     }
 
     /**
