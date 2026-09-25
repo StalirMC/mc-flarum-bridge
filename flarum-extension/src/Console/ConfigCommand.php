@@ -2,6 +2,7 @@
 
 namespace Stalir\McBridge\Console;
 
+use Stalir\McBridge\Service\BridgeMessages;
 use Symfony\Component\Console\Input\InputOption;
 
 /**

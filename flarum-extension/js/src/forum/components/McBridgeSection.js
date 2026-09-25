@@ -44,15 +44,16 @@ export default class McBridgeSection extends Component {
     this.loading = true;
 
     return fetch(`${this.apiUrl()}/mc-bridge/link`, {
+      credentials: 'same-origin',
       headers: { Accept: 'application/json' },
     })
       .then((response) =>
         response
           .json()
           .catch(() => ({}))
-          .then((body) => ({ ok: response.ok, body }))
+          .then((body) => ({ ok: response.ok, status: response.status, body }))
       )
-      .then(({ ok, body }) => {
+      .then(({ ok, status, body }) => {
         this.loading = false;
 
         // Anything the bridge did not produce (a route that is not registered, a
@@ -61,7 +62,8 @@ export default class McBridgeSection extends Component {
         // instead, which is exactly how an unregistered GET route stayed
         // invisible while the account really was linked.
         if (!ok || body.ok !== true) {
-          this.error = body.error || this.t('load_error');
+          this.error = this.describeFailure(status, body);
+          console.warn('[mc-bridge] GET /mc-bridge/link failed', status, body);
         } else {
           this.error = null;
           this.bound = body.bound === true;
@@ -70,11 +72,37 @@ export default class McBridgeSection extends Component {
 
         m.redraw();
       })
-      .catch(() => {
+      .catch((reason) => {
         this.loading = false;
         this.error = this.t('load_error');
+        console.warn('[mc-bridge] GET /mc-bridge/link could not be sent', reason);
         m.redraw();
       });
+  }
+
+  /**
+   * Turn a failed response into something actionable.
+   *
+   * The bridge's own errors carry a localised "error" string. A Flarum error
+   * document uses JSON:API instead ("errors": [{...}]) and has no such field -
+   * a 401 from a session that is no longer signed in looks exactly like that.
+   * Falling back to the bare "could not read the binding state" message made
+   * those two cases indistinguishable, so the HTTP status is always appended.
+   */
+  describeFailure(status, body) {
+    if (body && typeof body.error === 'string' && body.error !== '') {
+      return body.error;
+    }
+
+    if (body && Array.isArray(body.errors) && body.errors[0]) {
+      const detail = body.errors[0].detail || body.errors[0].code;
+
+      if (detail) {
+        return `${detail} (HTTP ${status})`;
+      }
+    }
+
+    return `${this.t('load_error')} (HTTP ${status})`;
   }
 
   bind() {
@@ -131,6 +159,7 @@ export default class McBridgeSection extends Component {
   request(method, path, payload) {
     return fetch(`${this.apiUrl()}${path}`, {
       method,
+      credentials: 'same-origin',
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
@@ -142,12 +171,14 @@ export default class McBridgeSection extends Component {
         response
           .json()
           .catch(() => ({}))
-          .then((body) => ({ ok: response.ok, body }))
+          .then((body) => ({ ok: response.ok, status: response.status, body }))
       )
-      .then(({ ok, body }) => {
+      .then(({ ok, status, body }) => {
         if (ok) return body;
 
-        throw body.error || this.t('load_error');
+        // Same reasoning as describeFailure(): a 500 from an uncaught server
+        // error arrives as a Flarum error document, not as our own shape.
+        throw this.describeFailure(status, body);
       });
   }
 

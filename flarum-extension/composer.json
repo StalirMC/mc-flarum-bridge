@@ -7,10 +7,10 @@
         "minecraft",
         "bridge",
         "announcements",
-        "polls"
+        "reports"
     ],
     "license": "MIT",
-    "version": "0.0.13",
+    "version": "0.0.14",
     "homepage": "https://github.com/StalirMC/mc-flarum-bridge",
     "support": {
         "source": "https://github.com/StalirMC/mc-flarum-bridge",

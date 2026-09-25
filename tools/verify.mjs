@@ -322,6 +322,83 @@ for (const file of phpFiles) {
   }
 }
 
+// The loop above proves only that every import points at something real. It
+// cannot see the mirror-image mistake: a class USED without being imported. PHP
+// then resolves the name against the current namespace, so `new McOutboxMessage()`
+// inside Stalir\McBridge\Api\Controller looks for
+// Stalir\McBridge\Api\Controller\McOutboxMessage, finds nothing, and throws
+// "Class ... not found" at runtime - turning the whole request into a 500.
+// 0.0.13 shipped exactly that in LinkController, which is why /bind failed with
+// "无法读取绑定状态" while every static check stayed green.
+//
+// Only names matching a class this project defines are considered, so PHP
+// built-ins and vendor classes can never trip it.
+const shortNames = new Map(); // short class name -> [FQCN]
+
+for (const fqcn of definedClasses.keys()) {
+  const short = fqcn.split('\\').pop();
+  if (!shortNames.has(short)) shortNames.set(short, []);
+  shortNames.get(short).push(fqcn);
+}
+
+let missingImportIssues = 0;
+
+for (const file of phpSources) {
+  // Comments are stripped so a @var docblock naming a class does not count.
+  const source = stripPhpComments(read(file));
+  const namespace = (source.match(/^namespace\s+([A-Za-z0-9_\\]+);/m) ?? [])[1] ?? '';
+  const ownClass = (source.match(/^(?:final\s+|abstract\s+)?(?:class|interface|trait|enum)\s+([A-Za-z0-9_]+)/m) ?? [])[1] ?? '';
+
+  // Alias -> FQCN, honouring both `use A\B;` and `use A\B as C;`.
+  const aliases = new Map();
+
+  for (const match of source.matchAll(/^\s*use\s+([A-Za-z0-9_\\]+?)(?:\s+as\s+([A-Za-z0-9_]+))?\s*;/gm)) {
+    aliases.set(match[2] ?? match[1].split('\\').pop(), match[1]);
+  }
+
+  const referenced = new Set();
+
+  // Every form below resolves the name against the current namespace when it is
+  // not imported, and every one of them is fatal at runtime. Fully qualified
+  // references (\Foo\Bar) are excluded by the negative lookbehind, because those
+  // need no import.
+  for (const match of source.matchAll(/\bnew\s+([A-Z][A-Za-z0-9_]*)\s*\(/g)) referenced.add(match[1]);
+  for (const match of source.matchAll(/(?<![\\\w])([A-Z][A-Za-z0-9_]*)::/g)) referenced.add(match[1]);
+  for (const match of source.matchAll(/\bextends\s+([A-Z][A-Za-z0-9_]*)\b/g)) referenced.add(match[1]);
+  for (const match of source.matchAll(/\binstanceof\s+([A-Z][A-Za-z0-9_]*)\b/g)) referenced.add(match[1]);
+  for (const match of source.matchAll(/\bcatch\s*\(\s*([A-Z][A-Za-z0-9_]*)/g)) referenced.add(match[1]);
+  // Type hints: "Foo $bar", "?Foo $bar", "protected Foo $bar".
+  for (const match of source.matchAll(/(?<![\\\w])([A-Z][A-Za-z0-9_]*)\s+\$[A-Za-z_]/g)) referenced.add(match[1]);
+  // Return types: "): Foo" / "): ?Foo".
+  for (const match of source.matchAll(/\)\s*:\s*\??([A-Z][A-Za-z0-9_]*)/g)) referenced.add(match[1]);
+
+  for (const match of source.matchAll(/\bimplements\s+([A-Za-z0-9_\\, ]+)/g)) {
+    for (const part of match[1].split(',')) {
+      const name = part.trim();
+      if (/^[A-Z][A-Za-z0-9_]*$/.test(name)) referenced.add(name);
+    }
+  }
+
+  for (const name of referenced) {
+    if (aliases.has(name)) continue; // imported (possibly under an alias)
+    if (name === ownClass) continue; // the file's own class
+    if (!shortNames.has(name)) continue; // not a class of this project
+    if (definedClasses.has(`${namespace}\\${name}`)) continue; // same namespace, no import needed
+
+    fail(
+      rel(file),
+      `${name} is used but never imported; PHP resolves it to "${namespace}\\${name}", ` +
+        `which does not exist. It is defined as ${shortNames.get(name).join(' or ')} - ` +
+        'add the use statement.'
+    );
+    missingImportIssues++;
+  }
+}
+
+if (missingImportIssues === 0 && phpSources.length > 0) {
+  pass('every project class is imported, or in the same namespace, wherever it is used');
+}
+
 // ---------------------------------------------------------------------------
 // 4. extend.php references
 // ---------------------------------------------------------------------------

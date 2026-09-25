@@ -687,7 +687,7 @@ Packagist 会认为最高版本是 1.0.0，于是不带约束的 `composer requi
 > 留这段记录是为了说清楚：**`mc_outbox` 的 `target_uuid` / `actor_id` 两列和
 > `mc_reports` 表与投票无关**，增量迁移仍然必须跑。
 
-规模：mock 与协议测试 28 → **32 项**（举报 4 项），`verify.mjs` **298 项**，
+规模：mock 与协议测试 28 → **32 项**（举报 4 项），`verify.mjs` **301 项**，
 构建自测 37 项。`gradle build`、`verify.mjs`、`protocol-test.mjs` 全部通过。
 
 **线上实测（forum.kxkl2024.cn）**：用 `DeepSeekHarness` 账号换取 Flarum token 后确认
@@ -723,6 +723,37 @@ Packagist 会认为最高版本是 1.0.0，于是不带约束的 `composer requi
 **教训**：这类错误编译期完全合法、原有静态检查也看不见，只有真机 `php flarum migrate` 才会炸；
 而且它对任何执行到该迁移的安装都必炸。**「本地没有 PHP 环境」使这道工序长期只由用户承担**，
 这也是 CI 里 `php -l` + 迁移闭包反射那一步值得继续保持的原因。
+
+### 2.19 两处「用了却没 import」的类引用（0.0.14）
+
+**与 2.18 是同一个盲区的一体两面**，同样是用户在线上试出来的。
+
+| 项目 | 内容 |
+|------|------|
+| 现象 | 论坛「设置 → Minecraft 账号」显示「无法读取绑定状态。」；游戏内 `/bind` 拿到的绑定码在论坛提交后无反应 |
+| 日志 | 9 次 `Class "Stalir\McBridge\Api\Controller\McOutboxMessage" not found`，位置 `LinkController.php:109` 与 `:138` |
+| 根因 A | `LinkController` 的 `link()` / `unlink()` 里 `new McOutboxMessage()`，但**没有 `use Stalir\McBridge\Model\McOutboxMessage;`**。PHP 按当前命名空间解析，于是去找 `Stalir\McBridge\Api\Controller\McOutboxMessage`，必然不存在 —— 绑定事务在最后一步抛错，整个 POST/DELETE 变成 500 |
+| 根因 B | 同一模式还藏在 `ConfigCommand`：它用 `BridgeMessages::isAvailable()` / `SETTING_KEY` / `resolveLocale()` 却同样没 import —— 也就是 `php flarum mc-bridge:config` 一样必崩，只是这一轮没人跑到 |
+| 为什么没被拦住 | `verify.mjs` 的 section 3「PHP imports resolve」只检查**正向**：每个 `use` 指向的类必须存在。它从不检查**反向** —— 用到的类有没有 import。299 项全绿，两处必崩的调用一次都没被看过 |
+| 修复 | 补上两行 `use`；另外让 `LinkStatusController` 在未登录时返回扩展自己的错误结构（`link_login_required`），而不是 Flarum 的 JSON:API envelope —— 后者在前端只能落成一句无从下手的「无法读取绑定状态」 |
+
+**防护（本轮新增，且已验证有效）**
+
+新增**反向 import 检查**：对 `src/` 下每个文件解析出命名空间与 `use` 别名表（含 `use X as Y`），再收集所有会按当前命名空间解析类名的引用形式 ——
+`new X(`、`X::`、`extends`、`implements`、`instanceof`、`catch (X`、类型声明（`Foo $bar`，含 `?Foo`）与返回类型（`): Foo`）。
+若某个名字是本项目定义过的类，却既没被 import、也不与当前文件同命名空间，就判为错误。
+只针对**本项目自己的类名**判定，所以 PHP 内建与 vendor 类不会误报；以 `\` 开头的完全限定名由负向后顾排除。
+
+加完立刻抓出 `LinkController` 与 `ConfigCommand` 两处；修完 301 项全绿，且把引用形式从 3 种扩到 8 种后失败数没有增加（无新增误报）。
+
+**顺带修的前端可诊断性**：`McBridgeSection` 原先在响应异常时只显示 `load_error` 一句文案。
+现在会优先取扩展自己的 `error` 字段，其次取 Flarum JSON:API 的 `errors[0].detail` / `code`，都没有时也附上 HTTP 状态码，并 `console.warn` 出原始响应 ——
+否则「会话过期」和「服务端 500」在界面上长得一模一样，正是这次排查卡住的原因。
+
+**教训**：`verify.mjs` 里最贵的两个 bug（2.18 的闭包作用域、2.19 的缺失 import）都不是「检查写错了」，而是**检查只有单向** ——
+只看「声明能否被解析」，不看「使用能否被解析」。静态检查要么做双向，要么就会成系统地漏掉一整类错误。
+
+规模：`verify.mjs` **301 项**、协议 32 项、构建自测 37 项，全部通过。
 
 ## 3. 无法在本机验证的内容（现由 CI 覆盖）
 

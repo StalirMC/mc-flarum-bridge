@@ -12,6 +12,7 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Stalir\McBridge\Model\McBindCode;
 use Stalir\McBridge\Model\McBinding;
+use Stalir\McBridge\Model\McOutboxMessage;
 use Stalir\McBridge\Service\BridgeMessages;
 
 /**
