@@ -71,6 +71,84 @@ function walk(dir, filter) {
 const read = (file) => readFileSync(file, 'utf8');
 const rel = (file) => relative(ROOT, file).split('\\').join('/');
 
+/**
+ * Blank out PHP comments so brace counting is not thrown off by prose that
+ * happens to contain a brace. Newlines are preserved to keep offsets usable.
+ */
+function stripPhpComments(source) {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, ' '))
+    // Do not treat the "//" of "https://" inside a string as a comment.
+    .replace(/(^|[^:'"\\])\/\/[^\n]*/g, '$1');
+}
+
+/**
+ * Every closure in a PHP file, with its parameter list, its `use (...)` clause
+ * and its brace-matched body.
+ *
+ * Nested closures are returned too: a closure does NOT inherit the enclosing
+ * scope, so a helper may read a variable it never captured. See the check in
+ * section 13 for why that matters here.
+ */
+function phpClosures(source) {
+  const cleaned = stripPhpComments(source);
+  const out = [];
+  const pattern = /function\s*\(([^)]*)\)\s*(?:use\s*\(([^)]*)\)\s*)?\{/g;
+  let match;
+
+  while ((match = pattern.exec(cleaned)) !== null) {
+    const bodyStart = match.index + match[0].length;
+    let depth = 1;
+    let index = bodyStart;
+
+    while (index < cleaned.length && depth > 0) {
+      if (cleaned[index] === '{') depth++;
+      else if (cleaned[index] === '}') depth--;
+      index++;
+    }
+
+    out.push({
+      params: match[1] ?? '',
+      useClause: match[2] ?? '',
+      body: cleaned.slice(bodyStart, Math.max(bodyStart, index - 1)),
+    });
+
+    // lastIndex stays just past the opening brace on purpose, so closures nested
+    // inside this body are visited as well.
+  }
+
+  return out;
+}
+
+/**
+ * Column names of every table a migration creates, keyed by table name.
+ */
+function createBlocks(source) {
+  const cleaned = stripPhpComments(source);
+  const out = new Map();
+  const pattern = /create\('([a-z_]+)'[^{]*\{/g;
+  let match;
+
+  while ((match = pattern.exec(cleaned)) !== null) {
+    const bodyStart = match.index + match[0].length;
+    let depth = 1;
+    let index = bodyStart;
+
+    while (index < cleaned.length && depth > 0) {
+      if (cleaned[index] === '{') depth++;
+      else if (cleaned[index] === '}') depth--;
+      index++;
+    }
+
+    out.set(
+      match[1],
+      [...cleaned.slice(bodyStart, index - 1).matchAll(/\$table->\w+\('([a-z_]+)'/g)].map((m) => m[1])
+    );
+  }
+
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // 0. Minimal YAML subset parser (maps, nested maps, string lists)
 // ---------------------------------------------------------------------------
@@ -690,9 +768,11 @@ for (const [label, source] of [['PHP', phpCrypto], ['Java', javaSignature]]) {
 
 section('11. migration tables vs models');
 
-const migrationSource = read(
-  walk(join(EXT, 'migrations'), (file) => file.endsWith('.php'))[0] ?? join(EXT, 'migrations', 'missing')
-);
+// Every migration file is read, not just the first one. The incremental
+// migration is the only thing that runs on an already-installed forum, so a
+// defect there is invisible to a check that stops at the create migration.
+const migrationFiles = walk(join(EXT, 'migrations'), (file) => file.endsWith('.php')).sort();
+const migrationSource = migrationFiles.map((file) => read(file)).join('\n');
 const migrationTables = [...migrationSource.matchAll(/create\('([a-z_]+)'/g)].map((m) => m[1]);
 
 const modelTables = [];
@@ -717,6 +797,41 @@ for (const { table, file } of modelTables) {
 for (const table of migrationTables) {
   if (!modelTables.some((model) => model.table === table)) {
     warn('models', `table ${table} is created but has no model`);
+  }
+}
+
+// A table created by more than one migration must be defined identically in all
+// of them. A fresh install runs the create migration only; an existing install
+// runs the incremental one only. If the two copies drift, those two populations
+// end up with different schemas and only one of them matches what was tested.
+const columnsByMigration = new Map(migrationFiles.map((file) => [file, createBlocks(read(file))]));
+const tableOwners = new Map();
+
+for (const [file, tables] of columnsByMigration) {
+  for (const table of tables.keys()) {
+    if (!tableOwners.has(table)) tableOwners.set(table, []);
+    tableOwners.get(table).push(file);
+  }
+}
+
+for (const [table, owners] of tableOwners) {
+  if (owners.length < 2) continue;
+
+  const reference = columnsByMigration.get(owners[0]).get(table);
+  const drifted = owners.slice(1).filter((file) => {
+    const other = columnsByMigration.get(file).get(table);
+    return other.length !== reference.length || other.some((column, index) => column !== reference[index]);
+  });
+
+  if (drifted.length > 0) {
+    fail(
+      'migration drift',
+      `table ${table} is created by ${owners.length} migrations but the columns differ in ` +
+        `${drifted.map((file) => basename(file)).join(', ')} - fresh installs and upgraded ` +
+        'installs would end up with different schemas'
+    );
+  } else {
+    pass(`table ${table} is defined identically by every migration that creates it`);
   }
 }
 
@@ -813,31 +928,60 @@ section('13. Flarum 2.x framework contracts');
 {
   // Flarum 2.x migrations must return ['up' => fn(Builder $schema), 'down' => ...].
   // 1.x style ($this->schema) silently yields null and fatals at migrate time.
-  const migrationFile = walk(join(EXT, 'migrations'), (file) => file.endsWith('.php'))[0];
-  const migration = read(migrationFile);
+  // Every migration file is checked - see section 11 for why the first one is
+  // not enough.
+  const migration = migrationSource;
 
-  if (!/'up'\s*=>/.test(migration) || !/'down'\s*=>/.test(migration)) {
-    fail('migration contract', "the migration must return an array with 'up' and 'down' keys (Flarum 2.x)");
-  } else {
-    pass("migration returns ['up' => ..., 'down' => ...]");
-  }
+  for (const file of migrationFiles) {
+    const source = read(file);
+    const name = basename(file);
+    let issues = 0;
 
-  if (/\$this->schema/.test(migration)) {
-    fail('migration contract', 'uses $this->schema, which does not exist on Flarum 2.x migrations');
-  } else {
-    pass('migration avoids $this->schema');
-  }
+    if (!/'up'\s*=>/.test(source) || !/'down'\s*=>/.test(source)) {
+      fail(`migration ${name}`, "must return an array with 'up' and 'down' keys (Flarum 2.x)");
+      issues++;
+    }
 
-  if (/extends\s+Migration\b/.test(migration)) {
-    fail('migration contract', 'must not extend Flarum\\Database\\Migration in Flarum 2.x');
-  } else {
-    pass('migration does not extend the 1.x Migration base class');
-  }
+    if (/\$this->schema/.test(source)) {
+      fail(`migration ${name}`, 'uses $this->schema, which does not exist on Flarum 2.x migrations');
+      issues++;
+    }
 
-  if (!/function\s*\(\s*Builder\s+\$schema\s*\)/.test(migration)) {
-    warn('migration contract', 'expected the closures to receive an Illuminate\\Database\\Schema\\Builder');
-  } else {
-    pass('migration closures receive the schema Builder');
+    if (/extends\s+Migration\b/.test(source)) {
+      fail(`migration ${name}`, 'must not extend Flarum\\Database\\Migration in Flarum 2.x');
+      issues++;
+    }
+
+    if (!/function\s*\(\s*Builder\s+\$schema\s*\)/.test(source)) {
+      warn(`migration ${name}`, 'expected the closures to receive an Illuminate\\Database\\Schema\\Builder');
+    }
+
+    // A PHP closure does NOT inherit the enclosing scope. A nested Blueprint
+    // callback that reads $schema without `use ($schema)` compiles, passes every
+    // other check here, and then dies at migrate time with
+    //
+    //     Call to a member function hasColumn() on null
+    //
+    // 0.0.12 shipped exactly that and broke `php flarum migrate` on every
+    // existing install: the column checks sat inside the Blueprint callback
+    // while `$schema` only existed in the outer closure.
+    for (const closure of phpClosures(source)) {
+      if (!/\$schema\b/.test(closure.body)) continue;
+      if (/\$schema\b/.test(closure.params)) continue;
+      if (/\$schema\b/.test(closure.useClause)) continue;
+
+      fail(
+        `migration ${name}`,
+        'a nested closure reads $schema without capturing it; PHP closures do not inherit the ' +
+          'enclosing scope, so it is null at runtime. Add "use ($schema)". Body starts: ' +
+          `"${closure.body.replace(/\s+/g, ' ').trim().slice(0, 90)}"`
+      );
+      issues++;
+    }
+
+    if (issues === 0) {
+      pass(`migration ${name} satisfies the Flarum 2.x migration contract`);
+    }
   }
 
   // Flarum's AbstractModel sets $timestamps = false, so any model whose table has

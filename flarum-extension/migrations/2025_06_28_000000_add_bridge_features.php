@@ -5,30 +5,45 @@ use Illuminate\Database\Schema\Builder;
 
 /*
  * Incremental migration for installs that already ran the 2025_01_01 create
- * migration before the report / activity features existed.
+ * migration before the report feature existed.
  *
  * The create migration is never re-run on an existing forum (Flarum records it
- * as executed), so the three new tables and the two new outbox columns must be
- * added here instead. Every step is guarded so a fresh install - where the
- * create migration already produced all of this - is a no-op.
+ * as executed), so the new table and the two new outbox columns must be added
+ * here instead. Every step is guarded so a fresh install - where the create
+ * migration already produced all of this - is a no-op.
  *
  * Flarum 2.x migrations must RETURN an array of closures; the schema builder is
  * passed as the first argument.
+ *
+ * Scope warning: a PHP closure does NOT inherit the enclosing scope. Referencing
+ * `$schema` from inside a Blueprint callback compiles fine and passes a naive
+ * reviewer, then dies at runtime with
+ *
+ *     Call to a member function hasColumn() on null
+ *
+ * because `$schema` is simply undefined in there. That is exactly how 0.0.12
+ * broke `php flarum migrate` on every existing install, so every column check
+ * below runs in the outer closure and the callback receives plain booleans.
  */
 return [
     'up' => function (Builder $schema) {
         // mc_outbox gained target_uuid (per-player routing) and actor_id
         // (broadcast audit trail).
         if ($schema->hasTable('mc_outbox')) {
-            $schema->table('mc_outbox', function (Blueprint $table) {
-                if (! $schema->hasColumn('mc_outbox', 'target_uuid')) {
-                    $table->string('target_uuid', 36)->nullable()->index();
-                }
+            $addTargetUuid = ! $schema->hasColumn('mc_outbox', 'target_uuid');
+            $addActorId = ! $schema->hasColumn('mc_outbox', 'actor_id');
 
-                if (! $schema->hasColumn('mc_outbox', 'actor_id')) {
-                    $table->unsignedInteger('actor_id')->nullable();
-                }
-            });
+            if ($addTargetUuid || $addActorId) {
+                $schema->table('mc_outbox', function (Blueprint $table) use ($addTargetUuid, $addActorId) {
+                    if ($addTargetUuid) {
+                        $table->string('target_uuid', 36)->nullable()->index();
+                    }
+
+                    if ($addActorId) {
+                        $table->unsignedInteger('actor_id')->nullable();
+                    }
+                });
+            }
         }
 
         if (! $schema->hasTable('mc_reports')) {
@@ -43,22 +58,26 @@ return [
                 $table->timestamps();
             });
         }
-
     },
 
     'down' => function (Builder $schema) {
         $schema->dropIfExists('mc_reports');
 
         if ($schema->hasTable('mc_outbox')) {
-            $schema->table('mc_outbox', function (Blueprint $table) {
-                if ($schema->hasColumn('mc_outbox', 'actor_id')) {
-                    $table->dropColumn('actor_id');
-                }
+            $dropActorId = $schema->hasColumn('mc_outbox', 'actor_id');
+            $dropTargetUuid = $schema->hasColumn('mc_outbox', 'target_uuid');
 
-                if ($schema->hasColumn('mc_outbox', 'target_uuid')) {
-                    $table->dropColumn('target_uuid');
-                }
-            });
+            if ($dropActorId || $dropTargetUuid) {
+                $schema->table('mc_outbox', function (Blueprint $table) use ($dropActorId, $dropTargetUuid) {
+                    if ($dropActorId) {
+                        $table->dropColumn('actor_id');
+                    }
+
+                    if ($dropTargetUuid) {
+                        $table->dropColumn('target_uuid');
+                    }
+                });
+            }
         }
     },
 ];

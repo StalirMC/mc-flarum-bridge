@@ -687,12 +687,43 @@ Packagist 会认为最高版本是 1.0.0，于是不带约束的 `composer requi
 > 留这段记录是为了说清楚：**`mc_outbox` 的 `target_uuid` / `actor_id` 两列和
 > `mc_reports` 表与投票无关**，增量迁移仍然必须跑。
 
-规模：mock 与协议测试 28 → **32 项**（举报 4 项），`verify.mjs` **299 项**，
+规模：mock 与协议测试 28 → **32 项**（举报 4 项），`verify.mjs` **298 项**，
 构建自测 37 项。`gradle build`、`verify.mjs`、`protocol-test.mjs` 全部通过。
 
 **线上实测（forum.kxkl2024.cn）**：用 `DeepSeekHarness` 账号换取 Flarum token 后确认
 `GET /api/mc-bridge/link` 正常返回，而当时新加的 `/api/mc-bridge/polls` 返回 `404`
 —— 即论坛侧仍是旧版，这两个功能需要先部署（见第 4 节）。
+
+### 2.18 增量迁移的闭包作用域致命错误（0.0.13）
+
+**这是 0.0.12 的回归，由用户在真实论坛上试出来的**，也是本轮最值得记的一条。
+
+| 项目 | 内容 |
+|------|------|
+| 现象 | 游戏内 `/report` 收到 `HTTP 500 ({"errors":[{"status":"500","code":"db-error"}]})` |
+| 第一反应（错的） | 误判成「论坛侧扩展没升级 / 迁移没跑」——实际上扩展已是新版，**正是新版的迁移本身**把 `php flarum migrate` 打崩了 |
+| 真实根因 | `2025_06_28_000000_add_bridge_features.php` 把列检查写在了 Blueprint 回调**内部**：`$schema->table('mc_outbox', function (Blueprint $table) { if (! $schema->hasColumn(...)) ... })`。**PHP 闭包不继承外层作用域**，回调里的 `$schema` 是未定义变量（`null`），于是 `Call to a member function hasColumn() on null` 致命错误 |
+| 连锁后果 | 迁移每次都在中途 fatal；Flarum 的 `Migrator` 只在成功后 `log()`，所以它永远不会被标记为已执行 → 每次 `migrate` 都崩、`mc_reports` 永远建不出来 → `/report` 永远 500。自检也如实报出「缺少：mc_reports」 |
+| 影响面 | `mc_outbox` 一旦存在就会调用 `$schema->table(...)`，回调随即执行，因此**新装与升级的论坛都会崩**，不只是老论坛 |
+| 修复 | 列检查移到外层闭包，结果以布尔量传入回调：`function (Blueprint $table) use ($addTargetUuid, $addActorId)`；`down` 同样处理。附带好处是不再在构建 Blueprint 的过程中回头查询 schema |
+| 为什么没被拦住 | `verify.mjs` 的 section 11/13 **只读 `walk(...)[0]`，即第一个迁移文件**（创建迁移），增量迁移从未被静态检查；且旧检查只看 `$this->schema` / `extends Migration`，**从不进入闭包体**。299 项全绿，却漏掉一个必崩的迁移 |
+
+**防护（本轮新增，且已验证有效）**：
+
+1. section 11 与 13 改为遍历**全部**迁移文件，不再只看第一个。
+2. 新增**闭包作用域检查**：解析出每个闭包（含嵌套）的参数表、`use (...)` 子句与花括号配平的函数体；
+   函数体引用了 `$schema`，而它既不是本闭包的参数、也没被 `use` 捕获，即判定为必崩的运行时错误。
+   检查前先剥掉 PHP 注释，避免注释里的花括号干扰配平。
+3. 新增**迁移漂移检查**：同一张表被多个迁移创建时，列定义必须完全一致 —— 否则新装论坛与升级论坛
+   会得到两套不同 schema，而只有其中一套是被测试过的。
+4. **回归自证**：把 0.0.12 那段 bug 原样塞回文件，`verify.mjs` 立刻 `FAILED`（1 个错误，
+   并指名 `2025_06_28_000000_add_bridge_features.php`）；还原后恢复 298 项全绿。
+   抓不到 bug 的防护等于没有防护。
+
+**教训**：这类错误编译期完全合法、原有静态检查也看不见，只有真机 `php flarum migrate` 才会炸；
+而且它对任何执行到该迁移的安装都必炸。**「本地没有 PHP 环境」使这道工序长期只由用户承担**，
+这也是 CI 里 `php -l` + 迁移闭包反射那一步值得继续保持的原因。
+
 ## 3. 无法在本机验证的内容（现由 CI 覆盖）
 
 > 本机没有 PHP / JDK，这些检查**已全部由 CI 在带 PHP 8.3 / JDK 21 的真实环境中

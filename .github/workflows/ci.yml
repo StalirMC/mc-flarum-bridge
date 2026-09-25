@@ -103,27 +103,39 @@ jobs:
             echo "extension manifest ok (requires flarum/core " . $require["flarum/core"] . ")\n";
           '
 
-      - name: Verify the migration returns the Flarum 2.x closure array
+      - name: Verify every migration returns the Flarum 2.x closure array
         run: |
           set -euo pipefail
           php -r '
             $files = glob("flarum-extension/migrations/*.php");
             if ($files === []) { fwrite(STDERR, "no migration file found\n"); exit(1); }
-            $migration = require $files[0];
-            if (! is_array($migration)) {
-                fwrite(STDERR, "the migration must RETURN an array (Flarum 2.x contract)\n"); exit(1);
-            }
-            foreach (["up", "down"] as $key) {
-                if (! isset($migration[$key]) || ! is_callable($migration[$key])) {
-                    fwrite(STDERR, "migration is missing a callable \"$key\" entry\n"); exit(1);
+            sort($files);
+
+            # Every file, not just the first: the incremental migration is the
+            # only one that runs on an already-installed forum, so a defect there
+            # is invisible to a check that stops at the create migration.
+            foreach ($files as $file) {
+                $migration = require $file;
+                if (! is_array($migration)) {
+                    fwrite(STDERR, "the migration must RETURN an array (Flarum 2.x contract): $file\n"); exit(1);
+                }
+                foreach (["up", "down"] as $key) {
+                    if (! isset($migration[$key]) || ! is_callable($migration[$key])) {
+                        fwrite(STDERR, "migration is missing a callable \"$key\" entry: $file\n"); exit(1);
+                    }
+                }
+                $reflection = new ReflectionFunction($migration["up"]);
+                $params = $reflection->getParameters();
+                if ($params === [] || (string) $params[0]->getType() !== "Illuminate\\Database\\Schema\\Builder") {
+                    fwrite(STDERR, "the up closure must accept an Illuminate\\Database\\Schema\\Builder: $file\n"); exit(1);
                 }
             }
-            $reflection = new ReflectionFunction($migration["up"]);
-            $params = $reflection->getParameters();
-            if ($params === [] || (string) $params[0]->getType() !== "Illuminate\\Database\\Schema\\Builder") {
-                fwrite(STDERR, "the up closure must accept an Illuminate\\Database\\Schema\\Builder\n"); exit(1);
-            }
-            echo "migration contract ok\n";
+
+            # This cannot execute the closures (the real Schema\Builder is not
+            # installed here), so the "a nested closure reads $schema without
+            # capturing it" regression - the one that fatals `php flarum migrate`
+            # with hasColumn() on null - is caught by tools/verify.mjs instead.
+            echo "migration contract ok for " . count($files) . " file(s)\n";
           '
 
   java:
