@@ -70,10 +70,18 @@ class QueueAnnouncement
     /**
      * Is this the discussion the bridge filed for a player report?
      *
-     * Two independent signals on purpose: the account reports are filed as, and
-     * the tag they are filed under. Either one can be the only thing that is
-     * configured (the tag is auto-detected on a forum that already has one), and
-     * a false negative here would leak the report - and the reporter - to every
+     * Two independent signals, and BOTH are load-bearing - do not reduce this to
+     * one of them:
+     *
+     * - The author check is what protects the report's own opening post. When
+     *   that post is created the discussion has no tags yet: the JSON:API create
+     *   flow saves the discussion and its first post first, and only then runs
+     *   the field setters, one of which syncs the tag pivot. So at Posted time
+     *   only the author identifies the report.
+     * - The tag check covers everything after that - a reply in the report
+     *   thread, which sync_replies would otherwise forward to the game.
+     *
+     * A false negative here hands the report, and the reporter's name, to every
      * player online.
      */
     private function isModerationDiscussion($discussion, int $authorId): bool
