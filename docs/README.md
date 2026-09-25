@@ -430,3 +430,39 @@ curl -s -X POST https://forum.kxkl2024.cn/api/mc-bridge/broadcast \
 | `403` + Cloudflare 页面 | 关闭该路径的 WAF/挑战 |
 | 游戏内无公告 | 用 `/mcbridge outbox` 看队列；确认 `announcement_tag_ids` 包含该标签 |
 
+### 6.1 `composer update` 被 minimum-stability 拒绝
+
+完整报错形如：
+
+```
+Package x/y is fixed to 1.2.3-beta.1 (lock file version) by a partial update
+but that version is rejected by your minimum-stability.
+Make sure you list it as an argument for the update command. Use the option
+--with-all-dependencies (-W) ...
+```
+
+**与 MC Bridge 无关**：论坛的锁文件里锁着 `fof/*`、`ianm/*` 等 **beta 版本**，
+而根 `composer.json` 的 `minimum-stability` 是默认的 `stable`，于是任何「部分更新」
+在重新解析依赖时都会被这些已锁定的 beta 包卡住。
+
+按报错提示照做即可 —— **把要更新的包名写进命令**，并加 `-W`：
+
+```bash
+composer update stalirmc/mc-flarum-bridge -W
+```
+
+`-W`（`--with-all-dependencies`）允许 Composer 顺带升降级那些被锁定的依赖，这正是它缺的能力。
+
+仍然不行时，临时放宽稳定性、更新、再改回来：
+
+```bash
+composer config minimum-stability beta
+composer config prefer-stable true
+composer update stalirmc/mc-flarum-bridge -W
+composer config minimum-stability stable
+php flarum cache:clear
+```
+
+> 报错里点名的包不一定是 MC Bridge：被拒的是**锁文件里那个 beta 包**。
+> 只要按提示把**你真正要更新的包**列为参数并加 `-W` 即可。
+
