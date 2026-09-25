@@ -773,8 +773,10 @@ Packagist 会认为最高版本是 1.0.0，于是不带约束的 `composer requi
 **新增的两条防护**
 
 1. **举报不进游戏**：`QueueAnnouncement` 会跳过举报讨论。不这样做的话，举报会被当成普通新讨论
-   广播给所有在线玩家，等于直接公开举报人身份。判定用两条独立信号 —— 举报标签与举报发布账号 ——
-   因为两者都可能只有一个可用（标签是自动识别出来的，不一定在设置里）。
+   广播给所有在线玩家，等于直接公开举报人身份。判定以**举报标签**为准（`ReportDiscussion`
+   在创建之前就把解析到的标签 id 写回设置，所以这里总有东西可匹配）；只有在**完全没有配置举报
+   标签**时（实际上就是没装 `flarum/tags`）才退回「作者是举报发布账号」那一条。
+   见 2.23 —— 把作者判定无条件放在最前面，曾导致该账号发的正常公告被静默丢弃。
 2. **设置键必须声明**：新增 `verify.mjs` section 4b。Flarum 对未声明的 `mc-bridge.*` 键不报错，
    `get()` 只是返回调用方给的默认值 —— 正因如此，把 `mc-bridge.report_tag_id` 误写成
    `mc-bridge.report_tagid` 会让整个功能静默失效且毫无提示。该检查收集**所有**交给 settings
@@ -860,6 +862,51 @@ Packagist 会认为最高版本是 1.0.0，于是不带约束的 `composer requi
 
 **契约同步**：mock 用 `reportUids` Map 模拟同一行为（重复 uid 返回 `duplicate` 且不新增记录）；
 协议测试新增 1 组（同 uid 重试只入库一次），34 → **35 项**。
+
+规模：`verify.mjs` **321 项**、协议 **35 项**、构建自测 **45 项**，全部通过。
+
+### 2.23 举报守护误伤：管理员发的公告被静默丢弃（0.0.18）
+
+**用户反馈**：「只有携带这些标签的讨论才会推送到游戏，这个只有评论会推送。」
+
+**排查中被证伪的一个假设（这部分值得留着）**
+
+第一反应是「标签在 `Posted` 触发时还没写入」—— 毕竟标签是靠 `afterSave` 延迟同步的。
+把 2.x 的调用链在框架源码里追完之后，这个假设**被证伪**：
+
+```
+Create::setUp
+ ├ setValues        → tags 字段的 set() 跑在这里，注册 afterSave(sync)
+ ├ createAction
+ │   ├ saveModel()  → $model->save() 触发 saved ⇒ 释放 afterSave ⇒ 标签此刻已写库
+ │   └ 创建首帖      → Posted 事件（此时标签已在库里）
+ └ saveFields       → AbstractDatabaseResource::saveValue 对 ToMany 再 sync 一次（幂等）
+```
+
+两处关键源码：`json-api-server` 的 `SetsValue::setValue()` 会优先调用字段自己的 setter
+（所以 tags 的 `set()` 在 `setValues` 阶段就跑，而不是等到 `saveFields`），以及
+`Flarum\Database\AbstractModel::boot()` 在 `saved` 时释放 `afterSaveCallbacks`。
+因此 `Posted` 触发时标签**一定**已经存在。
+
+**真正的 bug**：`isModerationDiscussion()` 把作者判定放在最前面且无条件生效：
+
+```php
+if (in_array($authorId, $this->settingIds(ReportDiscussion::ACTOR_SETTING), true)) {
+    return true;   // ← 跳过该账号发出的「所有」帖子
+}
+```
+
+而举报发布账号默认是**最早的管理员** —— 通常就是发公告的那个号。于是该账号发的每一条新讨论
+都被当成举报跳过、永远推不到游戏；其他玩家的回复（讨论早已带标签、作者也不是举报账号）照常通过
+—— 正好就是「只有评论会推送」。
+
+**修法**：标签判定才是可靠信号（上面已证明它在 `Posted` 时可用），作者判定降级为
+**只在没有配置举报标签时**的兜底 —— 那只发生在没装 `flarum/tags`、根本没有标签可匹配的情况。
+
+**教训**：「多加一条独立兜底更安全」在这类判定里是错的：兜底的**误伤面**（那个账号的全部发言）
+远大于它想防的边界情况（无标签论坛）。更糟的是，我为它写下的那段解释时序的注释**本身是错的** ——
+一个基于错误推断、还自称「load-bearing」的注释会把错误固化下来，所以 2.22 修超时的时候也没人
+再去质疑它。
 
 规模：`verify.mjs` **321 项**、协议 **35 项**、构建自测 **45 项**，全部通过。
 

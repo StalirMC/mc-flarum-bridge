@@ -70,40 +70,40 @@ class QueueAnnouncement
     /**
      * Is this the discussion the bridge filed for a player report?
      *
-     * Two independent signals, and BOTH are load-bearing - do not reduce this to
-     * one of them:
+     * The tags are the reliable signal, and they are available by the time this
+     * runs: the JSON:API create flow runs the field setters first, and the tags
+     * field registers a callback that the first `$model->save()` flushes - both
+     * of which happen before the opening post is inserted and therefore before
+     * Posted is dispatched. Service\ReportDiscussion additionally writes the
+     * resolved tag ids back to the settings before it creates anything, so this
+     * code always has something to match on.
      *
-     * - The author check is what protects the report's own opening post. When
-     *   that post is created the discussion has no tags yet: the JSON:API create
-     *   flow saves the discussion and its first post first, and only then runs
-     *   the field setters, one of which syncs the tag pivot. So at Posted time
-     *   only the author identifies the report.
-     * - The tag check covers everything after that - a reply in the report
-     *   thread, which sync_replies would otherwise forward to the game.
+     * The author check is only a fallback for a forum where no report tag is
+     * configured at all, which in practice means flarum/tags is absent and there
+     * is no tag to match on. It is deliberately NOT applied otherwise: the report
+     * author defaults to the oldest administrator, so treating "posted by that
+     * account" as "this is a report" silenced every ordinary announcement made by
+     * that administrator.
      *
      * A false negative here hands the report, and the reporter's name, to every
-     * player online.
+     * player online; a false positive silently drops a normal announcement.
      */
     private function isModerationDiscussion($discussion, int $authorId): bool
     {
-        if (in_array($authorId, $this->settingIds(ReportDiscussion::ACTOR_SETTING), true)) {
-            return true;
-        }
-
         $reportTagIds = $this->settingIds(ReportDiscussion::TAGS_SETTING);
 
-        if ($reportTagIds === []) {
-            return false;
+        if ($reportTagIds !== []) {
+            try {
+                // Any of them is enough: a report is filed under the whole list, and
+                // a moderator may add or remove one afterwards.
+                return $discussion->tags()->whereIn('id', $reportTagIds)->exists();
+            } catch (\Throwable) {
+                // flarum/tags is not installed.
+                return false;
+            }
         }
 
-        try {
-            // Any of them is enough: a report is filed under the whole list, and a
-            // moderator may add or remove one afterwards.
-            return $discussion->tags()->whereIn('id', $reportTagIds)->exists();
-        } catch (\Throwable) {
-            // flarum/tags is not installed.
-            return false;
-        }
+        return in_array($authorId, $this->settingIds(ReportDiscussion::ACTOR_SETTING), true);
     }
 
     /**
