@@ -1,7 +1,7 @@
 name: Release
 
-# Publishing is driven by a tag, so the released jar is always the one the CI
-# workflow already validated for that exact commit:
+# Publishing is driven by a tag, so the released artifacts are always the ones the
+# CI workflow already validated for that exact commit:
 #
 #   git tag v0.0.1 && git push origin v0.0.1
 
@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   release:
-    name: Build and publish the universal jar
+    name: Build and publish the plugin jar and the mod jar
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
