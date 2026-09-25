@@ -910,6 +910,63 @@ if (in_array($authorId, $this->settingIds(ReportDiscussion::ACTOR_SETTING), true
 
 规模：`verify.mjs` **321 项**、协议 **35 项**、构建自测 **45 项**，全部通过。
 
+### 2.24 移除 Velocity、新增 NeoForge 1.21.1 支持（0.0.19）
+
+> 本节之后的 2.7 / 2.8 等小节记录的是当时「一个 jar 三个平台」的验证结果，属于历史；
+> Velocity 支持已按本节删除，那些小节里的 `velocity-plugin.json`、`VelocityPlatform`
+> 等描述**不再是当前状态**。
+
+**目标**：删掉 Velocity 支持，改为支持 NeoForge 1.21.1。
+
+**关键发现（决定了整个做法）**：Minecraft 1.21.1 的官方库清单里**没有 Adventure**
+（只有 gson 2.10.1、guava 32.1.2-jre、brigadier 1.3.10），NeoForge 21.1.100 的 POM 里也没有
+`net.kyori`。原来「一个 jar 三个平台」之所以成立，是因为 Paper 与 Velocity **都自带**
+Adventure；NeoForge 不带，共享核心只要碰到 `net.kyori.adventure.text.Component`，
+在 NeoForge 上就会 `NoClassDefFoundError`。
+
+**做法**：不把 Adventure 打进 jar（那会与 Paper 自带的版本冲突，也破坏「jar 内无第三方
+代码」这条不变式），而是**让核心不再依赖 Adventure**：
+
+| 层 | 改动 |
+|----|------|
+| `main` | 新增 `Message`（不可变，内含 lang 文件本来就用的 `&` 码字符串）。`Messages` 的 `legacy/render/prefixed` 改返回 `Message`；`plain()` 改为直接去色码；`Platform` 的三个输出方法改收 `Message`；`BridgeCore` 的 14 处 `Component` 改为 `Message` |
+| `paper` | 新增 `AdventureMessages`（`Message` → Adventure `Component`，用 `legacyAmpersand()`），是 paper 模块唯一的转换点；三个命令改为 `AdventureMessages.send(sender, …)` |
+| `neoforge` | 新增 `NeoForgeMessages`（`Message` → `net.minecraft.network.chat.Component`，`&x` → `§x`；只替换真正的色码，因此公告正文里 URL 的 `&` 不会被误伤） |
+
+改动面很小：核心只有 3 个文件、5 处 `net.kyori` 引用、22 处 `Component` 提到。
+
+**为什么 NeoForge 是独立 Gradle 工程**：ModDevGradle 必须拥有它所在工程的 Minecraft 依赖。
+把它放进 `mc-plugin/neoforge/` 子工程后，`main` 根本看不到 Minecraft —— 这是「核心零平台
+引用」从「靠断言保证」升级为「靠编译类路径保证」的关键。子工程直接编译根工程的
+`src/main/java` + `src/main/resources`（核心源码仓库里只有一份），两个 jar 各自包含一份
+核心 class，互不依赖。
+
+**验证到的**：
+
+| 项目 | 证据 |
+|------|------|
+| NeoForge 工具链在本机可用 | ModDevGradle 2.0.147 拉取 NeoForge 21.1.100 + Minecraft 1.21.1，NeoForm 走完 merge → rename → decompile(106s) → inject → patch → applyNeoForgePatches → transformSources → recompile（5364 个源文件）→ compiledWithNeoForge，总耗时 320s，随后 `:neoforge:compileJava` **BUILD SUCCESSFUL**（8m04s） |
+| 模组源码编译通过 | 7 个类（`@Mod` 入口 + 事件总线、`Platform` 实现、消息转换、SLF4J 适配、三个 Brigadier 命令）在真实 Minecraft/NeoForge 类路径下编译成功 |
+| 模组 jar 内容正确 | `McBridge-neoforge-0.0.18.jar` 共 30 项，`verifyJar` 通过：`META-INF/neoforge.mods.toml` 声明 `modId="mc_bridge"`、`loaderVersion="[4,)"`、NeoForge 与 Minecraft 版本、`side="SERVER"`，且不含 `plugin.yml` |
+| 插件 jar 不再含 Velocity | 31 项；`verifyJar` 与 CI 都断言 `velocity` 字样不出现 |
+| 命令字面量不冲突 | 反编译的真实服务端源码里 85 个命令类中**没有 ReportCommand** —— 原版 `/report` 是客户端聊天举报，服务端注册 `/report` 不会与它撞车（名字相同但参数类型不同的字面量会让 Brigadier 在注册期抛异常） |
+| 静态检查 | `verify.mjs` **350 项**：新增 NeoForge 模块的 PSR-4 / 项目导入 / 平台隔离 / 描述符 / 构建接线断言，并把 `net/kyori`、`net/minecraft`、`net/neoforged` 也加入共享核心的禁用前缀 |
+| 构建自测 | **45 项**全通过（真实 JVM） |
+| 协议测试 | **35 项**全通过 |
+
+**踩到的坑**：
+
+| 现象 | 原因 | 修法 |
+|------|------|------|
+| `processResources` 报 `Failed to parse template script` | 模组描述符顶部的注释里写了字面量 `${...}`，`expand()` 把它当 Groovy 表达式去求值 | 注释里不再出现该字面量，改用文字描述 |
+| `verifyJar` 报模组描述符缺版本 | 描述符模板变量名大小写与 `gradle.properties` 不一致（`neoForgeVersion` vs `neoforgeVersion`），检查用的正则匹配不到 | 统一为 `neoforgeVersion` |
+| `verify.mjs` 去校验 Gradle 生成的 JSON | 原有的 JSON 遍历只看 `node_modules`，NeoForge 构建产物落在 `neoforge/build/` 下 | JSON 遍历同时跳过 `*/build/` 与 `.gradle/` |
+| Gradle 明确输出 `BUILD SUCCESSFUL` 却被判为失败 | NeoForm 在 stderr 上打了一句已知无害的 `Cannot inject duplicate file mcp/client/Start.class`，PowerShell 把它当成 NativeCommandError | 判据改为看 gradle 自己的 `BUILD SUCCESSFUL`，不看进程退出码 |
+
+**仍未验证**：模组**从未在真实 NeoForge 服务端加载过**（本机没有 Minecraft 服务端）。
+命令注册、事件总线订阅、`MinecraftServer#execute` 调度、`Component` 的实际渲染都只到
+「编译 + 静态断言」为止；第 4 节的实机清单里已加入对应步骤。
+
 ## 3. 无法在本机验证的内容（现由 CI 覆盖）
 
 > 本机没有 PHP / JDK，这些检查**已全部由 CI 在带 PHP 8.3 / JDK 21 的真实环境中
@@ -918,14 +975,14 @@ if (in_array($authorId, $this->settingIds(ReportDiscussion::ACTOR_SETTING), true
 | 项目 | 命令 | 期望 | CI 状态 |
 |------|------|------|---------|
 | PHP 语法 | `find flarum-extension -name '*.php' -exec php -l {} \;` | 无 `Parse error` | ✅ CI 已执行通过 |
-| Java 编译 | `cd mc-plugin && gradle wrapper --gradle-version 8.10 && ./gradlew build` | `BUILD SUCCESSFUL` | ✅ CI 已执行通过，jar 已上传为 artifact |
+| Java 编译 | `cd mc-plugin && gradle build` | `BUILD SUCCESSFUL`，两个 jar 都产出 | ✅ CI 已执行通过，两个 jar 都已上传为 artifact |
 | Flarum 安装 | `composer require stalirmc/mc-flarum-bridge` | 扩展出现在管理后台 | ⬜ 需在真实论坛执行（CI 不安装 Flarum） |
 | 迁移执行 | `php flarum migrate` | 6 张表建立 | ⬜ 需真实数据库（CI 仅反射校验迁移契约） |
 | **桥接自检** | `php flarum mc-bridge:selftest --url=https://你的域名` | 全部 `OK` | ⬜ 需在真实论坛执行 |
 | 插件加载（Paper） | 放入 jar 后启动服务器 | 日志出现 `McBridge enabled on paper as server ...` | ⬜ 需在真实服务器执行 |
-| 插件加载（Folia） | 同一个 jar 放入 Folia 的 `plugins/` | 日志出现 `on folia`，且无 `UnsupportedOperationException` | ⬜ 需真实 Folia 服务端 |
-| 插件加载（Velocity） | 同一个 jar 放入代理的 `plugins/` | 代理日志出现 `on velocity`，`/mcbridge stats` 平台行为 velocity | ⬜ 需真实 Velocity 代理 |
-| 真实心跳 | 观察日志 / `GET /api/mc-bridge/status` | 服务器状态出现在论坛 | ⬜ 需在真实服务器执行 |
+| 插件加载（Folia） | 同一个插件 jar 放入 Folia 的 `plugins/` | 日志出现 `on folia`，且无 `UnsupportedOperationException` | ⬜ 需真实 Folia 服务端 |
+| 模组加载（NeoForge 1.21.1） | `McBridge-neoforge-<版本>.jar` 放入服务端 `mods/` | 服务器日志出现 `MC Bridge loaded` 与 `McBridge enabled on neoforge as server ...`，`/mcbridge stats` 平台行为 `neoforge` | ⬜ 需真实 NeoForge 服务端 |
+| 公告投递 | 论坛发一条公告，20 秒内游戏内出现 `[论坛] <标题>` | 玩家可见公告 | ⬜ 需在真实服务器执行 |
 
 其中 `mc-bridge:selftest` 是专为此设计的：它在**运行论坛的那台机器**上检查密钥
 长度、HMAC 签名/验签/篡改检测、规范化字符串格式、路径规范化（含子目录安装）、
@@ -945,11 +1002,13 @@ php flarum mc-bridge:config --tags=1,3         # 可选：只同步「公告」�
 php flarum mc-bridge:selftest --url=https://forum.kxkl2024.cn
 
 # ---- 游戏侧 ----
-cd mc-plugin && gradle wrapper --gradle-version 8.10 && ./gradlew build
-# 复制 build/libs/McBridge-1.0.0.jar 到 server/plugins/
-# 编辑 plugins/McBridge/config.yml 填入 forum.url 与 security.secret
+cd mc-plugin && gradle build
+# Paper/Folia：复制 build/libs/McBridge-<版本>.jar 到 server/plugins/
+#              编辑 plugins/McBridge/config.yml 填入 forum.url 与 security.secret
+# NeoForge   ：复制 neoforge/build/libs/McBridge-neoforge-<版本>.jar 到 server/mods/
+#              编辑 config/mc-bridge/config.yml 填入同样两项
 # 启动服务器，然后：
-#   /mcbridge stats     -> 配置状态应为「正常」
+#   /mcbridge stats     -> 配置状态应为「正常」，第一行显示运行平台
 #   /mcbridge news      -> 应列出论坛最新公告（所有玩家都可用）
 #   /bind               -> 应返回 8 位绑定码
 #   /report <玩家> <原因> -> 应提示已提交，论坛后台出现 pending 记录

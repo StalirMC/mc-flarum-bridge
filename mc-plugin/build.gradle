@@ -3,7 +3,7 @@ plugins {
 }
 
 group = 'cn.stalir'
-description = 'Bidirectional bridge between Minecraft (Paper, Folia, Velocity) and a Flarum forum'
+description = 'Bidirectional bridge between Minecraft (Paper, Folia, NeoForge) and a Flarum forum'
 
 repositories {
     mavenCentral()
@@ -20,19 +20,18 @@ repositories {
 }
 
 // ---------------------------------------------------------------------------
-// Three source sets, one jar
+// Paper/Folia plugin: the shared core plus the Bukkit entry points
 //
-//   main     platform independent core: protocol, config, language files and the
-//            heartbeat/event/outbox orchestration. Compiled against the JDK plus
-//            Adventure and Gson only, both of which every platform already ships,
-//            so the jar bundles no third-party code at all.
-//   paper    the Paper and Folia entry points (paper-api).
-//   velocity the Velocity entry point (velocity-api; its annotation processor
-//            generates velocity-plugin.json, which Velocity looks for in the jar
-//            root).
+//   main   platform independent core: protocol, config, language files and the
+//          heartbeat/outbox orchestration. Compiled against the JDK and Gson
+//          only - not even Adventure, because Minecraft 1.21.1 (and therefore
+//          NeoForge) does not ship it. The core stops at cn.stalir.mcbridge
+//          .Message and each platform renders that itself.
+//   paper  the Paper and Folia entry points (paper-api).
 //
-// Both descriptors end up at the jar root, and each platform only ever loads the
-// class its own descriptor names, so one artifact works on all three.
+// The NeoForge mod is a project of its own (see neoforge/): ModDevGradle has to
+// own the Minecraft dependency of the project it is applied to, and keeping it
+// separate is what guarantees Minecraft never reaches the core's classpath.
 // ---------------------------------------------------------------------------
 
 sourceSets {
@@ -47,33 +46,22 @@ sourceSets {
         compileClasspath += sourceSets.main.output
         runtimeClasspath += sourceSets.main.output
     }
-
-    velocity {
-        java.srcDirs = ['src/velocity/java']
-        compileClasspath += sourceSets.main.output
-        runtimeClasspath += sourceSets.main.output
-    }
 }
 
 dependencies {
-    // Provided by Paper/Folia and by Velocity at runtime, so never bundled.
-    compileOnly "net.kyori:adventure-api:${adventureApiVersion}"
-    compileOnly "net.kyori:adventure-text-serializer-legacy:${adventureApiVersion}"
-    compileOnly "net.kyori:adventure-text-serializer-plain:${adventureApiVersion}"
+    // Provided by the server at runtime, so never bundled.
     compileOnly "com.google.code.gson:gson:${gsonVersion}"
 
     paperCompileOnly "io.papermc.paper:paper-api:${paperApiVersion}"
-    // Only the paper module may touch this: the proxy has no PlaceholderAPI, and
-    // the shared core must stay free of platform references.
+    // Adventure belongs to the paper module alone: Paper ships it, NeoForge does
+    // not, and the shared core is deliberately free of it.
+    paperCompileOnly "net.kyori:adventure-api:${adventureApiVersion}"
+    paperCompileOnly "net.kyori:adventure-text-serializer-legacy:${adventureApiVersion}"
+    // Only the paper module may touch this either; a mod loader has no
+    // PlaceholderAPI.
     paperCompileOnly "me.clip:placeholderapi:${placeholderApiVersion}"
 
-    velocityCompileOnly "com.velocitypowered:velocity-api:${velocityApiVersion}"
-    velocityAnnotationProcessor "com.velocitypowered:velocity-api:${velocityApiVersion}"
-
-    // Only the runtime self test needs these on the classpath at run time.
-    testImplementation "net.kyori:adventure-api:${adventureApiVersion}"
-    testImplementation "net.kyori:adventure-text-serializer-legacy:${adventureApiVersion}"
-    testImplementation "net.kyori:adventure-text-serializer-plain:${adventureApiVersion}"
+    // Only the runtime self test needs Gson on the classpath at run time.
     testImplementation "com.google.code.gson:gson:${gsonVersion}"
 }
 
@@ -82,13 +70,12 @@ dependencies {
 //
 // The toolchain is JDK 21 and the bytecode target differs per module:
 //
-//   main / velocity / test   Java 17
-//   paper                    Java 21
+//   main / test   Java 17
+//   paper         Java 21
 //
-// Staying on 17 wherever possible means a Velocity proxy still running Java 17
-// can load the shared core and the proxy module instead of locking those owners
-// out. One jar may mix class file versions: each class declares its own, and the
-// JVM loads whatever version it supports.
+// Staying on 17 for the shared core means it keeps loading on the widest range
+// of JVMs; one jar may mix class file versions, since each class declares its
+// own and the JVM loads whatever version it supports.
 // ---------------------------------------------------------------------------
 
 java {
@@ -105,8 +92,7 @@ tasks.withType(JavaCompile).configureEach {
 
 // paper-api 1.21.1 is itself compiled for Java 21, and Gradle refuses to resolve
 // it for a Java 17 target. Paper and Folia 1.21 require Java 21 at runtime
-// anyway, so only this module is raised; the shared core, the proxy module and
-// the self test stay on 17 and keep working on a Velocity running Java 17.
+// anyway, so only this module is raised.
 tasks.named('compilePaperJava') {
     options.release = 21
 }
@@ -142,7 +128,6 @@ tasks.named('jar') {
     archiveBaseName = 'McBridge'
 
     from sourceSets.paper.output
-    from sourceSets.velocity.output
 
     manifest {
         attributes(
@@ -178,13 +163,13 @@ tasks.named('check') {
 // ---------------------------------------------------------------------------
 // Jar content assertions
 //
-// A universal jar fails in a way that is easy to miss: the file builds, but one
-// platform silently cannot load it because its descriptor, entry point or
-// language files are absent. Failing the build is far better than shipping that.
+// A plugin jar fails in a way that is easy to miss: the file builds, but the
+// server silently cannot load it because a descriptor, an entry point or a
+// language file is absent. Failing the build is far better than shipping that.
 // ---------------------------------------------------------------------------
 
 tasks.register('verifyJar') {
-    description = 'Assert that the built jar can be loaded by Paper, Folia and Velocity.'
+    description = 'Assert that the built jar is loadable by Paper and Folia.'
     group = 'verification'
     dependsOn tasks.named('jar')
 
@@ -200,21 +185,29 @@ tasks.register('verifyJar') {
 
             def required = [
                     'plugin.yml',
-                    'velocity-plugin.json',
                     'config.yml',
                     'lang/zh_CN.yml',
                     'lang/en.yml',
                     'cn/stalir/mcbridge/BridgeCore.class',
+                    'cn/stalir/mcbridge/Message.class',
                     'cn/stalir/mcbridge/paper/McBridgePlugin.class',
                     'cn/stalir/mcbridge/paper/PaperPlatform.class',
-                    'cn/stalir/mcbridge/velocity/McBridgeVelocityPlugin.class',
-                    'cn/stalir/mcbridge/velocity/VelocityPlatform.class',
+                    'cn/stalir/mcbridge/paper/AdventureMessages.class',
             ]
 
             def missing = required.findAll { !entries.contains(it) }
 
             if (!missing.isEmpty()) {
-                throw new GradleException("The jar cannot serve every platform; missing entries: ${missing}")
+                throw new GradleException("The jar cannot serve Paper/Folia; missing entries: ${missing}")
+            }
+
+            // The Velocity descriptor and entry points are gone for good. A
+            // leftover in the jar would mean the build still merges a module that
+            // no longer exists.
+            def stale = entries.findAll { it.contains('velocity') || it.contains('Velocity') }
+
+            if (!stale.isEmpty()) {
+                throw new GradleException("The jar still contains Velocity artifacts: ${stale}")
             }
 
             def readEntry = { String name ->
@@ -222,7 +215,6 @@ tasks.register('verifyJar') {
             }
 
             def pluginYml = readEntry('plugin.yml')
-            def velocityJson = readEntry('velocity-plugin.json')
 
             if (!pluginYml.contains('main: cn.stalir.mcbridge.paper.McBridgePlugin')) {
                 throw new GradleException('plugin.yml does not point at the Paper entry point')
@@ -236,35 +228,30 @@ tasks.register('verifyJar') {
                 throw new GradleException("plugin.yml does not carry the project version ${expectedVersion}")
             }
 
-            if (!velocityJson.contains('mc-bridge')) {
-                throw new GradleException('velocity-plugin.json does not declare the mc-bridge plugin id')
-            }
+            // The shared core must stay platform neutral. One Bukkit, Minecraft
+            // or Adventure reference inside it would be resolved when a platform
+            // that does not ship that library loads those classes, and would fail
+            // there with NoClassDefFoundError. The string constant pool of the
+            // class file is enough to catch that: javadoc never reaches it.
+            def forbiddenInCore = ['org/bukkit/', 'io/papermc/', 'net/kyori/', 'net/minecraft/', 'net/neoforged/']
 
-            if (!velocityJson.contains(expectedVersion)) {
-                throw new GradleException("velocity-plugin.json does not carry the project version ${expectedVersion}")
-            }
-
-            // The shared core must stay platform neutral: one Bukkit or Velocity
-            // reference inside it would be resolved when the *other* platform
-            // loads those classes and would fail with NoClassDefFoundError. The
-            // string constant pool of the class file is enough to catch that.
             zip.entries().findAll { entry ->
                 entry.name.startsWith('cn/stalir/mcbridge/')
                         && entry.name.endsWith('.class')
                         && !entry.name.contains('/paper/')
-                        && !entry.name.contains('/velocity/')
+                        && !entry.name.contains('/neoforge/')
             }.each { entry ->
                 def pool = new String(zip.getInputStream(entry).readAllBytes(), java.nio.charset.StandardCharsets.ISO_8859_1)
 
-                ['org/bukkit/', 'com/velocitypowered/', 'io/papermc/'].each { forbidden ->
+                forbiddenInCore.each { forbidden ->
                     if (pool.contains(forbidden)) {
                         throw new GradleException(
-                                "Shared class ${entry.name} references ${forbidden}, which does not exist on every platform")
+                                "Shared class ${entry.name} references ${forbidden}, which not every platform ships")
                     }
                 }
             }
 
-            logger.lifecycle("verified ${jarFile.name}: ${entries.size()} entries, loadable by Paper, Folia and Velocity")
+            logger.lifecycle("verified ${jarFile.name}: ${entries.size()} entries, loadable by Paper and Folia")
         } finally {
             zip.close()
         }

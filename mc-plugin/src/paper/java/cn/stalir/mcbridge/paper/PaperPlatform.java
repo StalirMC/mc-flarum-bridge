@@ -1,6 +1,7 @@
 package cn.stalir.mcbridge.paper;
 
 import cn.stalir.mcbridge.Log;
+import cn.stalir.mcbridge.Message;
 import cn.stalir.mcbridge.Platform;
 import cn.stalir.mcbridge.Yaml;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
@@ -31,13 +32,15 @@ import java.util.concurrent.TimeUnit;
  *       main thread is the only thread that may touch server state.</li>
  * </ul>
  *
- * Threading: server state ({@link #serverVersion()}, {@link #motd()},
- * {@link #maxPlayers()}, {@link #onlinePlayers()}, {@link #playerNames()},
- * {@link #tps()}, {@link #mspt()}) is only read from a task started by
+ * Threading: server state is only read from a task started by
  * {@link #runSyncRepeating(Runnable, long, long)}, i.e. from the main thread or
- * from the global region. {@link #logToConsole(Component)} is safe from any
- * thread; {@link #broadcast(Component)} hands each player's copy to that
- * player's own scheduler when the server is regionised.
+ * from the global region. {@link #logToConsole(Message)} is safe from any
+ * thread; {@link #broadcast(Message)} hands each player's copy to that player's
+ * own scheduler when the server is regionised.
+ *
+ * This class is also where core {@link Message}s become Adventure components:
+ * Paper ships Adventure, and the shared core deliberately does not depend on it
+ * (see {@link Message}).
  *
  * Every repeating task is kept as a handle, so {@link #cancelTasks()} cancels
  * exactly what this plugin scheduled instead of an arbitrary superset.
@@ -222,12 +225,16 @@ public final class PaperPlatform implements Platform {
     // ------------------------------------------------------------------
 
     @Override
-    public void broadcast(Component message) {
+    public void broadcast(Message message) {
+        // Rendered once on the calling thread: the component is immutable, so
+        // every player's copy below can share it safely.
+        Component rendered = AdventureMessages.render(message);
+
         if (FOLIA) {
             // A regionised server owns each player in the region that ticks it,
             // so every copy is delivered through that player's own scheduler.
             for (Player player : Bukkit.getOnlinePlayers()) {
-                player.getScheduler().run(plugin, scheduled -> player.sendMessage(message), null);
+                player.getScheduler().run(plugin, scheduled -> player.sendMessage(rendered), null);
             }
 
             return;
@@ -239,7 +246,7 @@ public final class PaperPlatform implements Platform {
         // needs no handle of its own.
         Runnable delivery = () -> {
             for (Player player : Bukkit.getOnlinePlayers()) {
-                player.sendMessage(message);
+                player.sendMessage(rendered);
             }
         };
 
@@ -247,7 +254,7 @@ public final class PaperPlatform implements Platform {
     }
 
     @Override
-    public void sendToPlayer(UUID uuid, Component message) {
+    public void sendToPlayer(UUID uuid, Message message) {
         Player player = Bukkit.getPlayer(uuid);
 
         if (player == null) {
@@ -255,20 +262,22 @@ public final class PaperPlatform implements Platform {
             return;
         }
 
+        Component rendered = AdventureMessages.render(message);
+
         if (FOLIA) {
             // Regionised: the message must be delivered on the thread that owns
             // the player, so it goes through that player's own scheduler.
-            player.getScheduler().run(plugin, scheduled -> player.sendMessage(message), null);
+            player.getScheduler().run(plugin, scheduled -> player.sendMessage(rendered), null);
             return;
         }
 
-        Bukkit.getScheduler().runTask(plugin, () -> player.sendMessage(message));
+        Bukkit.getScheduler().runTask(plugin, () -> player.sendMessage(rendered));
     }
 
     @Override
-    public void logToConsole(Component message) {
+    public void logToConsole(Message message) {
         // ConsoleSender#sendMessage is safe from any thread on both families.
-        Bukkit.getConsoleSender().sendMessage(message);
+        Bukkit.getConsoleSender().sendMessage(AdventureMessages.render(message));
     }
 
     // ------------------------------------------------------------------

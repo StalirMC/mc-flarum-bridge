@@ -254,7 +254,17 @@ function flattenKeys(node, prefix = '') {
 section('1. JSON files parse');
 
 // npm packages may ship non-strict JSON, so dependencies are not validated.
-const jsonFiles = walk(ROOT, (file) => file.endsWith('.json') && !file.includes('node_modules'));
+// Build output is skipped: a Gradle build leaves generated JSON (Minecraft
+// toolchain reports, IDE metadata) under */build/, and asserting on files this
+// script did not write would turn an unrelated build into a false failure.
+const jsonFiles = walk(ROOT, (file) => {
+  const path = rel(file);
+
+  return path.endsWith('.json')
+    && !path.includes('node_modules')
+    && !path.includes('/build/')
+    && !path.includes('.gradle/');
+});
 
 for (const file of jsonFiles) {
   try {
@@ -526,22 +536,29 @@ section('5. Java package layout');
 
 const javaRoot = join(PLUGIN, 'src/main/java');
 
-// The plugin is a single jar assembled from three source sets: a platform
-// independent core plus one module per platform family. Each root is checked on
-// its own, and imports are only allowed in the direction the jar supports - a
-// reference from the shared core into a platform module would be resolved when
-// the *other* platform loads it and would fail with NoClassDefFoundError.
+// The plugin is assembled from a platform independent core plus one module per
+// platform family. Each root is checked on its own, and imports are only allowed
+// in the direction the build supports - a reference from the shared core into a
+// platform module would be resolved when the *other* platform loads it and would
+// fail with NoClassDefFoundError.
+//
+// The NeoForge module is its own Gradle project (ModDevGradle owns the Minecraft
+// dependency), so its sources sit under neoforge/src/main/java rather than the
+// src/<module>/java layout the other two use. `prefix` is therefore the path
+// fragment stripped before the package path is compared.
 const JAVA_MODULES = [
-  { name: 'main', dir: javaRoot },
-  { name: 'paper', dir: join(PLUGIN, 'src/paper/java') },
-  { name: 'velocity', dir: join(PLUGIN, 'src/velocity/java') },
+  { name: 'main', dir: javaRoot, prefix: '/src/main/java/' },
+  { name: 'paper', dir: join(PLUGIN, 'src/paper/java'), prefix: '/src/paper/java/' },
+  { name: 'neoforge', dir: join(PLUGIN, 'neoforge/src/main/java'), prefix: '/neoforge/src/main/java/' },
 ];
 
 const MODULE_DEPENDENCIES = {
   main: ['main'],
   paper: ['main', 'paper'],
-  velocity: ['main', 'velocity'],
+  neoforge: ['main', 'neoforge'],
 };
+
+const MODULE_PREFIX = Object.fromEntries(JAVA_MODULES.map((entry) => [entry.name, entry.prefix]));
 
 const javaFiles = [];
 const javaModuleOf = new Map(); // file -> module name
@@ -566,7 +583,7 @@ for (const file of javaFiles) {
   }
 
   const expectedPath = packageMatch[1].split('.').join('/');
-  const relativeDir = dirname(rel(file).split(`/src/${module}/java/`)[1] ?? '');
+  const relativeDir = dirname(rel(file).split(MODULE_PREFIX[module])[1] ?? '');
 
   if (relativeDir !== expectedPath) {
     fail(`Java ${rel(file)}`, `package ${packageMatch[1]} does not match directory ${relativeDir}`);
@@ -1686,31 +1703,46 @@ section('15. Java compile hazards');
   };
 
   // A few simple names mean different classes on different platforms, because
-  // one jar serves both families. The Velocity module legitimately uses its own
-  // Player and SLF4J's Logger, for example.
+  // each module is compiled against a different API. The NeoForge module uses
+  // Minecraft's own Component and SLF4J's Logger, for example, while the paper
+  // module uses Adventure's.
   const MODULE_TYPE_OVERRIDES = {
-    velocity: {
-      Player: 'com.velocitypowered.api.proxy.Player',
-      Logger: 'org.slf4j.Logger',
-      ProxyServer: 'com.velocitypowered.api.proxy.ProxyServer',
-      CommandSource: 'com.velocitypowered.api.command.CommandSource',
-      CommandManager: 'com.velocitypowered.api.command.CommandManager',
-      CommandMeta: 'com.velocitypowered.api.command.CommandMeta',
-      Scheduler: 'com.velocitypowered.api.scheduler.Scheduler',
-      ScheduledTask: 'com.velocitypowered.api.scheduler.ScheduledTask',
-      TaskStatus: 'com.velocitypowered.api.scheduler.TaskStatus',
-      Subscribe: 'com.velocitypowered.api.event.Subscribe',
-      PostLoginEvent: 'com.velocitypowered.api.event.connection.PostLoginEvent',
-      DisconnectEvent: 'com.velocitypowered.api.event.connection.DisconnectEvent',
-      ProxyInitializeEvent: 'com.velocitypowered.api.event.proxy.ProxyInitializeEvent',
-      ProxyShutdownEvent: 'com.velocitypowered.api.event.proxy.ProxyShutdownEvent',
-      SimpleCommand: 'com.velocitypowered.api.command.SimpleCommand',
-      Inject: 'com.google.inject.Inject',
-      DataDirectory: 'com.velocitypowered.api.plugin.annotation.DataDirectory',
-    },
     paper: {
       ScheduledTask: 'io.papermc.paper.threadedregions.scheduler.ScheduledTask',
       TimeUnit: 'java.util.concurrent.TimeUnit',
+    },
+    neoforge: {
+      Component: 'net.minecraft.network.chat.Component',
+      Logger: 'org.slf4j.Logger',
+      MinecraftServer: 'net.minecraft.server.MinecraftServer',
+      ServerPlayer: 'net.minecraft.server.level.ServerPlayer',
+      CommandSourceStack: 'net.minecraft.commands.CommandSourceStack',
+      Commands: 'net.minecraft.commands.Commands',
+      CommandDispatcher: 'com.mojang.brigadier.CommandDispatcher',
+      CommandContext: 'com.mojang.brigadier.context.CommandContext',
+      CommandSyntaxException: 'com.mojang.brigadier.exceptions.CommandSyntaxException',
+      StringArgumentType: 'com.mojang.brigadier.arguments.StringArgumentType',
+      IEventBus: 'net.neoforged.bus.api.IEventBus',
+      SubscribeEvent: 'net.neoforged.bus.api.SubscribeEvent',
+      Mod: 'net.neoforged.fml.common.Mod',
+      ModContainer: 'net.neoforged.fml.ModContainer',
+      NeoForge: 'net.neoforged.neoforge.common.NeoForge',
+      RegisterCommandsEvent: 'net.neoforged.neoforge.event.RegisterCommandsEvent',
+      PlayerEvent: 'net.neoforged.neoforge.event.entity.player.PlayerEvent',
+      ServerStartedEvent: 'net.neoforged.neoforge.event.server.ServerStartedEvent',
+      ServerStoppingEvent: 'net.neoforged.neoforge.event.server.ServerStoppingEvent',
+      FMLPaths: 'net.neoforged.fml.loading.FMLPaths',
+      LogUtils: 'com.mojang.logging.LogUtils',
+      Executors: 'java.util.concurrent.Executors',
+      ScheduledExecutorService: 'java.util.concurrent.ScheduledExecutorService',
+      ScheduledFuture: 'java.util.concurrent.ScheduledFuture',
+      ThreadFactory: 'java.util.concurrent.ThreadFactory',
+      TimeUnit: 'java.util.concurrent.TimeUnit',
+      AtomicInteger: 'java.util.concurrent.atomic.AtomicInteger',
+      InputStream: 'java.io.InputStream',
+      Files: 'java.nio.file.Files',
+      Path: 'java.nio.file.Path',
+      Supplier: 'java.util.function.Supplier',
     },
   };
 
@@ -2046,10 +2078,10 @@ section('16. Flarum frontend bundle');
 }
 
 // ---------------------------------------------------------------------------
-// 17. Universal jar: Paper + Folia + Velocity
+// 17. The two artifacts: Paper/Folia plugin and NeoForge mod
 // ---------------------------------------------------------------------------
 
-section('17. Universal jar (Paper + Folia + Velocity)');
+section('17. Paper/Folia plugin and NeoForge mod');
 
 {
   // --- version parity -----------------------------------------------------
@@ -2063,8 +2095,8 @@ section('17. Universal jar (Paper + Folia + Velocity)');
   } else if (declaredVersion !== versionConstant) {
     fail(
       'Version.java',
-      `VERSION "${versionConstant}" does not match gradle.properties "${declaredVersion}"; the Velocity descriptor and ` +
-        'the HTTP User-Agent would advertise a different version than plugin.yml'
+      `VERSION "${versionConstant}" does not match gradle.properties "${declaredVersion}"; plugin.yml, the mod ` +
+        'descriptor and the HTTP User-Agent would advertise different versions'
     );
   } else {
     pass(`version ${declaredVersion} is declared in gradle.properties and Version.java`);
@@ -2115,17 +2147,17 @@ section('17. Universal jar (Paper + Folia + Velocity)');
 
   // --- build wiring -------------------------------------------------------
   const build = read(join(PLUGIN, 'build.gradle'));
+  const modBuild = read(join(PLUGIN, 'neoforge/build.gradle'));
+  const settings = read(join(PLUGIN, 'settings.gradle'));
+  const propertiesFile = read(join(PLUGIN, 'gradle.properties'));
 
   const wiring = [
     ['the paper source set compiles src/paper/java', /src\/paper\/java/],
-    ['the velocity source set compiles src/velocity/java', /src\/velocity\/java/],
     ['paper-api is a compile-only dependency', /io\.papermc\.paper:paper-api/],
-    ['velocity-api is a compile-only dependency', /com\.velocitypowered:velocity-api/],
-    ['velocity-api runs as an annotation processor (generates velocity-plugin.json)', /velocityAnnotationProcessor/],
+    ['Adventure is a paper-module dependency, not a core one', /paperCompileOnly "net\.kyori:adventure-api/],
     ['the jar merges the paper output', /from sourceSets\.paper\.output/],
-    ['the jar merges the velocity output', /from sourceSets\.velocity\.output/],
     ['the jar contents are asserted before release', /tasks\.register\('verifyJar'\)/],
-    ['the bytecode targets Java 17 so Velocity on Java 17 still loads the core', /options\.release\s*=\s*17/],
+    ['the shared core targets Java 17 so it loads on the widest range of JVMs', /options\.release\s*=\s*17/],
     [
       'the paper module is raised to Java 21, because paper-api 1.21.1 itself requires it',
       /tasks\.named\('compilePaperJava'\)\s*\{[^}]*options\.release\s*=\s*21/,
@@ -2141,8 +2173,65 @@ section('17. Universal jar (Paper + Folia + Velocity)');
     if (pattern.test(build)) {
       pass(label);
     } else {
-      fail('build.gradle', `missing from the universal jar wiring: ${label}`);
+      fail('build.gradle', `missing from the plugin wiring: ${label}`);
     }
+  }
+
+  // The NeoForge module is a project of its own, built by ModDevGradle, which
+  // owns the Minecraft dependency. Keeping it separate is what guarantees
+  // Minecraft never reaches the shared core's compile classpath.
+  const modWiring = [
+    ['the mod project applies ModDevGradle', /id\s+'net\.neoforged\.moddev'/],
+    ['the mod project compiles the shared core sources too', /rootProject\.file\('src\/main\/java'\)/],
+    ['the mod project carries the shipped config and languages', /rootProject\.file\('src\/main\/resources'\)/],
+    ['the NeoForge version comes from gradle.properties', /version\s*=\s*"\$\{neoforgeVersion\}"/],
+    ['the mod descriptor is expanded with the project version', /neoforge\.mods\.toml/],
+    ['the mod jar contents are asserted before release', /tasks\.register\('verifyJar'\)/],
+    ['the mod jar is named distinctly from the plugin jar', /archiveBaseName\s*=\s*'McBridge-neoforge'/],
+  ];
+
+  for (const [label, pattern] of modWiring) {
+    if (pattern.test(modBuild)) {
+      pass(label);
+    } else {
+      fail('neoforge/build.gradle', `missing from the mod wiring: ${label}`);
+    }
+  }
+
+  if (/include\s+'neoforge'/.test(settings)) {
+    pass('neoforge is a Gradle subproject of the plugin build');
+  } else {
+    fail('settings.gradle', "the build must include the 'neoforge' project");
+  }
+
+  if (/^neoforgeVersion\s*=\s*21\.1\./m.test(propertiesFile)) {
+    pass('gradle.properties pins a NeoForge 21.1.x release, the line that targets Minecraft 1.21.1');
+  } else {
+    fail('gradle.properties', 'neoforgeVersion must be a 21.1.x release to match Minecraft 1.21.1');
+  }
+
+  // The Velocity module is gone. Only real configuration counts here - a comment
+  // explaining the removal is not a leftover, but a source set, dependency or
+  // property pointing at it would be.
+  const staleVelocityPattern = /sourceSets\s*\.\s*velocity|velocityCompileOnly|velocityAnnotationProcessor|com\.velocitypowered|velocityApiVersion|include\s+'velocity'/;
+  const staleVelocity = [
+    ['build.gradle', build],
+    ['settings.gradle', settings],
+    ['gradle.properties', propertiesFile],
+  ].filter(([, source]) => staleVelocityPattern.test(source));
+
+  if (staleVelocity.length === 0) {
+    pass('no Velocity source set, dependency or property survives in the build files');
+  } else {
+    for (const [name] of staleVelocity) {
+      fail(name, 'still wires up Velocity; the module was removed and nothing should reference it');
+    }
+  }
+
+  if (existsSync(join(PLUGIN, 'src/velocity'))) {
+    fail('src/velocity', 'the Velocity source set was removed but the directory is still there');
+  } else {
+    pass('the Velocity source set is gone');
   }
 
   if (/dependsOn tasks\.named\('verifyJar'\)/.test(build)) {
@@ -2152,10 +2241,15 @@ section('17. Universal jar (Paper + Folia + Velocity)');
   }
 
   // --- platform isolation -------------------------------------------------
+  // The shared core must compile and load on a server that ships none of these:
+  // Paper supplies Bukkit and Adventure, NeoForge supplies Minecraft and
+  // NeoForge, and neither ships all of them.
   const FORBIDDEN_IN_MAIN = [
     ['org.bukkit', 'Bukkit'],
-    ['com.velocitypowered', 'Velocity'],
     ['io.papermc', 'Paper'],
+    ['net.kyori', 'Adventure'],
+    ['net.minecraft', 'Minecraft'],
+    ['net.neoforged', 'NeoForge'],
   ];
 
   const mainSources = walk(javaRoot, (file) => file.endsWith('.java'));
@@ -2166,7 +2260,7 @@ section('17. Universal jar (Paper + Folia + Velocity)');
 
     for (const [needle, label] of FORBIDDEN_IN_MAIN) {
       if (new RegExp(`^import\\s+(static\\s+)?${needle.replace(/\./g, '\\.')}`, 'm').test(source)) {
-        fail(rel(file), `the shared core must not import ${label} (${needle}): it is not present on every platform`);
+        fail(rel(file), `the shared core must not import ${label} (${needle}): not every platform ships it`);
         mainLeaks++;
       }
     }
@@ -2176,32 +2270,43 @@ section('17. Universal jar (Paper + Folia + Velocity)');
     pass(`the shared core stays platform neutral across ${mainSources.length} sources`);
   }
 
+  // Each platform module may use its own API but not the other's. A Bukkit class
+  // in the mod, or a Minecraft class in the plugin, would be resolved when the
+  // wrong server loads it, and would fail there with NoClassDefFoundError.
   const paperSources = walk(join(PLUGIN, 'src/paper/java'), (file) => file.endsWith('.java'));
   let paperLeaks = 0;
 
   for (const file of paperSources) {
-    if (/^import\s+(static\s+)?com\.velocitypowered/m.test(read(file))) {
-      fail(rel(file), 'the Paper/Folia module must not import Velocity classes');
-      paperLeaks++;
+    const source = read(file);
+
+    for (const [needle, label] of [['net.minecraft', 'Minecraft'], ['net.neoforged', 'NeoForge']]) {
+      if (new RegExp(`^import\\s+(static\\s+)?${needle.replace(/\./g, '\\.')}`, 'm').test(source)) {
+        fail(rel(file), `the Paper/Folia module must not import ${label} classes`);
+        paperLeaks++;
+      }
     }
   }
 
   if (paperLeaks === 0 && paperSources.length > 0) {
-    pass(`the Paper/Folia module is free of Velocity references (${paperSources.length} sources)`);
+    pass(`the Paper/Folia module is free of Minecraft/NeoForge references (${paperSources.length} sources)`);
   }
 
-  const velocitySources = walk(join(PLUGIN, 'src/velocity/java'), (file) => file.endsWith('.java'));
-  let velocityLeaks = 0;
+  const modSources = walk(join(PLUGIN, 'neoforge/src/main/java'), (file) => file.endsWith('.java'));
+  let modLeaks = 0;
 
-  for (const file of velocitySources) {
-    if (/^import\s+(static\s+)?org\.bukkit/m.test(read(file))) {
-      fail(rel(file), 'the Velocity module must not import Bukkit classes');
-      velocityLeaks++;
+  for (const file of modSources) {
+    const source = read(file);
+
+    for (const [needle, label] of [['org.bukkit', 'Bukkit'], ['io.papermc', 'Paper'], ['net.kyori', 'Adventure']]) {
+      if (new RegExp(`^import\\s+(static\\s+)?${needle.replace(/\./g, '\\.')}`, 'm').test(source)) {
+        fail(rel(file), `the NeoForge module must not import ${label} classes`);
+        modLeaks++;
+      }
     }
   }
 
-  if (velocityLeaks === 0 && velocitySources.length > 0) {
-    pass(`the Velocity module is free of Bukkit references (${velocitySources.length} sources)`);
+  if (modLeaks === 0 && modSources.length > 0) {
+    pass(`the NeoForge module is free of Bukkit/Paper/Adventure references (${modSources.length} sources)`);
   }
 
   // --- Folia support ------------------------------------------------------
@@ -2227,24 +2332,55 @@ section('17. Universal jar (Paper + Folia + Velocity)');
     }
   }
 
-  // --- Velocity descriptor -------------------------------------------------
-  const velocityMain = join(PLUGIN, 'src/velocity/java/cn/stalir/mcbridge/velocity/McBridgeVelocityPlugin.java');
+  // --- NeoForge descriptor -------------------------------------------------
+  const modMain = join(PLUGIN, 'neoforge/src/main/java/cn/stalir/mcbridge/neoforge/McBridgeMod.java');
+  const modTomlPath = join(PLUGIN, 'neoforge/src/main/resources/META-INF/neoforge.mods.toml');
 
-  if (!existsSync(velocityMain)) {
-    fail('velocity module', 'McBridgeVelocityPlugin.java is missing');
+  if (!existsSync(modMain)) {
+    fail('neoforge module', 'McBridgeMod.java is missing');
   } else {
-    const source = read(velocityMain);
+    const source = read(modMain);
 
-    if (/@Plugin\(/.test(source) && /id\s*=\s*"mc-bridge"/.test(source)) {
-      pass('the Velocity entry point is annotated with @Plugin(id = "mc-bridge")');
+    if (/@Mod\(/.test(source) && /MODID\s*=\s*"mc_bridge"/.test(source)) {
+      pass('the NeoForge entry point is annotated with @Mod and declares the mod id');
     } else {
-      fail('McBridgeVelocityPlugin.java', 'the @Plugin annotation must declare id = "mc-bridge"');
+      fail('McBridgeMod.java', '@Mod must name the same mod id the descriptor declares');
     }
 
-    if (/version\s*=\s*Version\.VERSION/.test(source)) {
-      pass('the Velocity descriptor takes its version from Version.VERSION');
-    } else {
-      fail('McBridgeVelocityPlugin.java', 'the @Plugin annotation must use Version.VERSION, not a second literal');
+    for (const [label, pattern] of [
+      ['starts the bridge once the server has started', /ServerStartedEvent/],
+      ['stops it when the server begins stopping', /ServerStoppingEvent/],
+      ['registers the commands', /RegisterCommandsEvent/],
+      ['prompts unlinked players when they join', /PlayerLoggedInEvent/],
+    ]) {
+      if (pattern.test(source)) {
+        pass(`McBridgeMod ${label}`);
+      } else {
+        fail('McBridgeMod.java', `the mod must: ${label}`);
+      }
+    }
+  }
+
+  // The descriptor is what makes the file a mod at all: without a parseable one
+  // NeoForge ignores or rejects the whole jar.
+  if (!existsSync(modTomlPath)) {
+    fail('neoforge.mods.toml', 'the mod descriptor is missing; NeoForge would not load the jar at all');
+  } else {
+    const toml = read(modTomlPath);
+
+    for (const [label, pattern] of [
+      ['declares the javafml loader', /modLoader\s*=\s*"javafml"/],
+      ['uses the FML 4 loader range NeoForge 21.1 ships', /loaderVersion\s*=\s*"\[4,\)"/],
+      ['declares modId "mc_bridge"', /modId\s*=\s*"mc_bridge"/],
+      ['requires NeoForge', /modId\s*=\s*"neoforge"[\s\S]{0,400}?type\s*=\s*"required"/],
+      ['requires Minecraft', /modId\s*=\s*"minecraft"[\s\S]{0,400}?type\s*=\s*"required"/],
+      ['is server side only, so a client does not need it', /side\s*=\s*"SERVER"/],
+    ]) {
+      if (pattern.test(toml)) {
+        pass(`neoforge.mods.toml ${label}`);
+      } else {
+        fail('neoforge.mods.toml', `the mod descriptor must: ${label}`);
+      }
     }
   }
 
@@ -2257,10 +2393,10 @@ section('17. Universal jar (Paper + Folia + Velocity)');
   }
 
   // --- Java 17 compatibility ----------------------------------------------
-  // The toolchain is JDK 21 with `options.release = 17` for the shared core and
-  // the proxy module, so a Java 21-only API there would compile and then fail on
-  // a proxy still running Java 17. The paper module targets 21 on purpose
-  // (paper-api 1.21.1 requires it) and is therefore exempt.
+  // The toolchain is JDK 21 with `options.release = 17` for the shared core, so a
+  // Java 21-only API there would compile and then fail on an older JVM. The paper
+  // and neoforge modules target 21 on purpose (paper-api and Minecraft 1.21.1
+  // both require it) and are therefore exempt.
   const JAVA_21_ONLY = [
     [/\.getFirst\(\)/, 'List#getFirst (Java 21)'],
     [/\.getLast\(\)/, 'List#getLast (Java 21)'],
@@ -2272,7 +2408,8 @@ section('17. Universal jar (Paper + Folia + Velocity)');
     [/ScopedValue|StructuredTaskScope/, 'ScopedValue / StructuredTaskScope (Java 21 preview)'],
   ];
 
-  const java17Files = javaFiles.filter((file) => javaModuleOf.get(file) !== 'paper');
+  const JAVA_21_MODULES = ['paper', 'neoforge'];
+  const java17Files = javaFiles.filter((file) => !JAVA_21_MODULES.includes(javaModuleOf.get(file)));
   let java21Usage = 0;
 
   for (const file of java17Files) {
@@ -2287,7 +2424,7 @@ section('17. Universal jar (Paper + Folia + Velocity)');
   }
 
   if (java21Usage === 0) {
-    pass(`no Java 21-only API in the ${java17Files.length} Java 17 sources (the paper module may use them)`);
+    pass(`no Java 21-only API in the ${java17Files.length} Java 17 sources (paper and neoforge may use them)`);
   }
 
   // --- release automation --------------------------------------------------
@@ -2317,8 +2454,10 @@ section('17. Universal jar (Paper + Folia + Velocity)');
   const ci = read(join(ROOT, '.github/workflows/ci.yml'));
 
   for (const [label, pattern] of [
-    ['asserts folia-supported in the packaged jar', /folia-supported: true/],
-    ['asserts velocity-plugin.json in the packaged jar', /velocity-plugin\.json/],
+    ['asserts folia-supported in the packaged plugin jar', /folia-supported: true/],
+    ['asserts the Velocity descriptors are gone from the plugin jar', /still contains Velocity artifacts/],
+    ['asserts the NeoForge descriptor in the packaged mod jar', /neoforge\.mods\.toml/],
+    ['asserts the mod jar targets Minecraft 1.21.1', /1\\.21\\.1/],
   ]) {
     if (pattern.test(ci)) {
       pass(`CI ${label}`);

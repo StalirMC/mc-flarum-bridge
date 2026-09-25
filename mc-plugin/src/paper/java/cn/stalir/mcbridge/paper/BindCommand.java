@@ -2,7 +2,7 @@ package cn.stalir.mcbridge.paper;
 
 import cn.stalir.mcbridge.BridgeConfig;
 import cn.stalir.mcbridge.BridgeCore;
-import net.kyori.adventure.text.Component;
+import cn.stalir.mcbridge.Message;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -17,7 +17,7 @@ import java.util.UUID;
  *
  * The request is blocking, so it runs on the platform's asynchronous pool and
  * the rendered reply is handed back to the main thread / global region. Every
- * line comes from the shared core, so Paper, Folia and Velocity answer with
+ * line comes from the shared core, so Paper, Folia and NeoForge answer with
  * identical wording.
  */
 public final class BindCommand implements CommandExecutor {
@@ -31,12 +31,12 @@ public final class BindCommand implements CommandExecutor {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!(sender instanceof Player player)) {
-            sender.sendMessage(core.messages().prefixed("players-only"));
+            AdventureMessages.send(sender, core.messages().prefixed("players-only"));
             return true;
         }
 
         if (!player.hasPermission("mcbridge.bind")) {
-            player.sendMessage(core.messages().prefixed("no-permission"));
+            AdventureMessages.send(player, core.messages().prefixed("no-permission"));
             return true;
         }
 
@@ -45,7 +45,7 @@ public final class BindCommand implements CommandExecutor {
         // Local check, no I/O: the forum cannot hand out a code while the
         // configuration is unusable, so answer immediately.
         if (!config.isUsable()) {
-            player.sendMessage(core.messages().prefixed(
+            AdventureMessages.send(player, core.messages().prefixed(
                     "bind-failed",
                     "reason",
                     String.join("; ", config.problems())
@@ -53,18 +53,18 @@ public final class BindCommand implements CommandExecutor {
             return true;
         }
 
-        player.sendMessage(core.messages().prefixed("bind-requesting"));
+        AdventureMessages.send(player, core.messages().prefixed("bind-requesting"));
 
         // Read the player state before leaving the main thread.
         UUID uuid = player.getUniqueId();
         String playerName = player.getName();
 
         core.platform().runAsync(() -> {
-            List<Component> reply = core.bindMessages(uuid, playerName);
+            List<Message> reply = core.bindMessages(uuid, playerName);
 
             core.platform().runSync(() -> {
-                for (Component line : reply) {
-                    player.sendMessage(line);
+                for (Message line : reply) {
+                    AdventureMessages.send(player, line);
                 }
             });
         });

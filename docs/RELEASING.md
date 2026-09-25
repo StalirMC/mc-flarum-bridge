@@ -10,8 +10,8 @@
 #    mc-plugin/gradle.properties      version=X.Y.Z
 #    mc-plugin/src/main/java/cn/stalir/mcbridge/Version.java   VERSION = "X.Y.Z"
 
-# 2) 本地校验（三个模块编译 + 45 项构建自测 + verifyJar + 321 项静态检查 + 35 项协议测试）
-cd mc-plugin && ./gradlew build && cd ..
+# 2) 本地校验（两个工程编译 + 45 项构建自测 + verifyJar + 350 项静态检查 + 35 项协议测试）
+cd mc-plugin && gradle build && cd ..
 node tools/verify.mjs
 node tools/protocol-test.mjs
 
@@ -24,7 +24,7 @@ git push origin main && git push origin vX.Y.Z
 推 tag 会触发 `.github/workflows/release.yml`，它会：
 
 1. 校验 tag 与 `gradle.properties` 的版本一致（不一致直接失败，不会发错版本）
-2. 在 JDK 21 下 `gradle build`（含 `verifyJar` 的通用 jar 内容断言）
+2. 在 JDK 21 下 `gradle build`（含两个工程各自 `verifyJar` 的内容断言：插件 jar 与模组 jar）
 3. 把 `McBridge-X.Y.Z.jar` 作为 GitHub Release 附件上传
 
 CI（`.github/workflows/ci.yml`）同时会在 `main` 上跑静态检查、协议测试与 PHP lint。
@@ -34,7 +34,7 @@ CI（`.github/workflows/ci.yml`）同时会在 `main` 上跑静态检查、协�
 | 位置 | 谁在用 |
 |------|--------|
 | `mc-plugin/gradle.properties` 的 `version` | Gradle 注入 `plugin.yml`、决定 jar 名 |
-| `Version.java` 的 `VERSION` | Velocity 的 `@Plugin(version = …)` 与 HTTP User-Agent（注解只能取编译期常量） |
+| `Version.java` 的 `VERSION` | HTTP User-Agent（编译期常量；`plugin.yml` 与模组描述符的版本则由 Gradle 注入） |
 | git tag `vX.Y.Z` | 触发发版、决定 Release 标题 |
 | `flarum-extension/composer.json` 的 `version` | **Flarum 管理页显示的版本号**（见下方说明） |
 

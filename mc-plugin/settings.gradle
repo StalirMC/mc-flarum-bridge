@@ -1,2 +1,18 @@
+// pluginManagement has to be the first block in this file.
+//
+// ModDevGradle is published to the NeoForged maven as well as to the Gradle plugin
+// portal; naming both keeps the build working when either one is unreachable.
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        maven { url = uri('https://maven.neoforged.net/releases') }
+    }
+}
+
 // Required by Gradle 7+ (an undefined build cannot be executed by `gradle build`).
 rootProject.name = 'McBridge'
+
+// The NeoForge mod is a project of its own. ModDevGradle owns the Minecraft
+// dependency of the project it is applied to, and the shared core must never see
+// Minecraft - or NeoForge - on its compile classpath.
+include 'neoforge'

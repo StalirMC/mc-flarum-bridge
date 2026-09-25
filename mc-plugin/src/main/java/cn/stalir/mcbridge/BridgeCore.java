@@ -4,7 +4,6 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
-import net.kyori.adventure.text.Component;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -195,7 +194,7 @@ public final class BridgeCore {
             if (!targetUuid.isBlank()) {
                 try {
                     UUID uuid = UUID.fromString(targetUuid);
-                    Component feedback = messages.legacy("&a" + title + "&r\n&7" + body);
+                    Message feedback = messages.legacy("&a" + title + "&r\n&7" + body);
                     platform.sendToPlayer(uuid, feedback);
                     platform.log().info(logText("log.bind-feedback-sent", "uuid", targetUuid, "type", type));
                 } catch (IllegalArgumentException exception) {
@@ -213,7 +212,7 @@ public final class BridgeCore {
                 .replace("{url}", url)
                 .replace("{type}", type);
 
-        Component component = messages.legacy(rendered);
+        Message component = messages.legacy(rendered);
 
         if (!body.isBlank() && !config.announceBodyFormat().isBlank()) {
             String second = config.announceBodyFormat()
@@ -222,12 +221,12 @@ public final class BridgeCore {
                     .replace("{url}", url);
 
             if (!second.isBlank()) {
-                component = component.append(Component.newline()).append(messages.legacy(second));
+                component = component.append(Message.newline()).append(messages.legacy(second));
             }
         }
 
         if (!url.isBlank()) {
-            component = component.append(Component.newline()).append(messages.legacy("&8&o" + url));
+            component = component.append(Message.newline()).append(messages.legacy("&8&o" + url));
         }
 
         broadcast(component);
@@ -237,7 +236,7 @@ public final class BridgeCore {
         }
     }
 
-    public void broadcast(Component component) {
+    public void broadcast(Message component) {
         platform.broadcast(component);
         platform.logToConsole(component);
     }
@@ -251,8 +250,8 @@ public final class BridgeCore {
      *
      * Blocking: call it off the main thread.
      */
-    public List<Component> bindMessages(UUID uuid, String playerName) {
-        List<Component> reply = new ArrayList<>();
+    public List<Message> bindMessages(UUID uuid, String playerName) {
+        List<Message> reply = new ArrayList<>();
 
         JsonObject response;
 
@@ -352,8 +351,8 @@ public final class BridgeCore {
      * Blocking: call it off the main thread. Peeking deliberately does not mark
      * anything as delivered, so a manual inspection never eats an announcement.
      */
-    public List<Component> outboxMessages() {
-        List<Component> reply = new ArrayList<>();
+    public List<Message> outboxMessages() {
+        List<Message> reply = new ArrayList<>();
 
         JsonObject response;
 
@@ -399,8 +398,8 @@ public final class BridgeCore {
      *
      * Blocking: call it off the main thread.
      */
-    public List<Component> newsMessages(int limit) {
-        List<Component> reply = new ArrayList<>();
+    public List<Message> newsMessages(int limit) {
+        List<Message> reply = new ArrayList<>();
 
         JsonObject response;
 
@@ -457,7 +456,7 @@ public final class BridgeCore {
      *
      * Blocking: call it off the main thread.
      */
-    public Component broadcastResult(String body, String title) {
+    public Message broadcastResult(String body, String title) {
         try {
             client.broadcast(body, title);
             return messages.prefixed("broadcast-sent");
@@ -471,7 +470,7 @@ public final class BridgeCore {
      *
      * Blocking: call it off the main thread.
      */
-    public Component reportPlayer(
+    public Message reportPlayer(
             UUID reporterUuid,
             String reporterName,
             String targetName,

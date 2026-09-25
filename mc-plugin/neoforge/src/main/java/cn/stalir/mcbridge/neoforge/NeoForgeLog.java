@@ -1,19 +1,20 @@
-package cn.stalir.mcbridge.velocity;
+package cn.stalir.mcbridge.neoforge;
 
 import cn.stalir.mcbridge.Log;
 import org.slf4j.Logger;
 
 /**
- * {@link Log} backed by the SLF4J logger Velocity injects into the plugin.
+ * Adapts the SLF4J logger Minecraft uses to the shared core's logging interface.
  *
- * The shared core only knows {@link Log}, because Paper and Folia log through
- * {@code java.util.logging} while the proxy logs through SLF4J.
+ * The core cannot log through a platform logger directly because the same core
+ * also runs on Paper, where the server hands out a {@code java.util.logging}
+ * logger instead.
  */
-public final class VelocityLog implements Log {
+public final class NeoForgeLog implements Log {
 
     private final Logger logger;
 
-    public VelocityLog(Logger logger) {
+    public NeoForgeLog(Logger logger) {
         this.logger = logger;
     }
 
@@ -27,9 +28,10 @@ public final class VelocityLog implements Log {
         logger.warn(message);
     }
 
-    /** Diagnostics only: Velocity's default level hides debug output. */
     @Override
     public void fine(String message) {
+        // SLF4J has no "fine"; debug is the closest and is off by default, which
+        // is exactly what the core expects from a fine line.
         logger.debug(message);
     }
 

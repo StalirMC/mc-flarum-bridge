@@ -1,9 +1,5 @@
 package cn.stalir.mcbridge;
 
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -20,7 +16,8 @@ import java.util.Map;
  *
  * Shared by every platform: the forum, the language selection and the shipped
  * language files are the same whether the plugin runs on Paper, Folia or
- * Velocity.
+ * NeoForge. Rendering stops at {@link Message}; turning that into a chat
+ * component is the platform module's job, because only Paper ships Adventure.
  */
 public final class Messages {
 
@@ -111,24 +108,24 @@ public final class Messages {
         return value == null ? key : value;
     }
 
-    /** Convert an ampersand colour code string into a component. */
-    public Component legacy(String text) {
-        return LegacyComponentSerializer.legacyAmpersand().deserialize(text == null ? "" : text);
+    /** Convert an ampersand colour code string into a message. */
+    public Message legacy(String text) {
+        return Message.of(text);
     }
 
     /** Render a message template, substituting {name} placeholders. */
-    public Component render(String key, String... placeholders) {
+    public Message render(String key, String... placeholders) {
         return legacy(substitute(raw(key), placeholders));
     }
 
     /** Render a message and prefix it with the configured plugin prefix. */
-    public Component prefixed(String key, String... placeholders) {
-        return legacy(raw("prefix")).append(render(key, placeholders));
+    public Message prefixed(String key, String... placeholders) {
+        return legacy(raw("prefix") + substitute(raw(key), placeholders));
     }
 
     /** Render a message as plain text, for console log lines. */
     public String plain(String key, String... placeholders) {
-        return PlainTextComponentSerializer.plainText().serialize(render(key, placeholders));
+        return render(key, placeholders).plain();
     }
 
     /**

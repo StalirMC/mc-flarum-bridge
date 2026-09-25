@@ -188,40 +188,83 @@ jobs:
           echo "::error::the Gradle build failed; the compiler errors are in the job summary"
           exit 1
 
-      - name: Confirm the plugin jar was produced
+      - name: Confirm both artifacts were produced
         run: |
           set -euo pipefail
-          ls -l mc-plugin/build/libs
+          ls -l mc-plugin/build/libs mc-plugin/neoforge/build/libs
           test -n "$(find mc-plugin/build/libs -name '*.jar' -print -quit)"
+          test -n "$(find mc-plugin/neoforge/build/libs -name '*.jar' -print -quit)"
 
-      # The Gradle build already asserts this in `verifyJar`; repeating it with
-      # plain shell tools keeps the evidence visible in the CI log and catches
-      # the case where that task is ever skipped.
-      - name: Assert one jar serves Paper, Folia and Velocity
+      # Each Gradle project already asserts its own jar in `verifyJar`; repeating
+      # it with plain shell tools keeps the evidence visible in the CI log and
+      # catches the case where those tasks are ever skipped.
+      - name: Assert the plugin jar serves Paper and Folia
         run: |
           set -euo pipefail
           jar=$(find mc-plugin/build/libs -name '*.jar' ! -name '*-sources.jar' -print -quit)
           echo "inspecting $jar"
           unzip -l "$jar"
 
-          for entry in plugin.yml velocity-plugin.json config.yml lang/zh_CN.yml lang/en.yml \
+          for entry in plugin.yml config.yml lang/zh_CN.yml lang/en.yml \
                        cn/stalir/mcbridge/paper/McBridgePlugin.class \
-                       cn/stalir/mcbridge/velocity/McBridgeVelocityPlugin.class; do
+                       cn/stalir/mcbridge/paper/PaperPlatform.class; do
             unzip -l "$jar" "$entry" > /dev/null || { echo "::error::missing $entry"; exit 1; }
           done
+
+          # The Velocity module was removed; a leftover descriptor in the jar
+          # would mean the build still merges a module that no longer exists.
+          if unzip -l "$jar" | grep -qi velocity; then
+            echo "::error::the plugin jar still contains Velocity artifacts"
+            exit 1
+          fi
 
           unzip -p "$jar" plugin.yml | grep -q 'folia-supported: true' \
             || { echo "::error::plugin.yml must declare folia-supported: true"; exit 1; }
           unzip -p "$jar" plugin.yml | grep -q 'main: cn.stalir.mcbridge.paper.McBridgePlugin' \
             || { echo "::error::plugin.yml points at the wrong main class"; exit 1; }
-          unzip -p "$jar" velocity-plugin.json | grep -q '"id": *"mc-bridge"' \
-            || { echo "::error::velocity-plugin.json is missing the mc-bridge id"; exit 1; }
 
-          echo "the jar declares both entry points"
+          echo "the plugin jar declares its Paper/Folia entry points"
+
+      - name: Assert the mod jar serves NeoForge 1.21.1
+        run: |
+          set -euo pipefail
+          jar=$(find mc-plugin/neoforge/build/libs -name '*.jar' ! -name '*-sources.jar' -print -quit)
+          echo "inspecting $jar"
+          unzip -l "$jar"
+
+          for entry in META-INF/neoforge.mods.toml config.yml lang/zh_CN.yml lang/en.yml \
+                       cn/stalir/mcbridge/neoforge/McBridgeMod.class \
+                       cn/stalir/mcbridge/neoforge/NeoForgePlatform.class; do
+            unzip -l "$jar" "$entry" > /dev/null || { echo "::error::missing $entry"; exit 1; }
+          done
+
+          # A mod jar is a mod because of this descriptor, and a malformed one
+          # makes NeoForge reject the whole file.
+          toml=$(unzip -p "$jar" META-INF/neoforge.mods.toml)
+          echo "$toml" | grep -q 'modId="mc_bridge"' \
+            || { echo "::error::neoforge.mods.toml does not declare modId mc_bridge"; exit 1; }
+          echo "$toml" | grep -q '1\.21\.1' \
+            || { echo "::error::neoforge.mods.toml does not target Minecraft 1.21.1"; exit 1; }
+
+          # plugins/ and mods/ take different files; a plugin.yml here would mean
+          # the two projects were cross-wired.
+          if unzip -l "$jar" | grep -qE ' plugin\.yml$'; then
+            echo "::error::the mod jar contains plugin.yml"
+            exit 1
+          fi
+
+          echo "the mod jar declares its NeoForge entry point"
 
       - name: Upload the plugin jar
         uses: actions/upload-artifact@v4
         with:
           name: McBridge-plugin
           path: mc-plugin/build/libs/*.jar
+          if-no-files-found: error
+
+      - name: Upload the mod jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: McBridge-neoforge
+          path: mc-plugin/neoforge/build/libs/*.jar
           if-no-files-found: error

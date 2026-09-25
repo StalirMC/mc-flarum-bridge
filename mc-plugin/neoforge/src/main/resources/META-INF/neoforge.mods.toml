@@ -1,0 +1,39 @@
+# NeoForge mod descriptor. NeoForge rejects the whole file when it cannot parse
+# this, so the shape follows the official MDK for the 1.21.x line.
+#
+# The version fields below are Gradle template placeholders (dollar sign, brace,
+# name) expanded by processResources in build.gradle - which is also why this
+# comment must not spell one out: expand() would try to evaluate it.
+modLoader="javafml"
+loaderVersion="[4,)"
+license="MIT"
+issueTrackerURL="https://github.com/StalirMC/mc-flarum-bridge/issues"
+displayURL="https://github.com/StalirMC/mc-flarum-bridge"
+
+[[mods]]
+modId="mc_bridge"
+version="${version}"
+displayName="MC Bridge"
+authors="StalirMC"
+description='''
+Relays Flarum forum announcements into the game, and lets players link an
+account (/bind), report another player (/report) and read the latest news
+(/mcbridge news) from inside Minecraft. The report is filed on the forum as a
+tagged discussion.
+
+Server side only: clients do not need this mod.
+'''
+
+[[dependencies.mc_bridge]]
+modId="neoforge"
+type="required"
+versionRange="[${neoForgeVersion},)"
+ordering="NONE"
+side="SERVER"
+
+[[dependencies.mc_bridge]]
+modId="minecraft"
+type="required"
+versionRange="[${minecraftVersion},1.22)"
+ordering="NONE"
+side="SERVER"

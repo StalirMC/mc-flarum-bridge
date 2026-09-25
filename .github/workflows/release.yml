@@ -63,13 +63,15 @@ jobs:
             /tmp/gradle-8.10/bin/gradle build --no-daemon --stacktrace
           fi
 
-      - name: Collect the jar
+      - name: Collect the jars
         run: |
           set -euo pipefail
           mkdir -p dist
-          jar=$(find mc-plugin/build/libs -name '*.jar' ! -name '*-sources.jar' -print -quit)
-          test -n "$jar"
-          cp "$jar" dist/
+          plugin=$(find mc-plugin/build/libs -name '*.jar' ! -name '*-sources.jar' -print -quit)
+          mod=$(find mc-plugin/neoforge/build/libs -name '*.jar' ! -name '*-sources.jar' -print -quit)
+          test -n "$plugin"
+          test -n "$mod"
+          cp "$plugin" "$mod" dist/
           ls -l dist
 
       - name: Publish the release
@@ -79,12 +81,21 @@ jobs:
           name: McBridge ${{ github.event.inputs.tag || github.ref_name }}
           generate_release_notes: true
           body: |
-            Universal plugin jar: one file for **Paper**, **Folia** and **Velocity**.
+            Two artifacts, one per loader family. Both carry the same shared core, so
+            they behave identically; install the one your server can load.
 
-            | Platform | What works |
-            |----------|------------|
-            | Paper / Folia | heartbeat, join/quit/death/advancement events, forum announcements, remote commands (off by default), `/bind`, `/mcbridge` |
-            | Velocity | heartbeat, join/quit events, forum announcements, `/bind`, `/mcbridge` (no game console, so remote commands are rejected) |
+            | File | Copy into | Runs on |
+            |------|-----------|---------|
+            | `McBridge-<version>.jar` | `plugins/` | Paper and Folia 1.21.x |
+            | `McBridge-neoforge-<version>.jar` | `mods/` | NeoForge 21.1.x for Minecraft 1.21.1 (server side only - clients do not need it) |
+
+            What both provide: forum announcements relayed into the game, `/bind` to
+            link a Minecraft account to a Flarum account, `/report` to file a player
+            report (which becomes a tagged discussion on the forum), and
+            `/mcbridge news|outbox|broadcast|stats|reload`.
+
+            On Paper and Folia, PlaceholderAPI is used when installed to expand
+            `%placeholders%` in the report title.
 
             The Flarum extension is installed from this repository with Composer, so
             the tag also pins the matching extension revision.

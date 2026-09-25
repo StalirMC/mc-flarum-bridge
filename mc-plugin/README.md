@@ -1,33 +1,42 @@
-# McBridge — 通用插件（Paper / Folia / Velocity）
+# McBridge — Minecraft 侧（Paper / Folia 插件 + NeoForge 模组）
 
-把 Minecraft 服务端接入 Flarum：上报状态与事件，接收论坛公告/广播，并提供游戏内
-`/bind` 账号绑定。
+把 Minecraft 服务端接入 Flarum：接收论坛公告/广播，并提供游戏内
+`/bind` 账号绑定与 `/report` 举报。
 
-- 目标：**Paper 1.21.x**、**Folia 1.21.x**、**Velocity 3.x**
-- Java：字节码目标 **17**（构建工具链 JDK 21）。Paper/Folia 跑在 Java 21 上照常加载，
-  Velocity 若还在 Java 17 也能用
-- 依赖：Paper API 与 Velocity API（均为 `compileOnly`）、两端都自带的 **Gson** 与 **Adventure**
+- 目标：**Paper 1.21.x**、**Folia 1.21.x**、**NeoForge 21.1.x for Minecraft 1.21.1**
+- Java：共享核心字节码目标 **17**，`paper` 与 `neoforge` 模块目标 **21**
+  （paper-api 1.21.1 与 Minecraft 1.21.1 都要求 21）；构建工具链 JDK 21
+- 依赖：Paper API、Adventure、PlaceholderAPI（均 `compileOnly`，只给 paper 模块）
+  与 **Gson**；NeoForge 侧由 ModDevGradle 提供 Minecraft 与 NeoForge
 - **不需要** Shadow/relocate：jar 里不含任何第三方代码
 
-## 一个 jar，三个平台
+## 两个发行包
 
-三个 source set 编成一个 jar：
+构建产出两个互相独立的 jar，它们编译同一份共享核心源码：
 
-| source set | 目录 | 内容 |
-|-----------|------|------|
-| `main` | `src/main/java` | 平台无关核心：协议、配置、语言文件、公告编排。**零平台引用** |
-| `paper` | `src/paper/java` | Paper 与 Folia 入口（`paper.yml` 形式的 `plugin.yml`） |
-| `velocity` | `src/velocity/java` | Velocity 入口（`velocity-plugin.json` 由注解处理器生成） |
+| 工程 | source set | 内容 | 产物 |
+|------|-----------|------|------|
+| 根工程 | `main`（`src/main/java`） | 平台无关核心：协议、配置、语言文件、公告编排。**零平台引用** | — |
+| 根工程 | `paper`（`src/paper/java`） | Paper 与 Folia 入口 | `build/libs/McBridge-<版本>.jar` |
+| `neoforge` 子工程 | `main`（`neoforge/src/main/java` + 根工程的 `src/main/java`） | NeoForge 入口 | `neoforge/build/libs/McBridge-neoforge-<版本>.jar` |
 
-jar 根同时存在 `plugin.yml` 与 `velocity-plugin.json`，各平台只加载自己描述符里
-写明的入口类，因此同一个文件可以直接丢进三种服务端。构建时 `verifyJar` 会校验：
+NeoForge 之所以是独立工程，是因为 ModDevGradle 必须**拥有 Minecraft 依赖**——
+把它放进子工程，才能保证 Minecraft / NeoForge 永远不出现在共享核心的编译类路径上。
+两个 jar 各自包含一份核心 class，互不依赖。
 
-- 两份描述符、两个入口类、`config.yml`、`lang/*.yml` 都在
+Paper 插件 jar 根放 `plugin.yml`；NeoForge 模组 jar 放 `META-INF/neoforge.mods.toml`。
+构建时两个工程各自的 `verifyJar` 会校验：
+
+- 描述符、入口类、`config.yml`、`lang/*.yml` 都在
 - `plugin.yml` 的 `main:` 指向 paper 模块，且 `folia-supported: true`
-- 两份描述符里的版本都与项目版本一致
-- **共享层的 class 常量池里不出现 `org/bukkit/`、`com/velocitypowered/`、`io/papermc/`**
+- 描述符里的版本与项目版本一致
+- **共享层的 class 常量池里不出现 `org/bukkit/`、`io/papermc/`、`net/kyori/`、
+  `net/minecraft/`、`net/neoforged/`**
+- 插件 jar 里**不再**出现任何 Velocity 产物；模组 jar 里不出现 `plugin.yml`
 
-最后一条是重点：共享核心一旦引用平台类，另一平台加载时就会 `NoClassDefFoundError`。
+倒数第二条是重点：共享核心一旦引用平台类，另一平台加载时就会 `NoClassDefFoundError`。
+Adventure 也在此列——**Paper 自带 Adventure，Minecraft 1.21.1 不带**，所以核心
+渲染自己的 `cn.stalir.mcbridge.Message`，由各平台在投递时转成自己的组件类型。
 
 ### Folia
 
@@ -42,33 +51,36 @@ Folia 的调度 API（`io.papermc.paper.threadedregions.scheduler`）就在 **pa
 
 ## 构建
 
-本仓库不包含 Gradle wrapper 的二进制（`gradle-wrapper.jar`），需先生成一次：
+本仓库不包含 Gradle wrapper 的二进制（`gradle-wrapper.jar`），直接用系统 Gradle 8.10+
+（若想改用 wrapper，先跑一次 `gradle wrapper --gradle-version 8.10`）：
 
 ```bash
 cd mc-plugin
-
-# 方式 A：已安装 Gradle（8.x）
-gradle wrapper --gradle-version 8.10    # 生成 gradlew / gradlew.bat / wrapper jar
-./gradlew build                         # Windows: gradlew.bat build
-
-# 方式 B：直接用系统 Gradle，不生成 wrapper
-gradle build
+gradle build              # 两个工程都构建
+gradle :build             # 只要 Paper/Folia 插件
 
 # 目标 Paper 版本不同时（会覆盖 gradle.properties 中的默认值）
-./gradlew build -PpaperApiVersion=1.21.4-R0.1-SNAPSHOT
+gradle build -PpaperApiVersion=1.21.4-R0.1-SNAPSHOT
 ```
 
 需要 **JDK 21**（`java.toolchain` 会自动寻找；找不到时请设置 `JAVA_HOME`）。
-首次构建会从 PaperMC 仓库拉取 `velocity-api`，需要网络。
+插件侧首次构建会从 PaperMC 与 ExtendedClip 仓库拉取依赖；模组侧首次构建时
+ModDevGradle 会下载 Minecraft 1.21.1 与 NeoForge 21.1.100 并跑一遍 NeoForm，
+**约 5-10 分钟**、需要网络，之后走缓存。
 
-产物：`build/libs/McBridge-0.0.2.jar`（`build` 依赖 `verifyJar`，内容不达标会直接失败）
+产物（`build` 依赖各自的 `verifyJar`，内容不达标会直接失败）：
+
+```
+build/libs/McBridge-<版本>.jar
+neoforge/build/libs/McBridge-neoforge-<版本>.jar
+```
 
 ## 安装
 
 | 平台 | 放到 | 配置与语言目录 |
 |------|------|----------------|
 | Paper / Folia | `plugins/` | `plugins/McBridge/` |
-| Velocity | `plugins/` | `plugins/mc-bridge/` |
+| NeoForge | `mods/`（仅服务端，`side = SERVER`） | `config/mc-bridge/` |
 
 1. 把 jar 放进对应目录。
 2. 启动一次生成 `config.yml`。
@@ -106,16 +118,15 @@ report:
 
 ## 平台能力对照
 
-| 功能 | Paper / Folia | Velocity |
+| 功能 | Paper / Folia | NeoForge |
 |------|---------------|----------|
-| 进服 / 退服事件 | ✅ | ✅ |
-| 死亡 / 成就事件 | ✅ | — 代理看不到 |
 | 论坛公告广播 | ✅ | ✅ |
 | `/bind`、`/mcbridge` | ✅ | ✅ |
-| `/report` 举报到论坛 | ✅ 标题支持 PlaceholderAPI | — 代理没有游戏内举报 |
+| `/report` 举报到论坛 | ✅ 标题支持 PlaceholderAPI | ✅（无 PlaceholderAPI 等价物，标题模板原样传递） |
+| 权限 | Bukkit 权限节点 + OP | 只用 OP 等级 2（`news` 除外） |
 
 所有请求都由共享核心生成，三个平台的报文逐字节一致，因此论坛侧无需区分平台；
-平台名会出现在 `/mcbridge stats` 与启动日志里。
+平台名（`paper` / `folia` / `neoforge`）会出现在 `/mcbridge stats` 与启动日志里。
 
 ## 语言
 
@@ -150,17 +161,17 @@ language: zh_CN     # 改成 en 即切换为英文
 | `/mcbridge stats` | `mcbridge.admin` | 本地统计（队列、失败次数、运行平台等） |
 | `/mcbridge reload` | `mcbridge.admin` | 重新加载配置并重启任务 |
 
-Velocity 端权限同样使用 `mcbridge.bind` / `mcbridge.admin`（由代理的权限插件授予）。
+NeoForge 侧没有 Bukkit 权限节点：`/mcbridge news` 所有人可用，其余子命令需要 OP
+（权限等级 2），`/bind` 与 `/report` 所有人可用。
 
 ## 运行机制
 
 | 任务 | 默认间隔 | 作用 |
 |------|---------|------|
-| 事件刷新 | 10s | 批量 `POST /events` |
-| Outbox 轮询 | 20s | `GET /outbox` 并投递公告/广播 |
+| Outbox 轮询 | 20s | `GET /outbox` 并投递公告/广播（`sync.outbox-poll-interval-seconds`） |
 
-- 所有网络调用都在**异步线程**执行；消息展示与指令执行回到主线程（Folia 为 global region）。
-  服务器，也不会无限占用内存。
+- 所有网络调用都在**异步线程**执行；消息展示与指令执行回到主线程，NeoForge 上则是服务端线程。
+  两者都不会阻塞服务器 tick。
 
 ## 安全
 
@@ -170,30 +181,37 @@ Velocity 端权限同样使用 `mcbridge.bind` / `mcbridge.admin`（由代理的
 ## 源码结构
 
 ```
-src/main/java/cn/stalir/mcbridge/           共享核心（零平台引用）
+src/main/java/cn/stalir/mcbridge/           共享核心（零平台引用，JDK + Gson）
 ├── BridgeCore.java        公告编排 + 全部命令文案渲染
-├── Platform.java          平台 SPI（调度、服务器状态、输出）
+├── Platform.java          平台 SPI（调度、数据目录、输出）
+├── Message.java           平台无关消息（legacy & 码；由各平台转成自己的组件）
 ├── BridgeConfig.java      配置读取与校验
-├── Yaml.java              极简 YAML 读取器（避免在通用 jar 里塞第三方库）
+├── BridgeException.java   协议层异常（含 HTTP 状态码）
+├── Yaml.java              极简 YAML 读取器（避免在 jar 里塞第三方库）
 ├── Signature.java         HMAC-SHA256 签名
 ├── HttpBridgeClient.java  HTTP 客户端
-├── EventQueue.java        有界事件队列
-├── Messages.java          消息渲染（Adventure）
-└── Version.java           版本常量（Velocity 注解与 User-Agent 共用）
+├── Log.java               日志 SPI
+├── Messages.java          语言文件加载与 {占位符} 渲染 → Message
+└── Version.java           版本常量（HTTP User-Agent 共用）
 
 src/paper/java/cn/stalir/mcbridge/paper/    Paper + Folia
 ├── McBridgePlugin.java    入口（薄封装）
-├── PaperPlatform.java     Folia / Bukkit 两套调度 + 服务器状态
-├── PlayerListener.java    进服/退服/死亡/成就
+├── PaperPlatform.java     Folia / Bukkit 两套调度 + 玩家投递
+├── AdventureMessages.java Message → Adventure Component（唯一的转换点）
+├── PlayerListener.java    进服时提示未绑定
+├── PlaceholderApiHook.java 可选 PAPI 展开（全 jar 唯一提到 PAPI 的类）
 ├── BindCommand.java       /bind
+├── ReportCommand.java     /report
 └── BridgeCommand.java     /mcbridge
 
-src/velocity/java/cn/stalir/mcbridge/velocity/   Velocity
-├── McBridgeVelocityPlugin.java   入口（@Plugin）
-├── VelocityPlatform.java         代理调度与状态
-├── VelocityListener.java         进服/退服
-├── VelocityBindCommand.java      /bind
-└── VelocityBridgeCommand.java    /mcbridge
+neoforge/src/main/java/cn/stalir/mcbridge/neoforge/   NeoForge 21.1.x
+├── McBridgeMod.java            入口（@Mod("mc_bridge")，事件总线注册）
+├── NeoForgePlatform.java       MinecraftServer#execute 调度 + 玩家投递
+├── NeoForgeMessages.java       Message → net.minecraft.network.chat.Component
+├── NeoForgeLog.java            SLF4J 适配
+├── BindCommand.java            /bind（Brigadier）
+├── ReportCommand.java          /report（Brigadier）
+└── BridgeCommand.java          /mcbridge（Brigadier）
 ```
 
 ## 开发

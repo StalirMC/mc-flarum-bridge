@@ -10,8 +10,8 @@
 | 组件 | 要求 |
 |------|------|
 | Flarum | 2.x（PHP 8.1+），已能正常运行 |
-| Minecraft 服务端 | Paper 1.21.x · Folia 1.21.x · Velocity 3.x（**同一个 jar**） |
-| Java | 插件字节码目标 17；Paper/Folia 需 Java 21 运行，Velocity 可用 Java 17 |
+| Minecraft 服务端 | Paper 1.21.x · Folia 1.21.x（同一个插件 jar）；NeoForge 21.1.x for 1.21.1（模组 jar） |
+| Java | 共享核心字节码目标 17；Paper/Folia 与 NeoForge 均需 Java 21 运行 |
 | 网络 | MC 服务端能访问论坛的 `https://<forum>/api/mc-bridge/*` |
 
 > 若论坛在 Cloudflare 等 CDN 之后，请确认没有对 `/api/mc-bridge/*` 开启
@@ -221,57 +221,69 @@ language: zh_CN     # 或 en
 
 > ⚠️ 改语言后论坛侧需要清一次缓存：`php flarum cache:clear`
 
-## 2. Minecraft 侧：构建并安装插件
+## 2. Minecraft 侧：构建并安装
 
-> **同一个 jar 支持 Paper、Folia 与 Velocity。** jar 根同时放着 `plugin.yml`
-> （Paper/Folia 读）与 `velocity-plugin.json`（Velocity 读），各平台只加载自己
-> 描述符里写明的入口类。构建时的 `verifyJar` 会校验两份描述符、两个入口类都在，
-> 且共享层不含任何平台类引用。
+> **两个发行包。** Paper 插件 jar 根放 `plugin.yml`（Paper/Folia 读）；NeoForge 模组
+> jar 放 `META-INF/neoforge.mods.toml`（NeoForge 读）。两者由同一份共享核心源码编译，
+> 各自独立、互不依赖。构建时各自的 `verifyJar` 会校验描述符、入口类与随包资源都在，
+> 且共享层不含任何平台类引用。**不再支持 Velocity。**
 
 ### 2.1 构建
 
-仓库不含 Gradle wrapper 的二进制，先生成一次或用系统 Gradle：
+仓库不含 Gradle wrapper 的二进制，用系统 Gradle 8.10+：
 
 ```bash
 cd mc-plugin
-gradle wrapper --gradle-version 8.10   # 可选：生成 gradlew / gradlew.bat
-./gradlew build                        # 或直接 gradle build
+gradle build              # 两个工程都构建
+gradle :build             # 只要 Paper/Folia 插件（跳过耗时的 NeoForge 工具链）
 ```
 
-需要 **JDK 21**（编译目标字节码为 Java 17，因此 Java 17 的 Velocity 也能加载）。
-首次构建会从 PaperMC 仓库拉取 `velocity-api`，需要网络。
-产物：`build/libs/McBridge-0.0.2.jar`
+需要 **JDK 21**（工具链）；共享核心的字节码目标为 Java 17，Paper 与 NeoForge 模块为 21。
+
+首次构建 NeoForge 模组时，ModDevGradle 会下载 Minecraft 1.21.1 与 NeoForge 21.1.100，
+并跑一遍 NeoForm（反编译 → 打补丁 → 重编译 5364 个源文件），**约 5-10 分钟**且需要网络；
+之后 Gradle 缓存会复用，增量构建只需十几秒。
+
+产物：
+
+```
+build/libs/McBridge-<版本>.jar
+neoforge/build/libs/McBridge-neoforge-<版本>.jar
+```
 
 如果服务器不是 1.21.1，可覆盖 Paper API 版本：
 
 ```bash
-./gradlew build -PpaperApiVersion=1.21.4-R0.1-SNAPSHOT
+gradle build -PpaperApiVersion=1.21.4-R0.1-SNAPSHOT
 ```
 
 ### 2.2 安装
 
-| 平台 | 放置位置 | 插件目录 |
+| 平台 | 放置位置 | 配置目录 |
 |------|----------|----------|
 | Paper / Folia | `<server>/plugins/` | `plugins/McBridge/` |
-| Velocity | `<proxy>/plugins/` | `plugins/mc-bridge/` |
+| NeoForge | `<server>/mods/` | `config/mc-bridge/` |
 
 ```bash
 # Paper / Folia
-cp build/libs/McBridge-0.0.2.jar <server>/plugins/
+cp build/libs/McBridge-<版本>.jar <server>/plugins/
 
-# Velocity（同一个文件）
-cp build/libs/McBridge-0.0.2.jar <proxy>/plugins/
+# NeoForge（另一个文件）
+cp neoforge/build/libs/McBridge-neoforge-<版本>.jar <server>/mods/
 ```
 
 Folia 无需额外步骤：`plugin.yml` 已声明 `folia-supported: true`，插件会自动检测
 regionised 服务端并改用 Folia 的 `AsyncScheduler` / `GlobalRegionScheduler`。
 
-启动一次服务器生成 `plugins/<目录>/config.yml`，或直接把仓库里的
-`src/main/resources/config.yml` 复制过去。
+NeoForge 模组声明了 `side = "SERVER"`，**只需装在服务端**，客户端不需要安装。
+它的命令用权限等级代替 Bukkit 权限节点：`/mcbridge news` 所有人可用，
+其余子命令需要 OP（等级 2）。
 
-> **代理 + 后端一起装？** 可以，但请给它们**不同的 `server.key`**（例如
-> `proxy` 与 `survival`），否则两者会在论坛上互相覆盖同一条服务器记录。
-> 代理侧看不到死亡/成就事件，心跳也只按代理维度上报（没有 TPS/MSPT）。
+启动一次服务器生成配置，或直接把仓库里的 `src/main/resources/config.yml`
+复制到 `plugins/McBridge/config.yml`（NeoForge 为 `config/mc-bridge/config.yml`）。
+
+> **多台后端一起装？** 可以，但请给它们**不同的 `server.key`**（例如 `survival`
+> 与 `creative`），否则它们会在论坛上互相覆盖同一条服务器记录。
 
 ### 2.3 填写配置
 
@@ -300,8 +312,8 @@ game:
 /mcbridge reload
 ```
 
-看到 `McBridge enabled on paper as server 'survival' -> ...`（Velocity 上为
-`on velocity`）和随后的心跳成功日志即表示连通。`/mcbridge stats` 的第一行会显示
+看到 `McBridge enabled on paper as server 'survival' -> ...`（NeoForge 上为
+`on neoforge`）即表示配置已被读取、插件已注册到论坛。`/mcbridge stats` 的第一行会显示
 当前运行平台。
 
 ## 3. 验证互通
@@ -414,7 +426,7 @@ report:
 > **PlaceholderAPI**：装了 PlaceholderAPI 与对应扩展时，`title-format` 里的 `%...%`
 > 会以**举报人**的身份展开（如 `%player_name%`）；没装则原样保留。
 > 标题是在**游戏内**渲染好再随举报发给论坛的 —— 论坛端拿不到游戏占位符。
-> `/report` 只在 Paper/Folia 上存在（代理没有游戏内举报），因此这一项只在这两个平台生效。
+> `/report` 在两个发行包上都存在：Paper/Folia 用 Bukkit 权限节点，NeoForge 用 OP 等级。
 
 **论坛侧**（`php flarum mc-bridge:config ...`）：
 

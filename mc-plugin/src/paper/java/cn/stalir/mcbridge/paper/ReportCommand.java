@@ -2,7 +2,7 @@ package cn.stalir.mcbridge.paper;
 
 import cn.stalir.mcbridge.BridgeConfig;
 import cn.stalir.mcbridge.BridgeCore;
-import net.kyori.adventure.text.Component;
+import cn.stalir.mcbridge.Message;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -28,17 +28,17 @@ public final class ReportCommand implements CommandExecutor {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!(sender instanceof Player player)) {
-            sender.sendMessage(core.messages().prefixed("players-only"));
+            AdventureMessages.send(sender, core.messages().prefixed("players-only"));
             return true;
         }
 
         if (!player.hasPermission("mcbridge.report")) {
-            player.sendMessage(core.messages().prefixed("no-permission"));
+            AdventureMessages.send(player, core.messages().prefixed("no-permission"));
             return true;
         }
 
         if (args.length < 2) {
-            player.sendMessage(core.messages().prefixed("report-usage"));
+            AdventureMessages.send(player, core.messages().prefixed("report-usage"));
             return true;
         }
 
@@ -47,7 +47,7 @@ public final class ReportCommand implements CommandExecutor {
         // Local check, no I/O: the forum cannot accept a report while the
         // configuration is unusable, so answer immediately.
         if (!config.isUsable()) {
-            player.sendMessage(core.messages().prefixed(
+            AdventureMessages.send(player, core.messages().prefixed(
                     "report-failed",
                     "reason",
                     String.join("; ", config.problems())
@@ -75,9 +75,9 @@ public final class ReportCommand implements CommandExecutor {
         String resolvedTemplate = titleTemplate;
 
         core.platform().runAsync(() -> {
-            Component reply = core.reportPlayer(reporterUuid, reporterName, targetName, reason, resolvedTemplate);
+            Message reply = core.reportPlayer(reporterUuid, reporterName, targetName, reason, resolvedTemplate);
 
-            core.platform().runSync(() -> player.sendMessage(reply));
+            core.platform().runSync(() -> AdventureMessages.send(player, reply));
         });
 
         return true;

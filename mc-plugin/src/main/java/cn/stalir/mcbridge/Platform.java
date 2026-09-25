@@ -1,14 +1,12 @@
 package cn.stalir.mcbridge;
 
-import net.kyori.adventure.text.Component;
-
 import java.nio.file.Path;
 import java.util.UUID;
 
 /**
  * Everything the shared core needs from the server it is running on.
  *
- * There are two implementations, one per jar-compatible platform family:
+ * There are two implementations, one per supported platform family:
  *
  * <ul>
  *   <li>{@code cn.stalir.mcbridge.paper.PaperPlatform} - Paper and Folia. It
@@ -16,18 +14,24 @@ import java.util.UUID;
  *       <code>GlobalRegionScheduler</code>) when the server is regionised and
  *       through the classic {@code BukkitScheduler} otherwise, so one jar runs
  *       on both.</li>
- *   <li>{@code cn.stalir.mcbridge.velocity.VelocityPlatform} - the Velocity
- *       proxy, which has no main thread and no game commands.</li>
+ *   <li>{@code cn.stalir.mcbridge.neoforge.NeoForgePlatform} - the NeoForge mod,
+ *       which schedules on the server thread through
+ *       {@code MinecraftServer#execute} and delivers
+ *       {@code net.minecraft.network.chat.Component}.</li>
  * </ul>
  *
+ * Messages cross this boundary as {@link Message}, never as a platform component:
+ * Paper ships Adventure and NeoForge does not, so the conversion belongs to the
+ * platform module (see {@link Message}).
+ *
  * Threading contract: server state may only be touched on the main thread (or
- * the global region) on Paper/Folia, which is what {@link #runSync(Runnable)}
- * and {@link #runSyncRepeating(Runnable, long, long)} are for. Velocity has no
- * main thread and runs everything on its own scheduler.
+ * the global region) on Paper/Folia, and on the server thread on NeoForge, which
+ * is what {@link #runSync(Runnable)} and
+ * {@link #runSyncRepeating(Runnable, long, long)} are for.
  */
 public interface Platform {
 
-    /** {@code paper}, {@code folia} or {@code velocity}: used in logs only. */
+    /** {@code paper}, {@code folia} or {@code neoforge}: used in logs only. */
     String id();
 
     Log log();
@@ -53,7 +57,7 @@ public interface Platform {
      */
     Yaml readConfig();
 
-    /** Run a task once, off the main thread / on the proxy's async pool. */
+    /** Run a task once, off the main thread / on a platform async pool. */
     void runAsync(Runnable task);
 
     /** Run a task repeatedly, off the main thread. */
@@ -66,8 +70,8 @@ public interface Platform {
     void runSyncRepeating(Runnable task, long initialDelayMillis, long periodMillis);
 
     /**
-     * Run a task once on the main thread (global region on Folia), or inline
-     * when the platform is already fully asynchronous (Velocity).
+     * Run a task once on the main thread (global region on Folia; the server
+     * thread on NeoForge).
      */
     void runSync(Runnable task);
 
@@ -78,7 +82,7 @@ public interface Platform {
     // Output
     // ------------------------------------------------------------------
 
-    void broadcast(Component message);
+    void broadcast(Message message);
 
     /**
      * Send one message to a single player, or do nothing when they are offline.
@@ -86,7 +90,7 @@ public interface Platform {
      * Safe to call from any thread: the Paper/Folia implementation hops to the
      * thread that owns the player when the server is regionised.
      */
-    void sendToPlayer(UUID uuid, Component message);
+    void sendToPlayer(UUID uuid, Message message);
 
-    void logToConsole(Component message);
+    void logToConsole(Message message);
 }

@@ -1,0 +1,165 @@
+plugins {
+    id 'java'
+    // Literal on purpose: Gradle's plugins block cannot read gradle.properties.
+    // The NeoForge version this compiles against lives in ../gradle.properties.
+    id 'net.neoforged.moddev' version '2.0.147'
+}
+
+description = 'McBridge as a NeoForge mod for Minecraft 1.21.1'
+
+repositories {
+    mavenCentral()
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// One mod: the NeoForge entry points plus the very same shared core the Paper
+// plugin uses.
+//
+// The core sources are compiled again here rather than consumed as an artifact.
+// That keeps the mod self-contained (one file in mods/, with no dependency on
+// the plugin jar) and avoids a task cycle between the two projects.
+//
+// Having Minecraft on this compile classpath is harmless: the core does not
+// reference it, and the root project - which has no Minecraft at all - would
+// refuse to compile the core if it ever started to.
+// ---------------------------------------------------------------------------
+
+sourceSets {
+    main {
+        java.srcDirs = [rootProject.file('src/main/java'), 'src/main/java']
+        resources.srcDirs = [rootProject.file('src/main/resources'), 'src/main/resources']
+    }
+}
+
+neoForge {
+    version = "${neoforgeVersion}"
+
+    // No runs are declared: this project only ever builds the mod, and
+    // declaring runs would make Gradle expect a Minecraft installation.
+}
+
+dependencies {
+    // Provided by Minecraft itself, so never bundled.
+    compileOnly "com.google.code.gson:gson:${gsonVersion}"
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.compilerArgs << '-Xlint:deprecation' << '-Xlint:unchecked'
+}
+
+// config.yml and lang/*.yml are copied verbatim; only the mod descriptor carries
+// placeholders.
+tasks.named('processResources') {
+    filteringCharset = 'UTF-8'
+    inputs.property('version', project.version)
+
+    filesMatching('META-INF/neoforge.mods.toml') {
+        expand(
+                version: project.version,
+                minecraftVersion: '1.21.1',
+                neoForgeVersion: neoforgeVersion
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Packaging
+// ---------------------------------------------------------------------------
+
+tasks.named('jar') {
+    archiveBaseName = 'McBridge-neoforge'
+
+    manifest {
+        attributes(
+                'Implementation-Title': 'McBridge (NeoForge)',
+                'Implementation-Version': project.version,
+                'Implementation-Vendor': 'Stalir'
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Jar content assertions
+//
+// Same reasoning as the plugin's verifyJar: a mod that builds but cannot be
+// loaded fails silently on the server, which is far worse than a red build.
+// ---------------------------------------------------------------------------
+
+tasks.register('verifyJar') {
+    description = 'Assert that the built mod jar can be loaded by NeoForge 1.21.1.'
+    group = 'verification'
+    dependsOn tasks.named('jar')
+
+    def jarTask = tasks.named('jar')
+    def expectedVersion = project.version.toString()
+    def expectedNeoForge = neoforgeVersion.toString()
+
+    doLast {
+        def jarFile = jarTask.get().archiveFile.get().asFile
+        def zip = new java.util.zip.ZipFile(jarFile)
+
+        try {
+            def entries = zip.entries().collect { it.name } as Set
+
+            def required = [
+                    'META-INF/neoforge.mods.toml',
+                    'config.yml',
+                    'lang/zh_CN.yml',
+                    'lang/en.yml',
+                    'cn/stalir/mcbridge/BridgeCore.class',
+                    'cn/stalir/mcbridge/Message.class',
+                    'cn/stalir/mcbridge/neoforge/McBridgeMod.class',
+                    'cn/stalir/mcbridge/neoforge/NeoForgePlatform.class',
+                    'cn/stalir/mcbridge/neoforge/NeoForgeMessages.class',
+            ]
+
+            def missing = required.findAll { !entries.contains(it) }
+
+            if (!missing.isEmpty()) {
+                throw new GradleException("The mod jar is incomplete; missing entries: ${missing}")
+            }
+
+            // A mod jar is only a mod because of this descriptor, and NeoForge
+            // rejects the whole file when it cannot parse it.
+            def toml = zip.getInputStream(zip.getEntry('META-INF/neoforge.mods.toml')).getText('UTF-8')
+
+            if (!toml.contains('modId="mc_bridge"') && !toml.contains('modId = "mc_bridge"')) {
+                throw new GradleException('neoforge.mods.toml does not declare modId "mc_bridge"')
+            }
+
+            if (!toml.contains(expectedVersion)) {
+                throw new GradleException("neoforge.mods.toml does not carry the project version ${expectedVersion}")
+            }
+
+            if (!toml.contains(expectedNeoForge)) {
+                throw new GradleException("neoforge.mods.toml does not declare the NeoForge version ${expectedNeoForge}")
+            }
+
+            if (!toml.contains('1.21.1')) {
+                throw new GradleException('neoforge.mods.toml does not declare Minecraft 1.21.1')
+            }
+
+            // The Paper descriptor must not ride along: mods/ and plugins/ take
+            // different files, and a plugin.yml inside a mod is a sign the two
+            // projects were cross-wired.
+            if (entries.contains('plugin.yml')) {
+                throw new GradleException('the mod jar contains plugin.yml; the Paper descriptor belongs to the plugin jar')
+            }
+
+            logger.lifecycle("verified ${jarFile.name}: ${entries.size()} entries, loadable by NeoForge ${expectedNeoForge} (Minecraft 1.21.1)")
+        } finally {
+            zip.close()
+        }
+    }
+}
+
+tasks.named('build') {
+    dependsOn tasks.named('verifyJar')
+}

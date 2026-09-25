@@ -2,7 +2,7 @@ package cn.stalir.mcbridge.paper;
 
 import cn.stalir.mcbridge.BridgeConfig;
 import cn.stalir.mcbridge.BridgeCore;
-import net.kyori.adventure.text.Component;
+import cn.stalir.mcbridge.Message;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -40,7 +40,7 @@ public final class BridgeCommand implements CommandExecutor, TabCompleter {
         }
 
         if (!sender.hasPermission("mcbridge.admin")) {
-            sender.sendMessage(core.messages().prefixed("no-permission"));
+            AdventureMessages.send(sender, core.messages().prefixed("no-permission"));
             return true;
         }
 
@@ -59,7 +59,7 @@ public final class BridgeCommand implements CommandExecutor, TabCompleter {
 
             case "stats" -> sendLines(sender, core.statsLines());
 
-            default -> sender.sendMessage(core.messages().prefixed(
+            default -> AdventureMessages.send(sender, core.messages().prefixed(
                     "unknown-subcommand",
                     "available", String.join(", ", BridgeCore.subcommands())
             ));
@@ -74,7 +74,7 @@ public final class BridgeCommand implements CommandExecutor, TabCompleter {
      */
     private void sendLines(CommandSender sender, List<String> lines) {
         for (String line : lines) {
-            sender.sendMessage(core.messages().legacy(line));
+            AdventureMessages.send(sender, core.messages().legacy(line));
         }
     }
 
@@ -82,10 +82,10 @@ public final class BridgeCommand implements CommandExecutor, TabCompleter {
         core.reload();
 
         BridgeConfig config = core.config();
-        sender.sendMessage(core.messages().prefixed("reloaded"));
+        AdventureMessages.send(sender, core.messages().prefixed("reloaded"));
 
         if (!config.isUsable()) {
-            sender.sendMessage(core.messages().prefixed(
+            AdventureMessages.send(sender, core.messages().prefixed(
                     "reload-problems",
                     "problems", String.join("; ", config.problems())
             ));
@@ -95,11 +95,11 @@ public final class BridgeCommand implements CommandExecutor, TabCompleter {
 
     private void fetchOutbox(CommandSender sender) {
         core.platform().runAsync(() -> {
-            List<Component> reply = core.outboxMessages();
+            List<Message> reply = core.outboxMessages();
 
             core.platform().runSync(() -> {
-                for (Component line : reply) {
-                    sender.sendMessage(line);
+                for (Message line : reply) {
+                    AdventureMessages.send(sender, line);
                 }
             });
         });
@@ -107,11 +107,11 @@ public final class BridgeCommand implements CommandExecutor, TabCompleter {
 
     private void fetchNews(CommandSender sender) {
         core.platform().runAsync(() -> {
-            List<Component> reply = core.newsMessages(5);
+            List<Message> reply = core.newsMessages(5);
 
             core.platform().runSync(() -> {
-                for (Component line : reply) {
-                    sender.sendMessage(line);
+                for (Message line : reply) {
+                    AdventureMessages.send(sender, line);
                 }
             });
         });
@@ -119,7 +119,7 @@ public final class BridgeCommand implements CommandExecutor, TabCompleter {
 
     private void sendBroadcast(CommandSender sender, String[] args) {
         if (args.length < 2) {
-            sender.sendMessage(core.messages().prefixed("broadcast-usage"));
+            AdventureMessages.send(sender, core.messages().prefixed("broadcast-usage"));
             return;
         }
 
@@ -127,9 +127,9 @@ public final class BridgeCommand implements CommandExecutor, TabCompleter {
 
         core.platform().runAsync(() -> {
             // No title: the forum derives one from the body.
-            Component reply = core.broadcastResult(text, null);
+            Message reply = core.broadcastResult(text, null);
 
-            core.platform().runSync(() -> sender.sendMessage(reply));
+            core.platform().runSync(() -> AdventureMessages.send(sender, reply));
         });
     }
 

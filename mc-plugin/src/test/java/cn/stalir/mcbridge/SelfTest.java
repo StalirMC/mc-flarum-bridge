@@ -293,15 +293,15 @@ public final class SelfTest {
 
 
         @Override
-        public void broadcast(net.kyori.adventure.text.Component message) {
+        public void broadcast(Message message) {
         }
 
         @Override
-        public void sendToPlayer(java.util.UUID uuid, net.kyori.adventure.text.Component message) {
+        public void sendToPlayer(java.util.UUID uuid, Message message) {
         }
 
         @Override
-        public void logToConsole(net.kyori.adventure.text.Component message) {
+        public void logToConsole(Message message) {
         }
 
     }
