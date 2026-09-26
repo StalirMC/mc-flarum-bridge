@@ -110,7 +110,8 @@ public final class HttpBridgeClient {
             List<String> tags,
             String actor,
             String reportUid,
-            String context
+            String context,
+            boolean contextEnabled
     ) throws BridgeException {
         JsonObject payload = new JsonObject();
         payload.addProperty("server_key", config.serverKey());
@@ -129,6 +130,12 @@ public final class HttpBridgeClient {
         // what was actually said. Omitted entirely when the feature is off, which
         // leaves an older forum behaving exactly as before.
         addIfPresent(payload, "context", context);
+
+        // Sent even when the transcript is empty: it is what separates "the
+        // feature is switched off here" from "this player had not spoken", two
+        // cases that otherwise produce an identical discussion. A forum older than
+        // this ignores the field.
+        payload.addProperty("context_enabled", contextEnabled);
 
         // Sent as an array: the forum resolves each entry (slug or id) and files
         // the discussion under all of the ones that exist.

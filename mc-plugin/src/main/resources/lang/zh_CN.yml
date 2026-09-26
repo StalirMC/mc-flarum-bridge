@@ -62,13 +62,14 @@ stats-server-key: "&7服务器标识：&f{key}"
 stats-forum-url: "&7论坛地址：&f{url}"
 stats-locale: "&7输出语言：&f{locale}"
 stats-received: "&7已接收消息：&f{received}"
+stats-chat-buffer: "&7聊天缓冲：&f{players} &7名玩家 / &f{lines} &7条"
 stats-config: "&7配置状态：{state}"
 stats-config-ok: "&a正常"
 stats-config-bad: "&c有问题"
 
 # ---- 控制台日志 ----
 log:
-  enabled: "McBridge 已启用（平台 {platform}）：服务器标识 '{key}'，目标 {url}"
+  enabled: "McBridge 已启用（平台 {platform}，版本 {version}）：服务器标识 '{key}'，目标 {url}"
   disabled: "McBridge 已关闭。"
   idle: "配置存在问题，McBridge 暂不工作，请先按上面的提示修复。"
   outbox-failed: "拉取公告失败（连续 {count} 次）：{reason}"
@@ -80,6 +81,9 @@ log:
   report-outcome-sent: "已向玩家 {uuid} 发送举报处理结果（{type}）"
   report-outcome-no-uuid: "举报处理结果缺少 target_uuid（{type}）"
   report-outcome-uuid-invalid: "举报处理结果的 UUID 无效：{uuid}"
+  report-context: "举报 {target} 已附带 {lines} 条聊天上下文"
+  report-context-empty: "举报 {target} 未附带聊天上下文：开关已开启，但没有捕捉到该玩家的公开发言"
+  report-context-off: "举报 {target} 未附带聊天上下文：report.chat-context-lines 为 0"
 
 # ---- 配置校验提示 ----
 config:

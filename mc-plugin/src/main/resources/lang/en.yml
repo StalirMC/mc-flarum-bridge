@@ -63,13 +63,14 @@ stats-server-key: "&7Server key: &f{key}"
 stats-forum-url: "&7Forum URL: &f{url}"
 stats-locale: "&7Language: &f{locale}"
 stats-received: "&7Received messages: &f{received}"
+stats-chat-buffer: "&7Chat buffer: &f{players} &7player(s) / &f{lines} &7line(s)"
 stats-config: "&7Configuration: {state}"
 stats-config-ok: "&aok"
 stats-config-bad: "&cproblems"
 
 # ---- console log ----
 log:
-  enabled: "McBridge enabled on {platform} as server '{key}' -> {url}"
+  enabled: "McBridge enabled on {platform} (version {version}) as server '{key}' -> {url}"
   disabled: "McBridge disabled."
   idle: "The configuration has problems, so McBridge stays idle until they are fixed."
   outbox-failed: "Outbox poll failed ({count} in a row): {reason}"
@@ -81,6 +82,9 @@ log:
   report-outcome-sent: "Sent the outcome of a report to {uuid} ({type})"
   report-outcome-no-uuid: "Report outcome message missing target_uuid ({type})"
   report-outcome-uuid-invalid: "Invalid UUID in a report outcome: {uuid}"
+  report-context: "Report on {target} carries {lines} line(s) of chat context"
+  report-context-empty: "Report on {target} carries no chat context: the feature is on, but nothing was captured for that player"
+  report-context-off: "Report on {target} carries no chat context: report.chat-context-lines is 0"
 
 # ---- configuration validation ----
 config:

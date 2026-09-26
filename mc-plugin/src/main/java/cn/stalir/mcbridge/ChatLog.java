@@ -112,6 +112,27 @@ public final class ChatLog {
         return player == null ? 0 : player.size();
     }
 
+    /**
+     * How many players have anything recorded right now.
+     *
+     * Surfaced by {@code /mcbridge stats}: it is the quickest way to tell whether
+     * chat capture works at all on a live server, without waiting for a report.
+     */
+    public synchronized int trackedPlayers() {
+        return lines.size();
+    }
+
+    /** Total lines held across every player, for the same reason. */
+    public synchronized int totalLines() {
+        int total = 0;
+
+        for (Deque<String> player : lines.values()) {
+            total += player.size();
+        }
+
+        return total;
+    }
+
     /** Drop everything; used by the runtime self test. */
     public synchronized void clear() {
         lines.clear();

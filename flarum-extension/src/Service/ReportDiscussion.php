@@ -69,7 +69,7 @@ class ReportDiscussion
      * problem here must not turn a recorded report into a 500 for the player who
      * submitted it. The failure is logged instead.
      *
-     * @param  array{title?: string|null, tags?: array<int, string>|null, actor?: string|null}  $overrides
+     * @param  array{title?: string|null, tags?: array<int, string>|null, actor?: string|null, contextEnabled?: bool}  $overrides
      *         Layout hints from the game server's config.yml. Whatever is absent
      *         or cannot be resolved falls back to this forum's own settings, so a
      *         server that sends nothing behaves exactly as before.
@@ -130,7 +130,7 @@ class ReportDiscussion
             'type' => 'discussions',
             'attributes' => [
                 'title' => $title,
-                'content' => $this->content($report),
+                'content' => $this->content($report, $overrides),
             ],
         ];
 
@@ -372,7 +372,12 @@ class ReportDiscussion
         return mb_substr($title, 0, 255);
     }
 
-    private function content(McReport $report): string
+    /**
+     * The discussion body.
+     *
+     * @param  array{contextEnabled?: bool}  $overrides
+     */
+    private function content(McReport $report, array $overrides = []): string
     {
         $rows = [
             '被举报玩家' => (string) $report->target_name,
@@ -404,6 +409,14 @@ class ReportDiscussion
             $lines[] = $this->transcriptBlock($context);
             $lines[] = '';
             $lines[] = '> 来自游戏内公开聊天记录，只包含被举报玩家本人最近的消息。';
+        } elseif (! empty($overrides['contextEnabled'])) {
+            // The game server told us the transcript feature is ON and sent
+            // nothing, which means it had nothing for this player. Saying so is the
+            // whole point: "switched off", "nobody spoke" and "the server runs an
+            // old plugin" otherwise all produce a body that looks exactly like
+            // this one, and a moderator cannot tell which they are looking at.
+            $lines[] = '';
+            $lines[] = '> 未附带聊天记录：游戏服务器上的开关是开着的，但在该玩家被举报前没有捕捉到他的公开发言。';
         }
 
         $lines[] = '';

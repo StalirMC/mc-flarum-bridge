@@ -862,6 +862,35 @@ async function checkAgainstMock(mock) {
     assertEqual(mock.store.reportById(response.json.report_id).context, null, 'nothing is invented');
   });
 
+  await test('the context_enabled flag never costs the player their report', async () => {
+    // It exists so the forum can say "the feature is on but nothing was captured"
+    // instead of showing a body identical to "the feature is off". Whatever the
+    // game server sends here - or nothing at all, for an older plugin - the report
+    // itself has to survive.
+    for (const [label, extra] of [
+      ['feature on, nothing captured', { context_enabled: true }],
+      ['feature off', { context_enabled: false }],
+      ['an older plugin that does not send it', {}],
+      ['a hand-rolled client sending "1"', { context_enabled: '1' }],
+    ]) {
+      const response = await request(baseUrl, {
+        method: 'POST',
+        path: '/api/mc-bridge/report',
+        body: {
+          server_key: 'survival',
+          reporter_uuid: REPORTER_UUID,
+          reporter_name: 'Alice',
+          target_name: 'Flagged',
+          reason: 'flag contract',
+          ...extra,
+        },
+      });
+
+      assertStatus(response, 201, label);
+      assert(mock.store.reportById(response.json.report_id) !== null, `${label}: the report is stored`);
+    }
+  });
+
   await test('GET /api/mc-bridge/reports returns the caller own reports only', async () => {
     const otherUuid = '99999999-8888-7777-6666-555555555555';
 

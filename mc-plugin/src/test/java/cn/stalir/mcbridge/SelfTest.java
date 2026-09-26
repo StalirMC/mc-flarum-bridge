@@ -147,8 +147,9 @@ public final class SelfTest {
         check("log.idle is localised", true, !idle.equals("log.idle") && !idle.isBlank());
 
         String enabled = messages.plain("log.enabled",
-                "platform", "paper", "key", "survival", "url", "https://example.test");
+                "platform", "paper", "version", Version.VERSION, "key", "survival", "url", "https://example.test");
         check("log.enabled interpolates the platform", true, enabled.contains("paper"));
+        check("log.enabled interpolates the version", true, enabled.contains(Version.VERSION));
         check("log.enabled interpolates the key", true, enabled.contains("survival"));
         check("log.enabled leaves no placeholder behind", false, enabled.contains("{"));
 
@@ -209,6 +210,27 @@ public final class SelfTest {
                 .replace("url: \"https://forum.kxkl2024.cn\"", "url: \"forum.kxkl2024.cn\""));
         BridgeConfig noScheme = BridgeConfig.from(badUrl, platform.log(), messages);
         check("a URL without a scheme is rejected", false, noScheme.isUsable());
+
+        // An upgrading server keeps the config.yml it already has: saveResource
+        // never overwrites an existing file, so every key added since that file
+        // was written is ABSENT in practice. Reading the shipped file proves
+        // nothing about that, because the shipped file has them - so strip them
+        // back out and assert the defaults, which are what actually decide the
+        // behaviour on a real upgrade.
+        String olderConfig = text
+                .replaceAll("(?m)^\\s*(?:announce-display|title-seconds|bossbar-seconds|chat-context-lines):.*$", "")
+                .replace("secret: \"\"", "secret: \"" + secret + "\"");
+
+        Yaml legacy = Yaml.parse(olderConfig);
+        BridgeConfig upgraded = BridgeConfig.from(legacy, platform.log(), messages);
+
+        check("the new keys really are gone from the older file",
+                "", legacy.getString("report.chat-context-lines", ""));
+        check("an upgraded install still captures chat", 10, upgraded.reportChatContextLines());
+        check("an upgraded install announces in chat", "[CHAT]", upgraded.announceDisplay().toString());
+        check("an upgraded install gets the title default", 5, upgraded.titleSeconds());
+        check("an upgraded install gets the boss bar default", 10, upgraded.bossbarSeconds());
+        check("an upgraded install is still usable", true, upgraded.isUsable());
     }
 
     // ------------------------------------------------------------------
@@ -302,6 +324,12 @@ public final class SelfTest {
 
         check("the oldest tracked player is evicted", 0, many.size("player0"));
         check("the newest tracked player is kept", 1, many.size("player599"));
+
+        // /mcbridge stats reports exactly these two numbers, and they are the
+        // quickest way to see whether capture works on a live server. One line was
+        // recorded per player above, so the totals differ on purpose.
+        check("the buffer reports how many players it tracks", 500, many.trackedPlayers());
+        check("the buffer reports its total line count", 500, many.totalLines());
     }
 
     private static void section(String title) {

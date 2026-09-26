@@ -80,8 +80,12 @@ public final class BridgeCore {
         schedule();
 
         if (config.isUsable()) {
+            // The version is part of this line on purpose: "which jar is actually
+            // loaded" is otherwise unanswerable from the outside, and that question
+            // has already cost a round trip once.
             platform.log().info(logText("log.enabled",
                     "platform", platform.id(),
+                    "version", Version.VERSION,
                     "key", config.serverKey(),
                     "url", config.endpoint("/outbox")));
         } else {
@@ -639,6 +643,7 @@ public final class BridgeCore {
         // the same report, or the forum could file two discussions whose content
         // disagrees.
         String context = chatContext(targetName);
+        logReportContext(targetName, context);
 
         // One id for both attempts: the forum keys its idempotency on it, so a
         // retry can never file the same report twice.
@@ -757,8 +762,41 @@ public final class BridgeCore {
                 config.reportTags(),
                 config.reportActor(),
                 reportUid,
-                context
+                context,
+                // Whether the transcript feature is on at all. The forum needs this
+                // to tell "the feature is off" from "this player had not spoken",
+                // which otherwise look exactly the same in the discussion.
+                config.reportChatContextLines() > 0
         );
+    }
+
+    /**
+     * Say what a report is carrying, at INFO, once per report.
+     *
+     * Without this line the three cases - a transcript, a player who never spoke,
+     * and a feature that is switched off - are indistinguishable from the forum,
+     * which is precisely the confusion this exists to end.
+     */
+    private void logReportContext(String targetName, String context) {
+        // Each key is written out as the first argument rather than chosen through
+        // a conditional: tools/verify.mjs reads the literal passed to logText() to
+        // decide which language entries are still in use, so a key behind a ternary
+        // looks unused.
+        if (!context.isEmpty()) {
+            platform.log().info(logText("log.report-context",
+                    "target", targetName,
+                    "lines", String.valueOf(context.split("\n", -1).length)));
+
+            return;
+        }
+
+        if (config.reportChatContextLines() <= 0) {
+            platform.log().info(logText("log.report-context-off", "target", targetName));
+
+            return;
+        }
+
+        platform.log().info(logText("log.report-context-empty", "target", targetName));
     }
 
     /**
@@ -796,6 +834,9 @@ public final class BridgeCore {
         lines.add(messages.string("stats-forum-url", "url", config.forumUrl()));
         lines.add(messages.string("stats-locale", "locale", messages.language()));
         lines.add(messages.string("stats-received", "received", String.valueOf(receivedMessages.get())));
+        lines.add(messages.string("stats-chat-buffer",
+                "players", String.valueOf(chatLog.trackedPlayers()),
+                "lines", String.valueOf(chatLog.totalLines())));
         lines.add(messages.string("stats-config", "state", state));
 
         return lines;

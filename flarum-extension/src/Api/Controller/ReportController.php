@@ -138,6 +138,11 @@ class ReportController extends AbstractBridgeController
             'title' => $this->optionalText($body, 'title', 255),
             'tags' => $this->optionalTokenList($body, 'tags', 100, 10),
             'actor' => $this->optionalToken($body, 'actor', 64),
+            // Creation-time hint only, never stored: it lets the discussion say
+            // "the transcript feature is on but nothing was captured" instead of
+            // looking identical to "the feature is off". An older plugin does not
+            // send it, and then nothing is said - exactly the old behaviour.
+            'contextEnabled' => $this->booleanFlag($body, 'context_enabled'),
         ]);
 
         if ($discussionId !== null) {
@@ -181,6 +186,27 @@ class ReportController extends AbstractBridgeController
         $value = trim($value);
 
         return $value === '' ? null : mb_substr($value, 0, $maxLength);
+    }
+
+    /**
+     * Read an optional boolean flag.
+     *
+     * Accepts what JSON actually carries - a real boolean, or the "1"/"0"/"true"/
+     * "false" a hand-rolled client may send - and treats anything else as absent.
+     */
+    private function booleanFlag(array $body, string $key): bool
+    {
+        $value = $body[$key] ?? null;
+
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_string($value)) {
+            return in_array(strtolower(trim($value)), ['1', 'true', 'yes', 'on'], true);
+        }
+
+        return $value === 1;
     }
 
     /**
