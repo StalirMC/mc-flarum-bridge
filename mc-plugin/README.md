@@ -100,6 +100,12 @@ security:
   secret: "<至少 32 字符的共享密钥>"
 
 game:
+  # 公告展示形式，可多选：chat / actionbar / title / bossbar
+  # 例："chat,bossbar" 同时发聊天行与顶部血条。
+  # 只有 chat 通道会完整显示正文与链接；title 用正文做副标题。
+  announce-display: "chat"
+  title-seconds: 5              # 大标题停留时间
+  bossbar-seconds: 10           # 血条停留时间
   prompt-unbound: true          # 未绑定玩家进服时提示一次怎么绑定（论坛不可达时保持沉默）
 
 report:
@@ -114,15 +120,20 @@ report:
   tags: ""
   # 举报讨论以哪个论坛账号发布，可填用户名或用户 ID。留空 = 用论坛侧设置。
   actor: ""
+  # 随举报附上被举报玩家本人最近 N 条公开聊天（0 = 关闭）。
+  # 只采集公开聊天：私聊与命令从不进入缓冲区；每名玩家与总玩家数都有上限。
+  chat-context-lines: 10
 ```
 
 ## 平台能力对照
 
 | 功能 | Paper / Folia | NeoForge |
 |------|---------------|----------|
-| 论坛公告广播 | ✅ | ✅ |
+| 论坛公告广播（chat / actionbar / title / bossbar 可多选） | ✅ | ✅ |
 | `/bind`、`/mcbridge` | ✅ | ✅ |
-| `/report` 举报到论坛 | ✅ 标题支持 PlaceholderAPI | ✅（无 PlaceholderAPI 等价物，标题模板原样传递） |
+| `/report` 举报到论坛（含聊天上下文） | ✅ 标题支持 PlaceholderAPI | ✅（无 PlaceholderAPI 等价物，标题模板原样传递） |
+| `/report status` 查看举报进度 | ✅ | ✅ |
+| 举报处理结果回执 | ✅ | ✅ |
 | 权限 | Bukkit 权限节点 + OP | 只用 OP 等级 2（`news` 除外） |
 
 所有请求都由共享核心生成，三个平台的报文逐字节一致，因此论坛侧无需区分平台；
@@ -182,9 +193,11 @@ NeoForge 侧没有 Bukkit 权限节点：`/mcbridge news` 所有人可用，其�
 
 ```
 src/main/java/cn/stalir/mcbridge/           共享核心（零平台引用，JDK + Gson）
-├── BridgeCore.java        公告编排 + 全部命令文案渲染
-├── Platform.java          平台 SPI（调度、数据目录、输出）
+├── BridgeCore.java        公告编排 + 全部命令文案渲染 + 举报流程
+├── Platform.java          平台 SPI（调度、数据目录、输出与展示形式）
 ├── Message.java           平台无关消息（legacy & 码；由各平台转成自己的组件）
+├── DisplayChannel.java    公告展示通道（chat / actionbar / title / bossbar）
+├── ChatLog.java           最近公开聊天的有界环形缓冲（举报上下文用）
 ├── BridgeConfig.java      配置读取与校验
 ├── BridgeException.java   协议层异常（含 HTTP 状态码）
 ├── Yaml.java              极简 YAML 读取器（避免在 jar 里塞第三方库）
@@ -196,21 +209,22 @@ src/main/java/cn/stalir/mcbridge/           共享核心（零平台引用，JDK
 
 src/paper/java/cn/stalir/mcbridge/paper/    Paper + Folia
 ├── McBridgePlugin.java    入口（薄封装）
-├── PaperPlatform.java     Folia / Bukkit 两套调度 + 玩家投递
+├── PaperPlatform.java     Folia / Bukkit 两套调度 + 玩家投递（含 title/bossbar）
 ├── AdventureMessages.java Message → Adventure Component（唯一的转换点）
 ├── PlayerListener.java    进服时提示未绑定
+├── ChatListener.java      记录公开聊天（AsyncChatEvent）
 ├── PlaceholderApiHook.java 可选 PAPI 展开（全 jar 唯一提到 PAPI 的类）
 ├── BindCommand.java       /bind
-├── ReportCommand.java     /report
+├── ReportCommand.java     /report、/report status
 └── BridgeCommand.java     /mcbridge
 
 neoforge/src/main/java/cn/stalir/mcbridge/neoforge/   NeoForge 21.1.x
-├── McBridgeMod.java            入口（@Mod("mc_bridge")，事件总线注册）
-├── NeoForgePlatform.java       MinecraftServer#execute 调度 + 玩家投递
+├── McBridgeMod.java            入口（@Mod("mc_bridge")，事件总线注册，含聊天监听）
+├── NeoForgePlatform.java       MinecraftServer#execute 调度 + 玩家投递（含 title/bossbar）
 ├── NeoForgeMessages.java       Message → net.minecraft.network.chat.Component
 ├── NeoForgeLog.java            SLF4J 适配
 ├── BindCommand.java            /bind（Brigadier）
-├── ReportCommand.java          /report（Brigadier）
+├── ReportCommand.java          /report、/report status（Brigadier）
 └── BridgeCommand.java          /mcbridge（Brigadier）
 ```
 

@@ -39,8 +39,23 @@ sync:
 game:
   # Placeholders: {title} {body} {url} {type}
   announce-format: "&e[论坛] &f{title}"
-  # Show the body on a second line when it is present.
+  # Show the body on a second line when it is present. On the title channel this
+  # same value is used as the subtitle.
   announce-body-format: "&7{body}"
+  # How an announcement is presented. Any combination, comma separated:
+  #   chat       a normal chat line (the default)
+  #   actionbar  the line just above the hotbar
+  #   title      a large centred title
+  #   bossbar    a bar across the top of the screen
+  # Example - show it in chat and as a boss bar at the same time:
+  #   announce-display: "chat,bossbar"
+  #
+  # Only the chat line carries the body and the link in full; the other channels
+  # show the headline, and the title additionally uses the body as its subtitle.
+  announce-display: "chat"
+  # How long a title and a boss bar stay on screen.
+  title-seconds: 5
+  bossbar-seconds: 10
   # Tell a player who has not linked a forum account how to do it when they join.
   prompt-unbound: true
 
@@ -73,3 +88,13 @@ report:
   # id. Empty = use the forum's own setting
   # (php flarum mc-bridge:config --report-actor).
   actor: ""
+
+  # How many of the reported player's OWN recent public chat lines to attach to
+  # the report, so a moderator can see what was actually said rather than only
+  # the reporter's summary. 0 disables it.
+  #
+  # Only public chat is ever captured: private messages (/msg) and commands
+  # (/...) are never recorded. The buffer holds at most this many lines per
+  # player, the transcript is attached only when that player is reported, and it
+  # is never broadcast into chat.
+  chat-context-lines: 10

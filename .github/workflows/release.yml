@@ -89,10 +89,17 @@ jobs:
             | `McBridge-<version>.jar` | `plugins/` | Paper and Folia 1.21.x |
             | `McBridge-neoforge-<version>.jar` | `mods/` | NeoForge 21.1.x for Minecraft 1.21.1 (server side only - clients do not need it) |
 
-            What both provide: forum announcements relayed into the game, `/bind` to
-            link a Minecraft account to a Flarum account, `/report` to file a player
-            report (which becomes a tagged discussion on the forum), and
-            `/mcbridge news|outbox|broadcast|stats|reload`.
+            What both provide: forum announcements relayed into the game (as a chat line,
+            an action bar, a title or a boss bar - any combination), `/bind` to link a
+            Minecraft account to a Flarum account, `/report` to file a player report
+            (which becomes a tagged discussion on the forum, and can carry the reported
+            player's own recent public chat), `/report status` to follow what happened to
+            your own reports, and `/mcbridge news|outbox|broadcast|stats|reload`.
+
+            A report is closed either by moving its discussion into the forum's
+            "resolved"/"rejected" tag or with
+            `php flarum mc-bridge:report <id> --status=resolved`; either way the reporter
+            is told in game, exactly once.
 
             On Paper and Folia, PlaceholderAPI is used when installed to expand
             `%placeholders%` in the report title.

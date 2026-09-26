@@ -194,6 +194,25 @@ abstract class AbstractBridgeController implements RequestHandlerInterface
     }
 
     /**
+     * Normalise a player UUID, accepting the canonical and the compact form.
+     *
+     * Returns null for anything else, so a malformed identifier never reaches a
+     * database query. Shared by every endpoint that takes a player identity.
+     */
+    protected function sanitizeUuid(mixed $uuid): ?string
+    {
+        if (! is_string($uuid)) {
+            return null;
+        }
+
+        $uuid = strtolower(trim($uuid));
+
+        return preg_match('/^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/', $uuid)
+            ? $uuid
+            : null;
+    }
+
+    /**
      * Read and validate the server key identifying the calling server.
      */
     protected function resolveServerKey(ServerRequestInterface $request, array $body): ?string

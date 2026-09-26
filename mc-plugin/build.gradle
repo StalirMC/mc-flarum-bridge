@@ -57,6 +57,9 @@ dependencies {
     // not, and the shared core is deliberately free of it.
     paperCompileOnly "net.kyori:adventure-api:${adventureApiVersion}"
     paperCompileOnly "net.kyori:adventure-text-serializer-legacy:${adventureApiVersion}"
+    // The chat listener turns a delivered message back into plain text for the
+    // transcript a report can carry.
+    paperCompileOnly "net.kyori:adventure-text-serializer-plain:${adventureApiVersion}"
     // Only the paper module may touch this either; a mod loader has no
     // PlaceholderAPI.
     paperCompileOnly "me.clip:placeholderapi:${placeholderApiVersion}"

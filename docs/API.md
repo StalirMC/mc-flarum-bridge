@@ -236,6 +236,7 @@ php flarum mc-bridge:selftest --url=...    # 全链路自检
 | `title` | string | 讨论标题。由插件在**游戏内**渲染，因此可以包含 PlaceholderAPI 的输出。缺省时论坛按自己的模板渲染 |
 | `tags` | string[] | 讨论归入哪些标签，每项是 slug 或标签 ID（最多 10 项）。缺省时用论坛设置 |
 | `actor` | string | 以哪个论坛账号发布，填用户名或用户 ID。缺省时用论坛设置 |
+| `context` | string | 被举报玩家**本人**最近的公开聊天记录（游戏侧 `report.chat-context-lines` 控制条数，0 关闭）。最长 12000 字符 |
 
 后三者都是**提示**：无法解析的项会被记进 Flarum 日志并跳过，**不会**让这次举报失败 ——
 举报本身已经入库，玩家不该因为论坛侧的配置笔误看到 500。
@@ -285,6 +286,62 @@ php flarum mc-bridge:selftest --url=...    # 全链路自检
 > 失败原因会写进 Flarum 日志。
 
 `discussion_id` 在论坛侧创建失败时为 `null`；调用方可以忽略它。
+
+**处理结果回执**：举报的讨论被创建后，其 ID 会存进 `mc_reports.discussion_id`。管理员
+用以下任一方式把举报标记为已处理/已驳回时，论坛会往 `mc_outbox` 里塞一条定向消息
+（`type` 为 `report_resolved` 或 `report_rejected`，`target_uuid` 为举报人），游戏侧下一次
+轮询就会在游戏内通知举报人：
+
+| 方式 | 说明 |
+|------|------|
+| 给举报讨论打上「已处理」/「已驳回」标签 | 监听 `Flarum\Tags\Event\DiscussionWasTagged`。标签 ID 由 `--report-resolved-tags` / `--report-rejected-tags` 指定，默认关闭 |
+| `php flarum mc-bridge:report <记录编号> --status=resolved` | 命令兜底，可用于批量处理或自动化；`--note="..."` 会附带一句备注，`--silent` 则不通知 |
+
+两条路径都走同一个 `Service\ReportOutcome`，所以「重复打标签」或「重复执行命令」都**只通知
+一次**：状态没变化时不发消息。消息本身只带事实（记录编号、被举报人、状态、备注），
+具体文案由游戏服务器按自己的语言文件渲染。
+
+---
+
+## GET /api/mc-bridge/reports
+
+**认证：HMAC** — 返回**某个玩家自己提交过**的举报及处理状态，供游戏内 `/report status` 使用。
+
+查询参数：
+
+| 参数 | 必填 | 说明 |
+|------|------|------|
+| `server_key` | 是 | 也可以用 `X-MC-Server` 头 |
+| `reporter_uuid` | 是 | 举报人的 UUID；返回的只有这个 UUID 提交的举报 |
+| `limit` | 否 | 返回条数，默认 5，最大 20 |
+
+```bash
+curl -H "X-MC-Timestamp: ..." -H "X-MC-Nonce: ..." -H "X-MC-Signature: ..." \
+  "https://forum.example/api/mc-bridge/reports?server_key=survival&reporter_uuid=069a79f4-...&limit=5"
+```
+
+响应 `200`（按提交时间**倒序**）：
+
+```json
+{
+  "ok": true,
+  "server_key": "survival",
+  "reports": [
+    {
+      "id": 42,
+      "target_name": "Steve",
+      "reason": "他在出生点恶意破坏",
+      "status": "resolved",
+      "created_at": "2026-09-25T13:01:42+00:00"
+    }
+  ]
+}
+```
+
+- `status` 取值：`pending`（待处理）、`resolved`（已处理）、`rejected`（已驳回）。
+- 查询同时按 `reporter_uuid` 与 `server_key` 过滤：玩家只能看到自己提交的举报，
+  且不会看到别的服务器上的同名记录。
+- 没有举报时 `reports` 为空数组，不是错误。
 
 ---
 

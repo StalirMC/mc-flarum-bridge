@@ -34,6 +34,21 @@ public final class BridgeCore {
 
     private static final long OUTBOX_INITIAL_DELAY_MILLIS = 10_000L;
 
+    /** How many of a player's own reports {@code /report status} lists. */
+    private static final int REPORT_STATUS_LIMIT = 5;
+
+    /** Minecraft counts time in ticks of 50 ms. */
+    private static final int TICKS_PER_SECOND = 20;
+
+    /**
+     * Title timing. {@code game.title-seconds} is the total time on screen, so
+     * these are taken out of it; the floor stops a very short setting from
+     * producing a title that only flickers.
+     */
+    private static final int TITLE_FADE_IN_TICKS = 10;
+    private static final int TITLE_FADE_OUT_TICKS = 20;
+    private static final int TITLE_MIN_STAY_TICKS = 20;
+
     private final Platform platform;
 
     // Replaced wholesale on reload and read from async tasks, hence volatile.
@@ -43,6 +58,14 @@ public final class BridgeCore {
 
     private final AtomicLong receivedMessages = new AtomicLong();
     private final AtomicLong outboxFailures = new AtomicLong();
+
+    /**
+     * Recent public chat, for the transcript a report carries.
+     *
+     * Fixed at the largest window the configuration can ask for, so a reload that
+     * shortens the window applies at once without discarding what is stored.
+     */
+    private final ChatLog chatLog = new ChatLog(BridgeConfig.MAX_CHAT_CONTEXT_LINES);
 
     public BridgeCore(Platform platform) {
         this.platform = platform;
@@ -206,39 +229,172 @@ public final class BridgeCore {
             return;
         }
 
-        String rendered = config.announceFormat()
-                .replace("{title}", title)
-                .replace("{body}", body)
-                .replace("{url}", url)
-                .replace("{type}", type);
+        // What happened to a report, delivered only to the player who filed it.
+        // The forum sends the outcome, not a sentence, so the wording comes from
+        // this server's own language file.
+        if ("report_resolved".equals(type) || "report_rejected".equals(type)) {
+            deliverReportOutcome(type, targetUuid, message);
+            return;
+        }
 
-        Message component = messages.legacy(rendered);
+        Message headline = messages.legacy(tokens(config.announceFormat(), title, body, url, type));
+        Message second = Message.of("");
 
         if (!body.isBlank() && !config.announceBodyFormat().isBlank()) {
-            String second = config.announceBodyFormat()
-                    .replace("{body}", body)
-                    .replace("{title}", title)
-                    .replace("{url}", url);
+            String renderedSecond = tokens(config.announceBodyFormat(), title, body, url, type).trim();
 
-            if (!second.isBlank()) {
-                component = component.append(Message.newline()).append(messages.legacy(second));
+            if (!renderedSecond.isBlank()) {
+                second = messages.legacy(renderedSecond);
             }
         }
 
-        if (!url.isBlank()) {
-            component = component.append(Message.newline()).append(messages.legacy("&8&o" + url));
-        }
-
-        broadcast(component);
+        deliverAnnouncement(headline, second, url);
 
         if (receivedMessages.get() <= OUTBOX_BATCH_LOG_LIMIT) {
             platform.log().info(logText("log.relayed", "type", type, "title", title));
         }
     }
 
-    public void broadcast(Message component) {
-        platform.broadcast(component);
-        platform.logToConsole(component);
+    /**
+     * Tell the reporter what happened to their report.
+     *
+     * Kept in the core rather than rendered by the forum for one reason: the
+     * wording belongs to this server's language file, which the forum has no
+     * access to. The forum therefore sends the outcome and the target only.
+     */
+    private void deliverReportOutcome(String type, String targetUuid, JsonObject message) {
+        if (targetUuid.isBlank()) {
+            platform.log().warn(logText("log.report-outcome-no-uuid", "type", type));
+            return;
+        }
+
+        UUID uuid;
+
+        try {
+            uuid = UUID.fromString(targetUuid);
+        } catch (IllegalArgumentException exception) {
+            platform.log().warn(logText("log.report-outcome-uuid-invalid", "uuid", targetUuid));
+            return;
+        }
+
+        JsonObject payload = message.has("payload") && message.get("payload").isJsonObject()
+                ? message.getAsJsonObject("payload")
+                : new JsonObject();
+
+        String target = optString(payload, "target", "?");
+
+        // Both keys are spelled out rather than held in a variable: tools/verify.mjs
+        // reads the literal passed to messages.prefixed() to decide which language
+        // entries are still in use, so one behind a variable would look unused.
+        Message notice = "report_rejected".equals(type)
+                ? messages.prefixed("notice-report-rejected", "target", target)
+                : messages.prefixed("notice-report-resolved", "target", target);
+
+        String note = optString(payload, "note", "").trim();
+
+        if (!note.isBlank()) {
+            notice = notice.append(Message.newline())
+                    .append(messages.prefixed("notice-report-note", "note", note));
+        }
+
+        platform.sendToPlayer(uuid, notice);
+        platform.log().info(logText("log.report-outcome-sent", "uuid", targetUuid, "type", type));
+    }
+
+    /** Fill the {title} {body} {url} {type} tokens a format string may carry. */
+    private static String tokens(String format, String title, String body, String url, String type) {        return format
+                .replace("{title}", title)
+                .replace("{body}", body)
+                .replace("{url}", url)
+                .replace("{type}", type);
+    }
+
+    /**
+     * Deliver one announcement through every configured channel.
+     *
+     * The chat line is the only channel that carries everything: an action bar
+     * and a boss bar hold a single line, and a title uses the body as its
+     * subtitle rather than as a second line.
+     */
+    private void deliverAnnouncement(Message headline, Message second, String url) {
+        // Logged once, whatever the channels are. A console has no use for a boss
+        // bar, and an announcement shown only as a title would otherwise leave no
+        // trace in the server log at all.
+        platform.logToConsole(headline);
+
+        for (DisplayChannel channel : config.announceDisplay()) {
+            switch (channel) {
+                case CHAT -> platform.broadcast(chatLine(headline, second, url));
+                case ACTION_BAR -> platform.showActionBar(headline);
+                case TITLE -> platform.showTitle(
+                        headline,
+                        second,
+                        TITLE_FADE_IN_TICKS,
+                        titleStayTicks(),
+                        TITLE_FADE_OUT_TICKS
+                );
+                case BOSS_BAR -> platform.showBossBar(headline, config.bossbarSeconds());
+            }
+        }
+    }
+
+    /** The full multi-line form: headline, then the body and the link. */
+    private Message chatLine(Message headline, Message second, String url) {
+        Message line = headline;
+
+        if (!second.isEmpty()) {
+            line = line.append(Message.newline()).append(second);
+        }
+
+        if (!url.isBlank()) {
+            line = line.append(Message.newline()).append(messages.legacy("&8&o" + url));
+        }
+
+        return line;
+    }
+
+    /** How long the title stays fully visible, once the fades are taken out. */
+    private int titleStayTicks() {
+        int total = config.titleSeconds() * TICKS_PER_SECOND;
+
+        return Math.max(TITLE_MIN_STAY_TICKS, total - TITLE_FADE_IN_TICKS - TITLE_FADE_OUT_TICKS);
+    }
+
+    // ------------------------------------------------------------------
+    // Recent public chat
+    // ------------------------------------------------------------------
+
+    /**
+     * Record one line of public chat.
+     *
+     * Called by the platform's chat listener. Only public chat is ever routed
+     * here: private messages and commands are not, and the buffer is bounded, so
+     * this cannot grow with uptime.
+     */
+    public void recordChat(String playerName, String text) {
+        chatLog.record(playerName, text);
+    }
+
+    /** How many lines are held for a player; used by the runtime self test. */
+    public int chatLogSize(String playerName) {
+        return chatLog.size(playerName);
+    }
+
+    /**
+     * The reported player's own recent public chat, as a transcript.
+     *
+     * Deliberately only their lines. A report is about what that player said, and
+     * pulling in everyone else's chat would put unrelated players in front of a
+     * moderator for no reason.
+     */
+    private String chatContext(String targetName) {
+        int lines = config.reportChatContextLines();
+
+        if (lines <= 0) {
+            return "";
+        }
+
+        return String.join("\n", chatLog.recent(targetName, lines));
     }
 
     // ------------------------------------------------------------------
@@ -479,12 +635,17 @@ public final class BridgeCore {
     ) {
         String title = renderReportTitle(titleTemplate, reporterName, targetName, reason);
 
+        // Read once, before the first attempt: the retry below must send exactly
+        // the same report, or the forum could file two discussions whose content
+        // disagrees.
+        String context = chatContext(targetName);
+
         // One id for both attempts: the forum keys its idempotency on it, so a
         // retry can never file the same report twice.
         String reportUid = UUID.randomUUID().toString();
 
         try {
-            submitReport(reporterUuid, reporterName, targetName, reason, title, reportUid);
+            submitReport(reporterUuid, reporterName, targetName, reason, title, reportUid, context);
 
             return messages.prefixed("report-sent", "target", targetName);
         } catch (BridgeException first) {
@@ -498,7 +659,7 @@ public final class BridgeCore {
             // work: a request that times out client side is very often processed
             // anyway. Retry once with the same id and let idempotency sort it out.
             try {
-                submitReport(reporterUuid, reporterName, targetName, reason, title, reportUid);
+                submitReport(reporterUuid, reporterName, targetName, reason, title, reportUid, context);
 
                 return messages.prefixed("report-sent", "target", targetName);
             } catch (BridgeException second) {
@@ -510,13 +671,82 @@ public final class BridgeCore {
         }
     }
 
+    /**
+     * The reports this player has filed, as rendered lines.
+     *
+     * Blocking: call it off the main thread.
+     */
+    public List<Message> reportStatusMessages(UUID reporterUuid) {
+        List<Message> reply = new ArrayList<>();
+
+        JsonObject response;
+
+        try {
+            response = client.reportsFor(reporterUuid.toString(), REPORT_STATUS_LIMIT);
+        } catch (BridgeException exception) {
+            reply.add(messages.prefixed("status-unreachable", "reason", exception.getMessage()));
+            return reply;
+        }
+
+        JsonElement reports = response.get("reports");
+
+        if (reports == null || !reports.isJsonArray() || reports.getAsJsonArray().isEmpty()) {
+            reply.add(messages.prefixed("report-status-empty"));
+            return reply;
+        }
+
+        JsonArray list = reports.getAsJsonArray();
+
+        reply.add(messages.prefixed("report-status-header", "count", String.valueOf(list.size())));
+
+        for (JsonElement element : list) {
+            // Checked before reading: a malformed entry must not cost the player
+            // the rest of the list.
+            if (!element.isJsonObject()) {
+                continue;
+            }
+
+            JsonObject report = element.getAsJsonObject();
+
+            reply.add(messages.render(
+                    "report-status-line",
+                    "id", optString(report, "id", "?"),
+                    "target", optString(report, "target", "?"),
+                    "status", statusLabel(optString(report, "status", "")),
+                    "date", shortDate(optString(report, "created_at", ""))
+            ));
+        }
+
+        return reply;
+    }
+
+    /** The localised label for one report status, colour codes included. */
+    private String statusLabel(String status) {
+        return switch (status) {
+            case "resolved" -> messages.raw("report-status-resolved");
+            case "rejected" -> messages.raw("report-status-rejected");
+            case "pending" -> messages.raw("report-status-pending");
+            default -> messages.raw("report-status-unknown");
+        };
+    }
+
+    /** Trim an ISO timestamp down to "date time", which is all a chat line can hold. */
+    private static String shortDate(String iso) {
+        if (iso == null || iso.length() < 16) {
+            return iso == null ? "" : iso;
+        }
+
+        return iso.substring(0, 16).replace('T', ' ');
+    }
+
     private void submitReport(
             UUID reporterUuid,
             String reporterName,
             String targetName,
             String reason,
             String title,
-            String reportUid
+            String reportUid,
+            String context
     ) throws BridgeException {
         client.reportPlayer(
                 reporterUuid.toString(),
@@ -526,7 +756,8 @@ public final class BridgeCore {
                 title,
                 config.reportTags(),
                 config.reportActor(),
-                reportUid
+                reportUid,
+                context
         );
     }
 

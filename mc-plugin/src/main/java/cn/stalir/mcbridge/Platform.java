@@ -80,9 +80,41 @@ public interface Platform {
 
     // ------------------------------------------------------------------
     // Output
+    //
+    // An announcement reaches players through whichever of these the
+    // configuration selects, so the same text may be delivered more than once
+    // through different channels on purpose.
     // ------------------------------------------------------------------
 
     void broadcast(Message message);
+
+    /**
+     * Show one line just above the hotbar.
+     *
+     * The action bar holds a single line, so a message with line breaks should be
+     * reduced to its headline before it gets here.
+     */
+    void showActionBar(Message message);
+
+    /**
+     * Show a large centred title.
+     *
+     * @param subtitle   shown below the title; an empty message means "none"
+     * @param fadeInTicks  time the title spends fading in
+     * @param stayTicks    time the title stays fully visible
+     * @param fadeOutTicks time the title spends fading out
+     */
+    void showTitle(Message title, Message subtitle, int fadeInTicks, int stayTicks, int fadeOutTicks);
+
+    /**
+     * Show a bar across the top of the screen and take it away again.
+     *
+     * The removal is the platform's job: each one knows how to schedule it, and
+     * the core has no way to hold on to a bar.
+     *
+     * @param seconds how long the bar stays visible
+     */
+    void showBossBar(Message message, int seconds);
 
     /**
      * Send one message to a single player, or do nothing when they are offline.

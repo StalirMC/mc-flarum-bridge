@@ -121,10 +121,24 @@ function phpClosures(source) {
 }
 
 /**
+ * A migration's `up` half only.
+ *
+ * The `down` closures drop columns, and `dropColumn('x')` is indistinguishable
+ * from a column definition to the regexes below - which would make a rollback
+ * look like it added the very column it removes.
+ */
+function upOnly(source) {
+  const cleaned = stripPhpComments(source);
+  const down = cleaned.indexOf("'down' =>");
+
+  return down < 0 ? cleaned : cleaned.slice(0, down);
+}
+
+/**
  * Column names of every table a migration creates, keyed by table name.
  */
 function createBlocks(source) {
-  const cleaned = stripPhpComments(source);
+  const cleaned = upOnly(source);
   const out = new Map();
   const pattern = /create\('([a-z_]+)'[^{]*\{/g;
   let match;
@@ -144,6 +158,43 @@ function createBlocks(source) {
       match[1],
       [...cleaned.slice(bodyStart, index - 1).matchAll(/\$table->\w+\('([a-z_]+)'/g)].map((m) => m[1])
     );
+  }
+
+  return out;
+}
+
+/**
+ * Column names a migration adds to a table it does not create, keyed by table.
+ *
+ * A table is not defined by one migration alone: a later migration legitimately
+ * adds columns with `$schema->table(...)`, and a model that fills those columns
+ * is correct. Reading only `create(...)` blocks would report every such column as
+ * missing from the migration.
+ */
+function alterBlocks(source) {
+  const cleaned = upOnly(source);
+  const out = new Map();
+  const pattern = /->table\('([a-z_]+)'[^{]*\{/g;
+  let match;
+
+  while ((match = pattern.exec(cleaned)) !== null) {
+    const bodyStart = match.index + match[0].length;
+    let depth = 1;
+    let index = bodyStart;
+
+    while (index < cleaned.length && depth > 0) {
+      if (cleaned[index] === '{') depth++;
+      else if (cleaned[index] === '}') depth--;
+      index++;
+    }
+
+    const columns = [...cleaned.slice(bodyStart, index - 1).matchAll(/\$table->(\w+)\('([a-z_]+)'/g)]
+      .filter((column) => !column[1].startsWith('drop'))
+      .map((column) => column[2]);
+
+    if (columns.length > 0) {
+      out.set(match[1], [...(out.get(match[1]) ?? []), ...columns]);
+    }
   }
 
   return out;
@@ -1018,6 +1069,17 @@ for (const [table, owners] of tableOwners) {
 // surfaced.
 const columnsByTable = new Map();
 
+// Columns a later migration adds to a table it does not create count too: the
+// model is right to fill them, and only reading create(...) blocks would report
+// them as a defect.
+const alteredColumns = new Map();
+
+for (const file of migrationFiles) {
+  for (const [table, columns] of alterBlocks(read(file))) {
+    alteredColumns.set(table, [...(alteredColumns.get(table) ?? []), ...columns]);
+  }
+}
+
 for (const table of migrationTables) {
   const start = migrationSource.indexOf(`create('${table}'`);
   if (start < 0) continue;
@@ -1026,7 +1088,9 @@ for (const table of migrationTables) {
 
   columnsByTable.set(
     table,
-    [...block.matchAll(/\$table->\w+\('([a-z_]+)'/g)].map((m) => m[1])
+    [
+      ...block.matchAll(/\$table->\w+\('([a-z_]+)'/g),
+    ].map((m) => m[1]).concat(alteredColumns.get(table) ?? [])
   );
 }
 

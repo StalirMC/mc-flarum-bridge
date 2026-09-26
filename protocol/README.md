@@ -94,6 +94,7 @@ All errors share the shape:
 | `GET` | `/api/mc-bridge/bind/status` | HMAC | Is this UUID linked yet? |
 | `POST` | `/api/mc-bridge/broadcast` | HMAC **or** admin session | Queue a broadcast |
 | `POST` | `/api/mc-bridge/report` | HMAC | Submit a player report |
+| `GET` | `/api/mc-bridge/reports` | HMAC | The reports one player filed, for `/report status` |
 | `POST` | `/api/mc-bridge/link` | forum session | Consume a binding code |
 | `DELETE` | `/api/mc-bridge/link` | forum session | Remove the link |
 

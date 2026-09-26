@@ -9,6 +9,7 @@ import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.ServerChatEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
@@ -90,6 +91,26 @@ public final class McBridgeMod {
 
         // Tells a player who has not linked a forum account how to do it.
         current.promptBindingIfNeeded(player.getUUID(), player.getGameProfile().getName());
+    }
+
+    /**
+     * Record public chat, so a report can carry what the reported player said.
+     *
+     * Private messages never reach this event, and the buffer behind
+     * {@link BridgeCore#recordChat} is bounded, so this cannot grow with uptime.
+     */
+    @SubscribeEvent
+    public void onChat(ServerChatEvent event) {
+        BridgeCore current = core;
+
+        if (current == null) {
+            return;
+        }
+
+        current.recordChat(
+                event.getPlayer().getGameProfile().getName(),
+                event.getMessage().getString()
+        );
     }
 
     private BridgeCore core() {

@@ -85,6 +85,8 @@ export const CODE_TTL_SECONDS = 600;
 /** Report field limits (ReportController). */
 export const REPORT_MAX_REASON_LENGTH = 1000;
 export const REPORT_MAX_NAME_LENGTH = 64;
+/** Longest chat transcript accepted with a report (ReportController). */
+export const REPORT_MAX_CONTEXT_LENGTH = 12000;
 
 const DEFAULT_OUTBOX_LIMIT = 20;
 const MAX_OUTBOX_LIMIT = 100;
@@ -312,6 +314,9 @@ export function createStore(options = {}) {
         body: message.body ?? 'Queued by tools/mock-flarum.mjs.',
         url: message.url ?? null,
         payload: message.payload ?? {},
+        // Per-player routing: the report outcome notice is addressed to the
+        // reporter's UUID, so the mock has to carry it too.
+        target_uuid: message.target_uuid ?? message.targetUuid ?? null,
         created_at: message.created_at ?? nowSeconds(),
         delivered_at: message.delivered_at ?? null,
       };
@@ -360,10 +365,63 @@ export function createStore(options = {}) {
         target_name: report.target_name ?? 'Unknown',
         reason: report.reason ?? '',
         status: 'pending',
+        // Set once the discussion exists, which is what lets a moderator's tag
+        // edit be traced back to the reporter.
+        discussion_id: null,
+        // The reported player's own recent public chat, when the game server sent
+        // one. Null and the empty string both mean "no transcript".
+        context: report.context ?? null,
         created_at: nowSeconds(),
       };
       store.reports.push(record);
       return record;
+    },
+
+    /** One report by its own id, or null. */
+    reportById(id) {
+      return store.reports.find((report) => report.id === id) ?? null;
+    },
+
+    /** The report a discussion was filed from, or null. */
+    reportByDiscussion(discussionId) {
+      return store.reports.find((report) => report.discussion_id === discussionId) ?? null;
+    },
+
+    /**
+     * Mirror of Service\ReportOutcome: decide a report, and queue the notice.
+     *
+     * Deliberately a no-op when the status does not move, because that is what
+     * makes both ways in - a moderator's tag edit and the console command -
+     * notify exactly once.
+     *
+     * @returns {boolean} true when the status actually changed
+     */
+    resolveReport(report, status, note = '') {
+      if (!['pending', 'resolved', 'rejected'].includes(status) || report.status === status) {
+        return false;
+      }
+
+      const wasClosed = report.status === 'resolved' || report.status === 'rejected';
+
+      report.status = status;
+
+      if (status !== 'pending' && !wasClosed) {
+        store.seedMessage({
+          server_key: report.server_key,
+          type: status === 'rejected' ? 'report_rejected' : 'report_resolved',
+          title: '',
+          body: '',
+          target_uuid: report.reporter_uuid,
+          payload: {
+            report_id: report.id,
+            target: report.target_name,
+            status,
+            note,
+          },
+        });
+      }
+
+      return true;
     },
 
     /**
@@ -402,6 +460,10 @@ function outboxPayload(message) {
     body: message.body,
     url: message.url,
     payload: message.payload ?? {},
+    // Per-player routing. The real payload carries it, and the game server needs
+    // it to know which player a binding reply or a report outcome is for, so a
+    // mock without it would let a client-side bug pass unnoticed.
+    target_uuid: message.target_uuid ?? null,
     created_at: iso(message.created_at),
   };
 }
@@ -563,6 +625,49 @@ export function createServer(options = {}) {
     });
   }
 
+  /**
+   * GET /reports - the reports one player filed, for the game's /report status.
+   *
+   * Mirrors ReportsController: scoped to the reporter's own UUID *and* to the
+   * calling server, newest first, so a player can never read anybody else's.
+   */
+  function handleReports(request, response, payload, query) {
+    const serverKey =
+      sanitizeServerKey(query.get('server_key')) ??
+      sanitizeServerKey(request.headers[HEADERS.server.toLowerCase()]);
+
+    if (serverKey === null) {
+      return sendError(response, 422, 'A valid server_key is required.');
+    }
+
+    const reporterUuid = sanitizeUuid(query.get('reporter_uuid'));
+
+    if (reporterUuid === null) {
+      return sendError(response, 422, 'A valid reporter_uuid is required.');
+    }
+
+    const requestedLimit = Math.trunc(optionalNumber(query.get('limit')) ?? 5);
+    const limit = Math.max(1, Math.min(20, requestedLimit));
+
+    const reports = store.reports
+      .filter((report) => report.server_key === serverKey && report.reporter_uuid === reporterUuid)
+      .sort((left, right) => right.id - left.id)
+      .slice(0, limit)
+      .map((report) => ({
+        id: report.id,
+        target_name: report.target_name,
+        reason: report.reason,
+        status: report.status,
+        created_at: new Date(report.created_at * 1000).toISOString(),
+      }));
+
+    return sendJson(response, 200, {
+      ok: true,
+      server_key: serverKey,
+      reports,
+    });
+  }
+
   function handleBindStart(request, response, body) {
     const serverKey =
       sanitizeServerKey(body.server_key) ??
@@ -697,6 +802,9 @@ export function createServer(options = {}) {
       reporter_name: clampText(body.reporter_name, REPORT_MAX_NAME_LENGTH),
       target_name: targetName,
       reason,
+      // Optional transcript from the game server. Absent means the feature is off
+      // there, which is the default for an older plugin.
+      context: clampText(body.context, REPORT_MAX_CONTEXT_LENGTH),
     });
 
     // A stored report is filed as a discussion under the report tags; the real
@@ -710,6 +818,10 @@ export function createServer(options = {}) {
       tagIds: resolveTagHints(body.tags),
       authorId: resolveActorHint(body.actor),
     });
+
+    // Remember which discussion this became, exactly like ReportController: the
+    // outcome notification is only reachable through this link.
+    report.discussion_id = discussion.id;
 
     if (reportUid !== null) {
       store.reportUids.set(reportUid, {
@@ -798,6 +910,7 @@ export function createServer(options = {}) {
     ['/bind/start', { methods: ['POST'], auth: true, handler: handleBindStart }],
     ['/bind/status', { methods: ['GET'], auth: true, handler: handleBindStatus }],
     ['/report', { methods: ['POST'], auth: true, handler: handleReport }],
+    ['/reports', { methods: ['GET'], auth: true, handler: handleReports }],
   ]);
 
   const server = createHttpServer(async (request, response) => {

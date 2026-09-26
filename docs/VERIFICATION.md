@@ -967,6 +967,39 @@ Adventure；NeoForge 不带，共享核心只要碰到 `net.kyori.adventure.text
 命令注册、事件总线订阅、`MinecraftServer#execute` 调度、`Component` 的实际渲染都只到
 「编译 + 静态断言」为止；第 4 节的实机清单里已加入对应步骤。
 
+### 2.25 公告多通道展示 + 举报闭环（0.0.20）
+
+**目标**：两件事 —— ①公告除聊天行外可选 `actionbar` / `title` / `bossbar`，且可同时开多个；
+②举报补上聊天上下文、进度查询与处理结果回执。
+
+**验证到的**：
+
+| 项目 | 证据 |
+|------|------|
+| 展示通道解析 | 运行时自测覆盖：空值回退 `chat`、多通道、大小写与空格容错、重复通道去重、未知通道被上报且仍保留 `chat` |
+| 聊天缓冲边界 | 运行时自测覆盖：只留最新 N 条且顺序为旧→新、大小写与首尾空格无关匹配、两名玩家互不串味、消息内换行被压平（否则会在管理员看到的记录里凭空多出一行）、空消息不记、单行截断到 256 字符、容量 0 时不记、跟踪玩家数封顶（写入 600 名后最早的 100 名被淘汰） |
+| 三个平台的展示实现都真的编译过 | Paper：`player.sendActionBar` / `Title.title` + `Title.Times` / `BossBar.bossBar` + `player.showBossBar`；NeoForge：`displayClientMessage(msg, true)` / `ClientboundSetTitlesAnimationPacket` + `ClientboundSetTitleTextPacket` / `ServerBossEvent`。NeoForge 侧是在**真实 Minecraft 类路径**下编译成功的 |
+| 举报上下文只采公开聊天 | Paper 用 `AsyncChatEvent`（MONITOR + ignoreCancelled），NeoForge 用 `ServerChatEvent`；两者都不碰私聊与命令。核心缓冲按玩家条数与玩家总数双向封顶 |
+| 新端点的协议契约 | 协议测试新增第 12 组共 10 项：上下文入库、无上下文的举报照常成功、`GET /reports` 只返回本人（别人的目标名不出现）且倒序、非法 UUID 422、未签名 401、一次处理恰好排一条定向通知（含 `target_uuid` / `server_key` / `payload`）、重复处理不重复通知、重开回 `pending` 不通知、通知只投给上报的那台服务器 |
+| 标签时序 | 直接读 vendored 框架源码确认：`DiscussionResourceFields` 用 `raise()`（排队）而不是立即派发，`HasHooks::updateAction` 先调 `update()`（内含 `tags()->sync()`）再 `dispatchEventsFor()`，所以 `DiscussionWasTagged` 监听器读到的是**新**标签 —— 与框架自己的 `CreatePostWhenTagsAreChanged` 同一依据 |
+| 迁移 | 新迁移用 `$schema->table()` 增量加 `discussion_id` / `context`，两列都可空（老举报不受影响），列存在性判断放在外层闭包（避开 0.0.12 那个闭包作用域坑） |
+| 静态检查 | `verify.mjs` **384 项**。为这次改动补了两处：模型↔迁移比对现在也读 `$schema->table()` 增量块（否则新列会被误报为「迁移里没有」），并且不再读 `down` 闭包（`dropColumn('x')` 与列定义长得一模一样，会把回滚误当成新增） |
+| 构建自测 | **68 项**（45 → 68，新增「展示通道」与「最近公开聊天」两组） |
+| 协议测试 | **45 项**（35 → 45） |
+
+**踩到的坑**：
+
+| 现象 | 原因 | 修法 |
+|------|------|------|
+| mock 返回的 outbox 消息里没有 `target_uuid` | `outboxPayload()` 漏了这个字段，而真实的 `McOutboxMessage::toApiPayload()` 是有它的 | 补上。这个漏洞本身说明「定向投递」的契约此前从未被测试覆盖 |
+| 「状态查询能看到已处理」用例失败 | 它依赖上一个用例留下的状态，而中间的「重开不通知」把那条举报改回了 `pending` | 让用例自带前置动作 —— 只能按固定顺序通过的测试是个陷阱 |
+| 语言键被静态检查报为「从未引用」 | 键名先存进变量、再传给 `messages.prefixed(key, ...)`，而检查只认字面量实参 | 把两个键名直接写进调用里，可读性也更好 |
+
+**仍未验证**：与之前一样 —— NeoForge 模组仍未在真实服务端加载过；`actionbar` / `title` /
+`bossbar` 在 NeoForge 上只到「编译 + 静态断言」为止。Folia 的 BossBar 移除走
+`EntityScheduler#runDelayed`，同样没在真实 Folia 上跑过。论坛侧「改标签即回执」依赖
+`flarum/tags` 的事件时序，依据是 vendored 框架源码，尚未在真实论坛上端到端触发过。
+
 ## 3. 无法在本机验证的内容（现由 CI 覆盖）
 
 > 本机没有 PHP / JDK，这些检查**已全部由 CI 在带 PHP 8.3 / JDK 21 的真实环境中
@@ -1012,6 +1045,25 @@ cd mc-plugin && gradle build
 #   /mcbridge news      -> 应列出论坛最新公告（所有玩家都可用）
 #   /bind               -> 应返回 8 位绑定码
 #   /report <玩家> <原因> -> 应提示已提交，论坛后台出现 pending 记录
+#   /report status      -> 应列出本人刚提交的那条（状态「处理中」）
+#   （先让被举报的玩家在公开聊天里说几句，再举报，论坛讨论正文里应出现这些行）
+
+# ---- 展示形式（0.0.20）----
+# 在 config.yml 里改 game.announce-display，然后 /mcbridge reload，
+# 再从论坛发一条公告，逐个确认：
+#   "actionbar" -> 动作栏上方出现那一行
+#   "title"     -> 屏幕中央出现大标题，正文为副标题，约 title-seconds 秒后消失
+#   "bossbar"   -> 顶部出现血条，约 bossbar-seconds 秒后消失（不是永久留着）
+#   "chat,actionbar" -> 两者同时出现
+
+# ---- 举报处理回执（0.0.20）----
+php flarum mc-bridge:report --list                  # 记下编号，例如 42
+php flarum mc-bridge:report 42 --status=resolved    # 举报人应立刻在游戏内收到通知
+php flarum mc-bridge:report 42 --status=resolved    # 再执行一次：应提示「没有改动」，且不重复通知
+php flarum mc-bridge:report 42 --status=pending     # 重开：不应有任何通知
+# 标签自动那一路（需先配置标签，且举报人在线）：
+php flarum mc-bridge:config --report-resolved-tags=15
+# 然后在论坛把讨论 #<discussion_id> 移进标签 15，举报人应在下一次轮询（约 20 秒）内收到通知
 
 ```
 

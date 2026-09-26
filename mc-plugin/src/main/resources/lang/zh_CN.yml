@@ -27,10 +27,20 @@ bind-failed: "&c获取绑定码失败：{reason}"
 bind-failed-no-code: "&c论坛没有返回绑定码。"
 
 # ---- 玩家举报 ----
-report-usage: "&c用法：/report <玩家> <原因>"
+report-usage: "&c用法：/report <玩家> <原因>&7，或 &c/report status&7 查看自己举报的处理进度。"
 report-sent: "&a已举报玩家 &e{target}&a，论坛管理员会尽快处理。"
 report-failed: "&c举报失败：{reason}"
 report-uncertain: "&e论坛没有及时回应，举报&f可能已经提交&e。&7为避免重复，请先不要再次举报。&8({reason})"
+report-status-header: "&8&m--------&r &e我的举报 &8&m-------- &7(最近 {count} 条)"
+report-status-line: "&8#&f{id} &7→ &f{target} &8· {status} &8· &7{date}"
+report-status-empty: "&7你还没有提交过举报。"
+report-status-pending: "&e处理中"
+report-status-resolved: "&a已处理"
+report-status-rejected: "&c已驳回"
+report-status-unknown: "&7未知状态"
+notice-report-resolved: "&a你提交的举报已被处理：&e{target}"
+notice-report-rejected: "&c你提交的举报被驳回：&e{target}"
+notice-report-note: "&7管理员备注：&f{note}"
 
 # ---- 状态与公告 ----
 status-unreachable: "&c无法连接论坛：{reason}"
@@ -67,6 +77,9 @@ log:
   bind-feedback-sent: "已向玩家 {uuid} 发送绑定反馈（{type}）"
   bind-feedback-uuid-invalid: "绑定反馈的 UUID 无效：{uuid}"
   bind-feedback-no-uuid: "绑定反馈消息缺少 target_uuid（{type}）"
+  report-outcome-sent: "已向玩家 {uuid} 发送举报处理结果（{type}）"
+  report-outcome-no-uuid: "举报处理结果缺少 target_uuid（{type}）"
+  report-outcome-uuid-invalid: "举报处理结果的 UUID 无效：{uuid}"
 
 # ---- 配置校验提示 ----
 config:
@@ -77,3 +90,5 @@ config:
     secret-empty: "security.secret 未填写 —— 请先在论坛执行 php flarum mc-bridge:secret，把结果填进来"
     secret-short: "security.secret 长度不足 32 个字符"
     summary: "配置问题：{message}"
+  warn:
+    display-unknown: "game.announce-display 里有无法识别的取值「{value}」，已跳过（可用：chat / actionbar / title / bossbar）"

@@ -300,6 +300,11 @@ security:
   secret: "<第 1.3 步生成的密钥>"
 
 game:
+  # 公告展示形式。可多选，逗号分隔：chat / actionbar / title / bossbar
+  # 例："chat,bossbar" 会同时发聊天行与顶部血条。
+  announce-display: "chat"
+  title-seconds: 5                      # 大标题停留秒数
+  bossbar-seconds: 10                   # 血条停留秒数
   prompt-unbound: true                  # 未绑定玩家进服时提示一次怎么绑定
 ```
 
@@ -421,7 +426,14 @@ report:
   # 逗号分隔，每项是 slug 或标签 ID
   tags: "reports,pending"
   actor: ""            # 用户名或用户 ID
+  # 附带被举报玩家本人最近 N 条公开聊天（0 = 关闭，默认 10）
+  chat-context-lines: 10
 ```
+
+> **关于聊天上下文**：只采集**公开聊天**，私聊（`/msg`）与命令（`/...`）从不进入缓冲区；
+> 缓冲区每名玩家最多留 `report.chat-context-lines` 条、最多跟踪 500 名玩家，
+> 且这份记录**只在被举报时**随举报发给论坛，绝不会被广播回游戏。
+> 论坛端把它渲染成讨论正文里的一段代码块，只有能看到举报标签的管理员读得到。
 
 > **PlaceholderAPI**：装了 PlaceholderAPI 与对应扩展时，`title-format` 里的 `%...%`
 > 会以**举报人**的身份展开（如 `%player_name%`）；没装则原样保留。
@@ -449,6 +461,55 @@ report:
 >
 > 讨论创建是**尽力而为**：举报已经入库，论坛侧若出错（标签超限、没人有权限发帖等），
 > 玩家的 `/report` 仍然返回成功，`discussion_id` 为 `null`。
+
+### 3.4 举报进度与处理回执
+
+玩家可以随时查看自己提交过的举报：
+
+```
+/report status
+```
+
+输出形如：
+
+```
+-------- 我的举报 -------- (最近 3 条)
+#42 → Steve · 已处理 · 2026-09-25 13:01
+#41 → Herobrine · 处理中 · 2026-09-24 20:15
+#39 → Steve · 已驳回 · 2026-09-23 09:02
+```
+
+接口按**举报人 UUID + 服务器**过滤，玩家只能读到自己提交的举报，看不到别人举报过谁。
+
+**管理员怎么标记处理结果**，两种方式任选：
+
+| 方式 | 操作 | 适用 |
+|------|------|------|
+| 改标签（自动） | 把举报讨论移进「已处理」/「已驳回」标签 | 日常处理，贴合在论坛界面里的自然操作 |
+| 控制台命令 | `php flarum mc-bridge:report 42 --status=resolved` | 批量或脚本化；`--list` 列出最近举报，`--note="..."` 带一句备注，`--silent` 只改状态不通知 |
+
+自动那一路需要先告诉扩展哪两个标签代表这两个结果（**默认关闭**，因为标签名与 ID 因论坛而异）：
+
+```bash
+php flarum mc-bridge:report --list                              # 先看有哪些举报
+php flarum mc-bridge:config --report-resolved-tags=15 --report-rejected-tags=16
+php flarum mc-bridge:config --show                              # 核对
+```
+
+两种方式都会让**举报人在游戏内收到通知**：
+
+```
+[MCBridge] 你提交的举报已被处理：Steve
+           管理员备注：已警告该玩家
+```
+
+实现上两者共用同一个 `Service\ReportOutcome`，所以**重复打标签或重复执行命令只会通知一次**
+（状态没有变化就不发消息），把举报重新打开回 `pending` 也不会通知。
+通知走 `mc_outbox` 定向投递：`target_uuid` 是举报人，且只投给提交这条举报的那台服务器。
+
+> 标签自动那一路监听的是 `Flarum\Tags\Event\DiscussionWasTagged`。该事件由 JSON:API
+> 管线在**保存之后**派发，所以监听器读到的是**新**标签 —— 框架自己的
+> `CreatePostWhenTagsAreChanged` 依赖的是同一套时序。
 
 ## 4. 从 Flarum 推送到游戏
 

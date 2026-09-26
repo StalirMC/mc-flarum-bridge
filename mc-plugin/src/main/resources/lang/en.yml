@@ -28,10 +28,20 @@ bind-failed: "&cCould not obtain a binding code: {reason}"
 bind-failed-no-code: "&cThe forum did not return a binding code."
 
 # ---- player reporting ----
-report-usage: "&cUsage: /report <player> <reason>"
+report-usage: "&cUsage: /report <player> <reason>&7, or &c/report status&7 to see what happened to your own reports."
 report-sent: "&aReported player &e{target}&a. Forum moderators will review it soon."
 report-failed: "&cCould not submit the report: {reason}"
 report-uncertain: "&eThe forum did not answer in time, so the report &fmay already have been filed&e. &7Please do not report again yet. &8({reason})"
+report-status-header: "&8&m--------&r &eMy reports &8&m-------- &7(last {count})"
+report-status-line: "&8#&f{id} &7to &f{target} &8- {status} &8- &7{date}"
+report-status-empty: "&7You have not filed any reports."
+report-status-pending: "&epending"
+report-status-resolved: "&ahandled"
+report-status-rejected: "&crejected"
+report-status-unknown: "&7unknown"
+notice-report-resolved: "&aYour report was handled: &e{target}"
+notice-report-rejected: "&cYour report was rejected: &e{target}"
+notice-report-note: "&7Moderator note: &f{note}"
 
 # ---- status and announcements ----
 status-unreachable: "&cCannot reach the forum: {reason}"
@@ -68,6 +78,9 @@ log:
   bind-feedback-sent: "Sent binding feedback to player {uuid} ({type})"
   bind-feedback-uuid-invalid: "Invalid UUID in binding feedback: {uuid}"
   bind-feedback-no-uuid: "Binding feedback message missing target_uuid ({type})"
+  report-outcome-sent: "Sent the outcome of a report to {uuid} ({type})"
+  report-outcome-no-uuid: "Report outcome message missing target_uuid ({type})"
+  report-outcome-uuid-invalid: "Invalid UUID in a report outcome: {uuid}"
 
 # ---- configuration validation ----
 config:
@@ -78,3 +91,5 @@ config:
     secret-empty: "security.secret is empty - run \"php flarum mc-bridge:secret\" and paste the value"
     secret-short: "security.secret must be at least 32 characters long"
     summary: "Configuration problem: {message}"
+  warn:
+    display-unknown: "game.announce-display has an unrecognised value \"{value}\", which was skipped (valid: chat / actionbar / title / bossbar)"

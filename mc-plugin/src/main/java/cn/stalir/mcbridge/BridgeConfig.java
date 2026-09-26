@@ -15,6 +15,14 @@ public final class BridgeConfig {
 
     public static final int MIN_SECRET_LENGTH = 32;
 
+    /**
+     * The largest chat window {@code report.chat-context-lines} may ask for.
+     *
+     * Also the fixed capacity of {@link ChatLog}, which is why a reload can
+     * shorten the window without losing what has already been recorded.
+     */
+    public static final int MAX_CHAT_CONTEXT_LINES = 50;
+
     /** Default title of the discussion a player report creates on the forum. */
     public static final String DEFAULT_REPORT_TITLE_FORMAT = "[举报] {target}（由 {reporter} 提交）";
 
@@ -28,10 +36,14 @@ public final class BridgeConfig {
     private final int outboxPollIntervalSeconds;
     private final String announceFormat;
     private final String announceBodyFormat;
+    private final List<DisplayChannel> announceDisplay;
+    private final int titleSeconds;
+    private final int bossbarSeconds;
     private final boolean promptUnbound;
     private final String reportTitleFormat;
     private final List<String> reportTags;
     private final String reportActor;
+    private final int reportChatContextLines;
     private final List<String> problems;
 
     private BridgeConfig(
@@ -45,10 +57,14 @@ public final class BridgeConfig {
             int outboxPollIntervalSeconds,
             String announceFormat,
             String announceBodyFormat,
+            List<DisplayChannel> announceDisplay,
+            int titleSeconds,
+            int bossbarSeconds,
             boolean promptUnbound,
             String reportTitleFormat,
             List<String> reportTags,
             String reportActor,
+            int reportChatContextLines,
             List<String> problems
     ) {
         this.language = language;
@@ -61,10 +77,14 @@ public final class BridgeConfig {
         this.outboxPollIntervalSeconds = outboxPollIntervalSeconds;
         this.announceFormat = announceFormat;
         this.announceBodyFormat = announceBodyFormat;
+        this.announceDisplay = announceDisplay;
+        this.titleSeconds = titleSeconds;
+        this.bossbarSeconds = bossbarSeconds;
         this.promptUnbound = promptUnbound;
         this.reportTitleFormat = reportTitleFormat;
         this.reportTags = reportTags;
         this.reportActor = reportActor;
+        this.reportChatContextLines = reportChatContextLines;
         this.problems = problems;
     }
 
@@ -124,6 +144,25 @@ public final class BridgeConfig {
         List<String> reportTagList = splitList(config.getString("report.tags", ""), 100, 10);
         String reportActor = cap(config.getString("report.actor", "").trim(), 64);
 
+        // How an announcement is presented. An unrecognised channel is reported
+        // and skipped rather than collected as a configuration problem: a typo
+        // here must not be able to leave the whole bridge unusable, and the
+        // announcement still has to appear somewhere.
+        List<DisplayChannel> announceDisplay = DisplayChannel.parse(
+                config.getString("game.announce-display", "chat"),
+                token -> log.warn(messages.plain("config.warn.display-unknown", "value", token))
+        );
+
+        // Only decide how long a title or a bar stays on screen, so the bounds are
+        // generous and anything out of range is pulled in rather than rejected.
+        int titleSeconds = clamp(config.getInt("game.title-seconds", 5), 1, 60);
+        int bossbarSeconds = clamp(config.getInt("game.bossbar-seconds", 10), 1, 300);
+
+        // How many of the reported player's own recent public chat lines travel
+        // with a report. 0 turns the whole thing off.
+        int reportChatContextLines = clamp(
+                config.getInt("report.chat-context-lines", 10), 0, MAX_CHAT_CONTEXT_LINES);
+
         BridgeConfig built = new BridgeConfig(
                 language,
                 forumUrl,
@@ -135,10 +174,14 @@ public final class BridgeConfig {
                 outboxPoll,
                 config.getString("game.announce-format", "&e[论坛] &f{title}"),
                 config.getString("game.announce-body-format", "&7{body}"),
+                announceDisplay,
+                titleSeconds,
+                bossbarSeconds,
                 config.getBoolean("game.prompt-unbound", true),
                 reportTitleFormat,
                 reportTagList,
                 reportActor,
+                reportChatContextLines,
                 Collections.unmodifiableList(problems)
         );
 
@@ -152,6 +195,11 @@ public final class BridgeConfig {
     /** Trim a configured value to the length the forum will accept. */
     private static String cap(String value, int max) {
         return value.length() <= max ? value : value.substring(0, max);
+    }
+
+    /** Pull a configured number into the range the code can actually honour. */
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     /**
@@ -239,6 +287,25 @@ public final class BridgeConfig {
         return announceBodyFormat;
     }
 
+    /**
+     * Every channel an announcement is delivered through, in configured order.
+     *
+     * Never empty: {@link DisplayChannel#parse} falls back to the chat line.
+     */
+    public List<DisplayChannel> announceDisplay() {
+        return announceDisplay;
+    }
+
+    /** How long a title stays on screen. */
+    public int titleSeconds() {
+        return titleSeconds;
+    }
+
+    /** How long a boss bar stays on screen. */
+    public int bossbarSeconds() {
+        return bossbarSeconds;
+    }
+
     /** Whether an unlinked player is told how to link an account when they join. */
     public boolean promptUnbound() {
         return promptUnbound;
@@ -263,5 +330,15 @@ public final class BridgeConfig {
     /** Forum username or id the report is published as; empty means the forum decides. */
     public String reportActor() {
         return reportActor;
+    }
+
+    /**
+     * How many of the reported player's own recent public chat lines to attach.
+     *
+     * Zero disables the transcript. Only public chat is ever captured: private
+     * messages and commands never reach the buffer this reads from.
+     */
+    public int reportChatContextLines() {
+        return reportChatContextLines;
     }
 }

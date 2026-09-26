@@ -37,6 +37,18 @@ class ReportDiscussion
      */
     public const TITLE_SETTING = 'mc-bridge.report_title_format';
 
+    /**
+     * Tag ids that mean "this report was dealt with".
+     *
+     * When a moderator moves a report discussion into one of these tags, the
+     * player who filed it is told in game (see Listener\ReportTagListener). Empty
+     * means the automatic half of that feature is off.
+     */
+    public const RESOLVED_TAGS_SETTING = 'mc-bridge.report_resolved_tag_ids';
+
+    /** Tag ids that mean "this report was dismissed". */
+    public const REJECTED_TAGS_SETTING = 'mc-bridge.report_rejected_tag_ids';
+
     public const DEFAULT_TITLE_FORMAT = '[举报] {target}（由 {reporter} 提交）';
 
     /** Slug and name used to recognise the report tag automatically. */
@@ -382,10 +394,44 @@ class ReportDiscussion
         $lines[] = '**举报原因**';
         $lines[] = '';
         $lines[] = (string) $report->reason;
+
+        $context = trim((string) $report->context);
+
+        if ($context !== '') {
+            $lines[] = '';
+            $lines[] = '**该玩家的近期公开聊天**';
+            $lines[] = '';
+            $lines[] = $this->transcriptBlock($context);
+            $lines[] = '';
+            $lines[] = '> 来自游戏内公开聊天记录，只包含被举报玩家本人最近的消息。';
+        }
+
         $lines[] = '';
         $lines[] = '---';
         $lines[] = '由游戏内 `/report` 命令自动创建。';
 
         return implode("\n", $lines);
+    }
+
+    /**
+     * Wrap a transcript in a code fence longer than any run of backticks inside it.
+     *
+     * A player can type ``` in chat. A fence of the usual three backticks would
+     * then be closed early and the rest of the transcript would render as Markdown
+     * in a moderator's view, so the fence is sized to the content instead.
+     */
+    private function transcriptBlock(string $context): string
+    {
+        preg_match_all('/`+/', $context, $matches);
+
+        $longest = 0;
+
+        foreach ($matches[0] as $run) {
+            $longest = max($longest, strlen($run));
+        }
+
+        $fence = str_repeat('`', max(3, $longest + 1));
+
+        return $fence . "\n" . $context . "\n" . $fence;
     }
 }

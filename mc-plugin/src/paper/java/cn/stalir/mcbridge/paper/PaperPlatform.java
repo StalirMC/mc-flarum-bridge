@@ -5,17 +5,21 @@ import cn.stalir.mcbridge.Message;
 import cn.stalir.mcbridge.Platform;
 import cn.stalir.mcbridge.Yaml;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
+import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.io.File;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 /**
  * Paper/Folia implementation of {@link Platform}.
@@ -35,8 +39,9 @@ import java.util.concurrent.TimeUnit;
  * Threading: server state is only read from a task started by
  * {@link #runSyncRepeating(Runnable, long, long)}, i.e. from the main thread or
  * from the global region. {@link #logToConsole(Message)} is safe from any
- * thread; {@link #broadcast(Message)} hands each player's copy to that player's
- * own scheduler when the server is regionised.
+ * thread; every player-facing channel ({@link #broadcast(Message)}, the action
+ * bar, the title and the boss bar) hands each player's copy to that player's own
+ * scheduler when the server is regionised.
  *
  * This class is also where core {@link Message}s become Adventure components:
  * Paper ships Adventure, and the shared core deliberately does not depend on it
@@ -230,27 +235,46 @@ public final class PaperPlatform implements Platform {
         // every player's copy below can share it safely.
         Component rendered = AdventureMessages.render(message);
 
-        if (FOLIA) {
-            // A regionised server owns each player in the region that ticks it,
-            // so every copy is delivered through that player's own scheduler.
-            for (Player player : Bukkit.getOnlinePlayers()) {
-                player.getScheduler().run(plugin, scheduled -> player.sendMessage(rendered), null);
-            }
+        forEachPlayer(player -> player.sendMessage(rendered));
+    }
 
-            return;
-        }
+    @Override
+    public void showActionBar(Message message) {
+        Component rendered = AdventureMessages.render(message);
 
-        // Plain Paper: one main-thread task, so the player list is never read
-        // from a foreign thread. The body is held in a Runnable local so the
-        // BukkitScheduler overloads cannot be ambiguous; the one-shot delivery
-        // needs no handle of its own.
-        Runnable delivery = () -> {
-            for (Player player : Bukkit.getOnlinePlayers()) {
-                player.sendMessage(rendered);
-            }
-        };
+        forEachPlayer(player -> player.sendActionBar(rendered));
+    }
 
-        Bukkit.getScheduler().runTask(plugin, delivery);
+    @Override
+    public void showTitle(Message title, Message subtitle, int fadeInTicks, int stayTicks, int fadeOutTicks) {
+        Title timed = Title.title(
+                AdventureMessages.render(title),
+                AdventureMessages.render(subtitle),
+                Title.Times.times(
+                        Duration.ofMillis(fadeInTicks * MILLIS_PER_TICK),
+                        Duration.ofMillis(stayTicks * MILLIS_PER_TICK),
+                        Duration.ofMillis(fadeOutTicks * MILLIS_PER_TICK)
+                )
+        );
+
+        forEachPlayer(player -> player.showTitle(timed));
+    }
+
+    @Override
+    public void showBossBar(Message message, int seconds) {
+        Component rendered = AdventureMessages.render(message);
+
+        // One bar per player rather than one shared bar: removal has to happen on
+        // the thread that owns each player, and a per-player instance keeps that
+        // removal exact.
+        forEachPlayer(player -> {
+            BossBar bar = BossBar.bossBar(rendered, 1.0f, BossBar.Color.YELLOW, BossBar.Overlay.PROGRESS);
+            player.showBossBar(bar);
+
+            // Suspending the bar instead would leave it on screen for good, since
+            // nothing else ever takes it down.
+            runDelayedForPlayer(player, () -> player.hideBossBar(bar), seconds * (1000L / MILLIS_PER_TICK));
+        });
     }
 
     @Override
@@ -278,6 +302,48 @@ public final class PaperPlatform implements Platform {
     public void logToConsole(Message message) {
         // ConsoleSender#sendMessage is safe from any thread on both families.
         Bukkit.getConsoleSender().sendMessage(AdventureMessages.render(message));
+    }
+
+    /**
+     * Run an action for every online player, on the thread that owns them.
+     *
+     * The same two branches the rest of this class uses: a regionised server
+     * requires each player's own scheduler, while plain Paper requires the main
+     * thread.
+     */
+    private void forEachPlayer(Consumer<Player> action) {
+        if (FOLIA) {
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                player.getScheduler().run(plugin, scheduled -> action.accept(player), null);
+            }
+
+            return;
+        }
+
+        // The body is held in a Runnable local so the BukkitScheduler overloads
+        // cannot be ambiguous; a one-shot delivery needs no handle of its own.
+        Runnable delivery = () -> {
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                action.accept(player);
+            }
+        };
+
+        Bukkit.getScheduler().runTask(plugin, delivery);
+    }
+
+    /**
+     * Run an action later on the thread that owns the player.
+     *
+     * The retired callback is left null on purpose: when the player is gone there
+     * is nothing left to do, which is exactly what hiding their boss bar wants.
+     */
+    private void runDelayedForPlayer(Player player, Runnable action, long delayTicks) {
+        if (FOLIA) {
+            player.getScheduler().runDelayed(plugin, scheduled -> action.run(), null, delayTicks);
+            return;
+        }
+
+        Bukkit.getScheduler().runTaskLater(plugin, action, delayTicks);
     }
 
     // ------------------------------------------------------------------

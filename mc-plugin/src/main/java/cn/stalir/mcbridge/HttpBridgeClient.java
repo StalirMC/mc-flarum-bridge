@@ -66,6 +66,19 @@ public final class HttpBridgeClient {
         return get("/bind/status", "server_key=" + encode(config.serverKey()) + "&uuid=" + encode(uuid.toString()));
     }
 
+    /**
+     * The reports one player has filed, newest first.
+     *
+     * Scoped to the reporter's own UUID: a player may read the fate of their own
+     * reports and nothing else, and the forum enforces the same rule.
+     */
+    public JsonObject reportsFor(String reporterUuid, int limit) throws BridgeException {
+        return get("/reports",
+                "server_key=" + encode(config.serverKey())
+                        + "&reporter_uuid=" + encode(reporterUuid)
+                        + "&limit=" + limit);
+    }
+
     public JsonObject broadcast(String body, String title) throws BridgeException {
         JsonObject payload = new JsonObject();
         payload.addProperty("server_key", config.serverKey());
@@ -96,7 +109,8 @@ public final class HttpBridgeClient {
             String title,
             List<String> tags,
             String actor,
-            String reportUid
+            String reportUid,
+            String context
     ) throws BridgeException {
         JsonObject payload = new JsonObject();
         payload.addProperty("server_key", config.serverKey());
@@ -110,6 +124,11 @@ public final class HttpBridgeClient {
         addIfPresent(payload, "report_uid", reportUid);
         addIfPresent(payload, "title", title);
         addIfPresent(payload, "actor", actor);
+
+        // The reported player's own recent public chat, so a moderator can read
+        // what was actually said. Omitted entirely when the feature is off, which
+        // leaves an older forum behaving exactly as before.
+        addIfPresent(payload, "context", context);
 
         // Sent as an array: the forum resolves each entry (slug or id) and files
         // the discussion under all of the ones that exist.

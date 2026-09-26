@@ -3,6 +3,7 @@
 use Flarum\Api\Resource\UserResource;
 use Flarum\Extend;
 use Flarum\Post\Event\Posted;
+use Flarum\Tags\Event\DiscussionWasTagged;
 use Stalir\McBridge\Api\Controller\AnnouncementsController;
 use Stalir\McBridge\Api\Controller\BindStartController;
 use Stalir\McBridge\Api\Controller\BindStatusController;
@@ -11,11 +12,14 @@ use Stalir\McBridge\Api\Controller\LinkController;
 use Stalir\McBridge\Api\Controller\LinkPageController;
 use Stalir\McBridge\Api\Controller\LinkStatusController;
 use Stalir\McBridge\Api\Controller\ReportController;
+use Stalir\McBridge\Api\Controller\ReportsController;
 use Stalir\McBridge\Api\UserResourceFields;
 use Stalir\McBridge\Console\ConfigCommand;
+use Stalir\McBridge\Console\ReportCommand;
 use Stalir\McBridge\Console\SecretCommand;
 use Stalir\McBridge\Console\SelfTestCommand;
 use Stalir\McBridge\Listener\QueueAnnouncement;
+use Stalir\McBridge\Listener\ReportTagListener;
 use Stalir\McBridge\Service\BridgeMessages;
 use Stalir\McBridge\Service\ReportDiscussion;
 
@@ -48,7 +52,8 @@ return [
         ->exemptRoute('mc-bridge.bind.start')
         ->exemptRoute('mc-bridge.bind.status')
         ->exemptRoute('mc-bridge.broadcast')
-        ->exemptRoute('mc-bridge.report'),
+        ->exemptRoute('mc-bridge.report')
+        ->exemptRoute('mc-bridge.reports'),
 
     // ---------------------------------------------------------------------
     // The Minecraft binding of a forum account, exposed on the user resource.
@@ -70,7 +75,10 @@ return [
         ->post('/mc-bridge/bind/start', 'mc-bridge.bind.start', BindStartController::class)
         ->get('/mc-bridge/bind/status', 'mc-bridge.bind.status', BindStatusController::class)
         ->post('/mc-bridge/broadcast', 'mc-bridge.broadcast', BroadcastController::class)
-        ->post('/mc-bridge/report', 'mc-bridge.report', ReportController::class),
+        ->post('/mc-bridge/report', 'mc-bridge.report', ReportController::class)
+        // What /report status reads: the reports one player filed, and only that
+        // player's. Pure read, so a GET.
+        ->get('/mc-bridge/reports', 'mc-bridge.reports', ReportsController::class),
 
     // ---------------------------------------------------------------------
     // Forum-facing endpoints. These use the normal Flarum session/actor and
@@ -113,20 +121,25 @@ return [
         : []),
 
     // ---------------------------------------------------------------------
-    // Queue forum activity for delivery to the game servers.
+    // Queue forum activity for delivery to the game servers, and turn a
+    // moderator's tag edit on a report discussion into an outcome.
     // ---------------------------------------------------------------------
     (new Extend\Event())
-        ->listen(Posted::class, QueueAnnouncement::class),
+        ->listen(Posted::class, QueueAnnouncement::class)
+        ->listen(DiscussionWasTagged::class, ReportTagListener::class),
 
     // ---------------------------------------------------------------------
     // Console helpers:
     //   php flarum mc-bridge:secret
     //   php flarum mc-bridge:config --tags=1,3
+    //   php flarum mc-bridge:report --list
+    //   php flarum mc-bridge:report 12 --status=resolved
     //   php flarum mc-bridge:selftest --url=https://your.forum
     // ---------------------------------------------------------------------
     (new Extend\Console())
         ->command(SecretCommand::class)
         ->command(ConfigCommand::class)
+        ->command(ReportCommand::class)
         ->command(SelfTestCommand::class),
 
     // ---------------------------------------------------------------------
@@ -145,5 +158,10 @@ return [
         // discoverable in one place.
         ->default('mc-bridge.report_tag_ids', '')
         ->default('mc-bridge.report_actor_id', '')
-        ->default('mc-bridge.report_title_format', ReportDiscussion::DEFAULT_TITLE_FORMAT),
+        ->default('mc-bridge.report_title_format', ReportDiscussion::DEFAULT_TITLE_FORMAT)
+        // Which tags mean "this report was dealt with" / "dismissed". Empty by
+        // default: the automatic outcome needs the moderator's own tag names,
+        // which no extension can guess. Listener\ReportTagListener reads them.
+        ->default('mc-bridge.report_resolved_tag_ids', '')
+        ->default('mc-bridge.report_rejected_tag_ids', ''),
 ];

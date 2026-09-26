@@ -30,6 +30,14 @@ class ReportController extends AbstractBridgeController
      */
     private const IDEMPOTENCY_SECONDS = 600;
 
+    /**
+     * Longest transcript accepted from a game server, in characters.
+     *
+     * The plugin caps the same thing at 50 lines of 256 characters; this is the
+     * server-side half of that agreement.
+     */
+    private const MAX_CONTEXT_LENGTH = 12000;
+
     public function __construct(
         SettingsRepositoryInterface $settings,
         CacheRepository $cache,
@@ -107,7 +115,11 @@ class ReportController extends AbstractBridgeController
         $report->reporter_name = $reporterName;
         $report->target_name = $targetName;
         $report->reason = $reason;
-        $report->status = 'pending';
+        $report->status = McReport::STATUS_PENDING;
+        // Only present when the game server sends one. The transcript is capped
+        // here as well as on the client, so a modified client cannot fill the
+        // column with something else entirely.
+        $report->context = $this->optionalText($body, 'context', self::MAX_CONTEXT_LENGTH);
         $report->save();
 
         if ($seenKey !== null) {
@@ -127,6 +139,15 @@ class ReportController extends AbstractBridgeController
             'tags' => $this->optionalTokenList($body, 'tags', 100, 10),
             'actor' => $this->optionalToken($body, 'actor', 64),
         ]);
+
+        if ($discussionId !== null) {
+            // Remember which discussion this report became. Without it, a
+            // moderator resolving that discussion could not be traced back to the
+            // player who filed the report, which is what the outcome notification
+            // needs - so this is not merely bookkeeping.
+            $report->discussion_id = $discussionId;
+            $report->save();
+        }
 
         if ($seenKey !== null) {
             $this->cache->put($seenKey, [
@@ -226,18 +247,5 @@ class ReportController extends AbstractBridgeController
     private function isToken(string $value): bool
     {
         return preg_match('/^[\p{L}\p{N}._\- ]+$/u', $value) === 1;
-    }
-
-    private function sanitizeUuid(mixed $uuid): ?string
-    {
-        if (! is_string($uuid)) {
-            return null;
-        }
-
-        $uuid = strtolower(trim($uuid));
-
-        return preg_match('/^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/', $uuid)
-            ? $uuid
-            : null;
     }
 }

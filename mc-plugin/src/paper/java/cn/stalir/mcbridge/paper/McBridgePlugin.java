@@ -31,6 +31,8 @@ public final class McBridgePlugin extends JavaPlugin {
         this.core = new BridgeCore(platform);
 
         getServer().getPluginManager().registerEvents(new PlayerListener(core), this);
+        // Records public chat, so a report can carry what was actually said.
+        getServer().getPluginManager().registerEvents(new ChatListener(core), this);
         registerCommands();
 
         // Reads config.yml, extracts the bundled language files, schedules the

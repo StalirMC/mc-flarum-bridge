@@ -5,8 +5,13 @@ import cn.stalir.mcbridge.Message;
 import cn.stalir.mcbridge.Platform;
 import cn.stalir.mcbridge.Yaml;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerBossEvent;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.BossEvent;
 import net.neoforged.fml.loading.FMLPaths;
 
 import java.io.IOException;
@@ -203,6 +208,92 @@ public final class NeoForgePlatform implements Platform {
 
             if (current != null) {
                 current.getPlayerList().broadcastSystemMessage(rendered, false);
+            }
+        });
+    }
+
+    @Override
+    public void showActionBar(Message message) {
+        Component rendered = NeoForgeMessages.render(message);
+
+        runSync(() -> {
+            MinecraftServer current = server;
+
+            if (current == null) {
+                return;
+            }
+
+            for (ServerPlayer player : current.getPlayerList().getPlayers()) {
+                // The second argument puts the text above the hotbar instead of
+                // in chat.
+                player.displayClientMessage(rendered, true);
+            }
+        });
+    }
+
+    @Override
+    public void showTitle(Message title, Message subtitle, int fadeInTicks, int stayTicks, int fadeOutTicks) {
+        Component renderedTitle = NeoForgeMessages.render(title);
+        Component renderedSubtitle = NeoForgeMessages.render(subtitle);
+        boolean withSubtitle = !subtitle.isEmpty();
+
+        runSync(() -> {
+            MinecraftServer current = server;
+
+            if (current == null) {
+                return;
+            }
+
+            ClientboundSetTitlesAnimationPacket timing =
+                    new ClientboundSetTitlesAnimationPacket(fadeInTicks, stayTicks, fadeOutTicks);
+            ClientboundSetTitleTextPacket text = new ClientboundSetTitleTextPacket(renderedTitle);
+
+            for (ServerPlayer player : current.getPlayerList().getPlayers()) {
+                // The timing packet has to land first, otherwise the title is
+                // shown with whatever timing the previous one left behind.
+                player.connection.send(timing);
+
+                if (withSubtitle) {
+                    player.connection.send(new ClientboundSetSubtitleTextPacket(renderedSubtitle));
+                }
+
+                player.connection.send(text);
+            }
+        });
+    }
+
+    @Override
+    public void showBossBar(Message message, int seconds) {
+        Component rendered = NeoForgeMessages.render(message);
+
+        runSync(() -> {
+            MinecraftServer current = server;
+
+            if (current == null) {
+                return;
+            }
+
+            // One bar for the whole server: ServerBossEvent tracks its own
+            // viewers, so taking it away is a single call.
+            ServerBossEvent bar = new ServerBossEvent(
+                    rendered, BossEvent.BossBarColor.YELLOW, BossEvent.BossBarOverlay.PROGRESS);
+
+            for (ServerPlayer player : current.getPlayerList().getPlayers()) {
+                bar.addPlayer(player);
+            }
+
+            bar.setVisible(true);
+
+            // Nothing takes a bar down on its own, so this plugin's scheduler
+            // does; the work itself hops back to the server thread through
+            // runSync.
+            try {
+                scheduler.schedule(() -> runSync(() -> {
+                    bar.setVisible(false);
+                    bar.removeAllPlayers();
+                }), seconds, TimeUnit.SECONDS);
+            } catch (Throwable ignored) {
+                // The pool was shut down while the server was stopping.
             }
         });
     }

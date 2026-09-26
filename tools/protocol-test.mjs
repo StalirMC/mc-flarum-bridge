@@ -25,6 +25,9 @@
  *      under the report tags, the optional config.yml hints (title, tag list,
  *      author) honoured without ever failing the report, a retry under the same
  *      report_uid filed only once, 422 without a reason or a bad UUID
+ *  12. report outcome: the chat transcript stored with the report, /reports
+ *      scoped to the reporter who asked, a resolution notified exactly once and
+ *      routed to the reporting server only
  *
  * Every check prints PASS or FAIL; any failure exits with code 1.
  *
@@ -811,6 +814,225 @@ async function checkAgainstMock(mock) {
     });
 
     assertStatus(response, 401, 'machine endpoints require a signature');
+  });
+
+  // -------------------------------------------------------------------------
+  // 12. Report outcome and /report status
+  // -------------------------------------------------------------------------
+
+  group('12. Report outcome and /report status');
+
+  await test('the transcript a game server sends is stored with the report', async () => {
+    const transcript = 'Griefer: buy gold now\nGriefer: cheap gold';
+
+    const response = await request(baseUrl, {
+      method: 'POST',
+      path: '/api/mc-bridge/report',
+      body: {
+        server_key: 'survival',
+        reporter_uuid: REPORTER_UUID,
+        reporter_name: 'Alice',
+        target_name: 'Griefer',
+        reason: 'spam',
+        context: transcript,
+      },
+    });
+
+    assertStatus(response, 201, 'a report carrying a transcript is accepted');
+
+    const stored = mock.store.reportById(response.json.report_id);
+    assertEqual(stored.context, transcript, 'the transcript is stored verbatim');
+    assertEqual(stored.discussion_id, response.json.discussion_id, 'the discussion id is remembered');
+  });
+
+  await test('a report without a transcript still works', async () => {
+    const response = await request(baseUrl, {
+      method: 'POST',
+      path: '/api/mc-bridge/report',
+      body: {
+        server_key: 'survival',
+        reporter_uuid: REPORTER_UUID,
+        reporter_name: 'Alice',
+        target_name: 'Quiet',
+        reason: 'no chat to attach',
+      },
+    });
+
+    assertStatus(response, 201, 'the field is optional');
+    assertEqual(mock.store.reportById(response.json.report_id).context, null, 'nothing is invented');
+  });
+
+  await test('GET /api/mc-bridge/reports returns the caller own reports only', async () => {
+    const otherUuid = '99999999-8888-7777-6666-555555555555';
+
+    const foreign = await request(baseUrl, {
+      method: 'POST',
+      path: '/api/mc-bridge/report',
+      body: {
+        server_key: 'survival',
+        reporter_uuid: otherUuid,
+        reporter_name: 'Bob',
+        target_name: 'NotMinePlease',
+        reason: 'somebody else report',
+      },
+    });
+
+    assertStatus(foreign, 201, 'the other player report is stored');
+
+    const response = await request(baseUrl, {
+      method: 'GET',
+      path: `/api/mc-bridge/reports?server_key=survival&reporter_uuid=${REPORTER_UUID}&limit=10`,
+    });
+
+    assertStatus(response, 200, 'the status query is accepted');
+    assert(Array.isArray(response.json.reports), 'reports must be an array');
+    assert(response.json.reports.length > 0, 'the caller has reports');
+    assert(
+      !response.json.reports.some((report) => report.target_name === 'NotMinePlease'),
+      'another player reports must never appear'
+    );
+
+    const ids = response.json.reports.map((report) => report.id);
+    assertEqual(
+      ids.join(','),
+      [...ids].sort((left, right) => right - left).join(','),
+      'newest first'
+    );
+  });
+
+  await test('GET /api/mc-bridge/reports rejects a malformed uuid', async () => {
+    const response = await request(baseUrl, {
+      method: 'GET',
+      path: '/api/mc-bridge/reports?server_key=survival&reporter_uuid=not-a-uuid',
+    });
+
+    assertStatus(response, 422, 'reporter_uuid must be a UUID');
+  });
+
+  await test('an unsigned status query is rejected', async () => {
+    const response = await request(baseUrl, {
+      method: 'GET',
+      path: `/api/mc-bridge/reports?server_key=survival&reporter_uuid=${REPORTER_UUID}`,
+      secret: null,
+    });
+
+    assertStatus(response, 401, 'machine endpoints require a signature');
+  });
+
+  await test('resolving a report queues exactly one targeted notification', async () => {
+    const created = await request(baseUrl, {
+      method: 'POST',
+      path: '/api/mc-bridge/report',
+      body: {
+        server_key: 'survival',
+        reporter_uuid: REPORTER_UUID,
+        reporter_name: 'Alice',
+        target_name: 'Reggie',
+        reason: 'to be resolved',
+      },
+    });
+
+    const report = mock.store.reportById(created.json.report_id);
+    const before = mock.store.pendingCount('survival');
+
+    assert(mock.store.resolveReport(report, 'resolved', '警告处理'), 'the status moves to resolved');
+    assertEqual(report.status, 'resolved', 'the report is resolved');
+    assertEqual(mock.store.pendingCount('survival'), before + 1, 'exactly one message was queued');
+
+    const queued = mock.store.pendingMessages('survival').filter((message) => message.type === 'report_resolved');
+    assertEqual(queued.length, 1, 'one report_resolved message');
+    assertEqual(queued[0].target_uuid, REPORTER_UUID, 'addressed to the reporter');
+    assertEqual(queued[0].server_key, 'survival', 'routed to the server that filed it');
+    assertEqual(queued[0].payload?.target, 'Reggie', 'the notice names the reported player');
+    assertEqual(queued[0].payload?.note, '警告处理', 'the moderator note travels with it');
+  });
+
+  await test('resolving the same report twice notifies only once', async () => {
+    // This is the case the tag path hits: a moderator re-saving the same tags
+    // must not send the player a second notice.
+    const report = mock.store.reports.find((entry) => entry.status === 'resolved');
+    const before = mock.store.pendingCount('survival');
+
+    assert(!mock.store.resolveReport(report, 'resolved'), 'the second resolve is a no-op');
+    assertEqual(mock.store.pendingCount('survival'), before, 'no second message was queued');
+  });
+
+  await test('reopening a report does not notify', async () => {
+    const report = mock.store.reports.find((entry) => entry.status === 'resolved');
+    const before = mock.store.pendingCount('survival');
+
+    assert(mock.store.resolveReport(report, 'pending'), 'the status moves back to pending');
+    assertEqual(mock.store.pendingCount('survival'), before, 'an internal correction is silent');
+  });
+
+  await test('the outcome notification reaches the reporting server only', async () => {
+    const created = await request(baseUrl, {
+      method: 'POST',
+      path: '/api/mc-bridge/report',
+      body: {
+        server_key: 'survival',
+        reporter_uuid: REPORTER_UUID,
+        reporter_name: 'Alice',
+        target_name: 'Routed',
+        reason: 'routing check',
+      },
+    });
+
+    mock.store.resolveReport(mock.store.reportById(created.json.report_id), 'rejected', '');
+
+    const other = await request(baseUrl, {
+      method: 'GET',
+      path: '/api/mc-bridge/outbox?server_key=creative&peek=1',
+    });
+
+    assertStatus(other, 200, 'the other server can poll');
+    assert(
+      !other.json.messages.some((message) => message.type === 'report_rejected'),
+      'a different server must not receive it'
+    );
+
+    const mine = await request(baseUrl, {
+      method: 'GET',
+      path: '/api/mc-bridge/outbox?server_key=survival',
+    });
+
+    assertStatus(mine, 200, 'the reporting server can poll');
+    const delivered = mine.json.messages.filter((message) => message.type === 'report_rejected');
+
+    assertEqual(delivered.length, 1, 'the reporting server receives it');
+    assertEqual(delivered[0].target_uuid, REPORTER_UUID, 'with the reporter as its target');
+    assertEqual(delivered[0].payload?.status, 'rejected', 'carrying the outcome the game renders');
+  });
+
+  await test('the status query reflects a resolved report', async () => {
+    // Resolved here rather than reusing an earlier test's report: the reopen test
+    // deliberately put that one back to pending, and a test that only passes in
+    // one order is a trap.
+    const created = await request(baseUrl, {
+      method: 'POST',
+      path: '/api/mc-bridge/report',
+      body: {
+        server_key: 'survival',
+        reporter_uuid: REPORTER_UUID,
+        reporter_name: 'Alice',
+        target_name: 'StatusCheck',
+        reason: 'reflect the status back',
+      },
+    });
+
+    assertStatus(created, 201, 'the report to resolve is stored');
+    mock.store.resolveReport(mock.store.reportById(created.json.report_id), 'resolved', '');
+
+    const response = await request(baseUrl, {
+      method: 'GET',
+      path: `/api/mc-bridge/reports?server_key=survival&reporter_uuid=${REPORTER_UUID}&limit=20`,
+    });
+
+    assertStatus(response, 200, 'the status query is accepted');
+    assert(
+      response.json.reports.some((report) => report.status === 'resolved'),
+      'a resolved report is listed with its status'
+    );
   });
 
 }

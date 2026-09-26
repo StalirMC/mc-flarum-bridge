@@ -67,6 +67,19 @@ class ConfigCommand extends AbstractBridgeCommand
                 null,
                 InputOption::VALUE_REQUIRED,
                 'Title template used when the game server sends none; tokens: {target} {reporter} {reason} {server}'
+            )
+            ->addOption(
+                'report-resolved-tags',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'Comma separated tag ids that mean "this report was dealt with"; '
+                . 'moving a report discussion into one tells the reporter in game (empty = off)'
+            )
+            ->addOption(
+                'report-rejected-tags',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'Comma separated tag ids that mean "this report was dismissed" (empty = off)'
             );
     }
 
@@ -92,6 +105,18 @@ class ConfigCommand extends AbstractBridgeCommand
                 'console.config.report_actor_cleared'
             );
             $changed += $this->applyReportTitle();
+            $changed += $this->applyIdList(
+                'report-resolved-tags',
+                ReportDiscussion::RESOLVED_TAGS_SETTING,
+                'console.config.report_resolved_tags_set',
+                'console.config.report_resolved_tags_cleared'
+            );
+            $changed += $this->applyIdList(
+                'report-rejected-tags',
+                ReportDiscussion::REJECTED_TAGS_SETTING,
+                'console.config.report_rejected_tags_set',
+                'console.config.report_rejected_tags_cleared'
+            );
         }
 
         $this->render();
@@ -368,6 +393,8 @@ class ConfigCommand extends AbstractBridgeCommand
         $reportTags = (string) $this->settings->get(ReportDiscussion::TAGS_SETTING, '');
         $reportActor = (string) $this->settings->get(ReportDiscussion::ACTOR_SETTING, '');
         $reportTitle = (string) $this->settings->get(ReportDiscussion::TITLE_SETTING, '');
+        $reportResolved = (string) $this->settings->get(ReportDiscussion::RESOLVED_TAGS_SETTING, '');
+        $reportRejected = (string) $this->settings->get(ReportDiscussion::REJECTED_TAGS_SETTING, '');
         $locale = BridgeMessages::resolveLocale($this->settings);
 
         $secretValue = $secret === ''
@@ -410,6 +437,18 @@ class ConfigCommand extends AbstractBridgeCommand
                 $reportTitle === ''
                     ? $this->messages->get('console.config.value_report_title_default')
                     : $reportTitle,
+            ],
+            [
+                $this->messages->get('console.config.label_report_resolved_tags'),
+                $reportResolved === ''
+                    ? $this->messages->get('console.config.value_report_outcome_off')
+                    : '#' . str_replace(',', ', #', $reportResolved),
+            ],
+            [
+                $this->messages->get('console.config.label_report_rejected_tags'),
+                $reportRejected === ''
+                    ? $this->messages->get('console.config.value_report_outcome_off')
+                    : '#' . str_replace(',', ', #', $reportRejected),
             ],
         ];
 

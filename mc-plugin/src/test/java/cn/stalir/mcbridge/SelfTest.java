@@ -42,6 +42,8 @@ public final class SelfTest {
         testLanguageFiles(resources);
         testConfigurationValidation(resources);
         testValidConfiguration(resources);
+        testDisplayChannels();
+        testChatLog();
 
         System.out.println();
         System.out.println("checks run: " + checks);
@@ -213,6 +215,95 @@ public final class SelfTest {
     // Helpers
     // ------------------------------------------------------------------
 
+    /**
+     * The display list decides how every announcement reaches players. A typo must
+     * degrade to something visible rather than to nothing at all.
+     */
+    private static void testDisplayChannels() {
+        section("Announcement display channels");
+
+        check("an empty setting means the chat line",
+                List.of(DisplayChannel.CHAT), DisplayChannel.parse("", null));
+        check("several channels can be combined",
+                List.of(DisplayChannel.CHAT, DisplayChannel.BOSS_BAR),
+                DisplayChannel.parse("chat,bossbar", null));
+        check("spacing and case are tolerated",
+                List.of(DisplayChannel.ACTION_BAR), DisplayChannel.parse("  ACTIONBAR  ", null));
+        check("a repeated channel is only delivered once",
+                List.of(DisplayChannel.TITLE), DisplayChannel.parse("title,title", null));
+
+        List<String> unknown = new ArrayList<>();
+
+        check("an unknown channel still leaves the chat line",
+                List.of(DisplayChannel.CHAT), DisplayChannel.parse("nonsense", unknown::add));
+        check("the unknown value is reported", List.of("nonsense"), unknown);
+
+        List<String> noneReported = new ArrayList<>();
+
+        DisplayChannel.parse("chat,actionbar", noneReported::add);
+        check("valid values are not reported as unknown", List.of(), noneReported);
+    }
+
+    /**
+     * The chat log is the one part of the core that holds player-authored text, so
+     * its bounds and its lookup rules are executed rather than only compiled.
+     */
+    private static void testChatLog() {
+        section("Recent public chat");
+
+        ChatLog log = new ChatLog(3);
+
+        check("an unknown player has nothing recorded", 0, log.size("Steve"));
+        check("a silent player yields no transcript", List.of(), log.recent("Steve", 5));
+
+        log.record("Steve", "first");
+        log.record("Steve", "second");
+        log.record("Steve", "third");
+        log.record("Steve", "fourth");
+
+        check("only the newest lines are kept", 3, log.size("Steve"));
+        check("they come back oldest first",
+                List.of("second", "third", "fourth"), log.recent("Steve", 3));
+        check("a smaller window returns the tail",
+                List.of("third", "fourth"), log.recent("Steve", 2));
+        check("a larger window returns everything held", 3, log.recent("Steve", 99).size());
+
+        // The name arrives from /report, so it is whatever the reporter typed.
+        check("the lookup ignores case", 3, log.size("sTeVe"));
+        check("a padded name still matches", 1, log.recent("  Steve  ", 1).size());
+
+        log.record("Alex", "somebody else line");
+        check("two players are never mixed up",
+                List.of("somebody else line"), log.recent("Alex", 5));
+        check("and the first player is untouched", 3, log.size("Steve"));
+
+        // A stored newline would forge an extra line in the transcript a moderator
+        // reads, so it is flattened as it is recorded.
+        log.record("Steve", "one\ntwo");
+        check("line breaks inside a message are flattened", "one two", log.recent("Steve", 1).get(0));
+
+        int before = log.size("Steve");
+        log.record("Steve", "    ");
+        check("a blank message is not recorded", before, log.size("Steve"));
+
+        log.record("Steve", "x".repeat(500));
+        check("an oversized line is truncated", 256, log.recent("Steve", 1).get(0).length());
+
+        ChatLog disabled = new ChatLog(0);
+        disabled.record("Steve", "anything");
+        check("a zero capacity records nothing", 0, disabled.size("Steve"));
+
+        // Bounded players: a long-running or hostile server must not grow this.
+        ChatLog many = new ChatLog(2);
+
+        for (int index = 0; index < 600; index++) {
+            many.record("player" + index, "line");
+        }
+
+        check("the oldest tracked player is evicted", 0, many.size("player0"));
+        check("the newest tracked player is kept", 1, many.size("player599"));
+    }
+
     private static void section(String title) {
         System.out.println();
         System.out.println("== " + title);
@@ -294,6 +385,18 @@ public final class SelfTest {
 
         @Override
         public void broadcast(Message message) {
+        }
+
+        @Override
+        public void showActionBar(Message message) {
+        }
+
+        @Override
+        public void showTitle(Message title, Message subtitle, int fadeInTicks, int stayTicks, int fadeOutTicks) {
+        }
+
+        @Override
+        public void showBossBar(Message message, int seconds) {
         }
 
         @Override
