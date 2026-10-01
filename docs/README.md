@@ -569,7 +569,7 @@ curl -s -X POST https://forum.kxkl2024.cn/api/mc-bridge/broadcast \
 ```
 
 Alternatively you can use a signed machine call (no cookies / CSRF needed); for the signing method see
-section 5 of [`../protocol/README.md` (currently in Simplified Chinese)](../protocol/README.md).
+section 5 of [`../protocol/README.md`](../protocol/README.md).
 
 The game shows the message to everyone after the next outbox poll (20 seconds by default).
 

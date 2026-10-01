@@ -55,6 +55,8 @@
 | `docs/` | [部署指南](docs/README.zh-CN.md)、[API 参考](docs/API.zh-CN.md)、[验证报告](docs/VERIFICATION.zh-CN.md)、[发布流程](docs/RELEASING.zh-CN.md)（维护者） | Markdown |
 | `tools/` | 静态一致性校验、模拟论坛、协议一致性测试 | Node.js |
 
+> **文档语言约定**：无后缀的是英文版，同名的 `*.zh-CN.md` 是简体中文版 —— `docs/` 下的每一份文档、本 README 以及各组件 README 都遵循这一约定。唯一的例外是 [`protocol/README.md`](protocol/README.md)，它目前只有英文版。
+
 ## 功能
 
 - **公告推送** — 论坛中指定标签（或全部）的新讨论自动入队，插件轮询后在游戏内广播。

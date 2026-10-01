@@ -44,7 +44,7 @@ An open-source bridge that connects a Minecraft server and a [Flarum](https://fl
 | `docs/` | [Deployment guide](docs/README.md), [API reference](docs/API.md), [Verification report](docs/VERIFICATION.md), [Release process](docs/RELEASING.md) (maintainers) | Markdown |
 | `tools/` | Static consistency checker, mock forum, protocol conformance test | Node.js |
 
-> The detailed documentation under `docs/` and `protocol/` is currently written in Simplified Chinese only.
+> **Documentation language**: an unsuffixed file is English and the matching `*.zh-CN.md` is Simplified Chinese — this applies to every document in `docs/` as well as to this README and the per-component READMEs. The one exception is [`protocol/README.md`](protocol/README.md), which is English only.
 
 ## Features
 

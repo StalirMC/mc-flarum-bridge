@@ -1,49 +1,53 @@
-# MC Bridge — Flarum 扩展
+# MC Bridge — Flarum extension
 
-把 Flarum 变成 Minecraft 服务器的控制面：接收服务器状态与游戏事件，并把论坛
-公告、广播和（可选）指令投递给游戏。
+**English** · [简体中文](README.zh-CN.md)
 
-- 目标 Flarum：**2.x**（PHP 8.1+）
-- 包名：`stalirmc/mc-bridge`
-- 认证：HMAC-SHA256 + 时间戳 + 一次性 nonce（见 [`../protocol/README.md`](../protocol/README.md)）
+Turn Flarum into the control plane for a Minecraft server: it receives server status
+and game events, and delivers forum announcements, broadcasts and (optionally)
+commands to the game.
 
-## 安装
+- Target Flarum: **2.x** (PHP 8.1+)
+- Package name: `stalirmc/mc-bridge`
+- Authentication: HMAC-SHA256 + timestamp + single-use nonce (see [`../protocol/README.md`](../protocol/README.md))
 
-> ⚠️ **Flarum 2.x 没有 `extensions/` 目录。** 它只从 Composer 的
-> `vendor/composer/installed.json` 发现扩展，所以扩展**必须经由 Composer 安装**。
-> 详见 [`../docs/README.md`](../docs/README.zh-CN.md) 第 1 节（含源码依据与三种方式）。
+## Installation
 
-**方式 A — 后台安装（推荐）**：Extension Manager → 仓库 → 添加 `vcs` 仓库
-`https://github.com/StalirMC/mc-flarum-bridge` → 安装
-`stalirmc/mc-flarum-bridge:dev-main` → 启用「MC Bridge」。
+> ⚠️ **Flarum 2.x has no `extensions/` directory.** It only discovers extensions from
+> Composer's `vendor/composer/installed.json`, so an extension **must be installed
+> through Composer**. See [`../docs/README.md`](../docs/README.md) section 1 for details
+> (including the source evidence and three ways to do it).
 
-**方式 B — SSH / Composer**：
+**Option A — install from the admin panel (recommended)**: Extension Manager → Repositories → add the `vcs` repository
+`https://github.com/StalirMC/mc-flarum-bridge` → install
+`stalirmc/mc-flarum-bridge:dev-main` → enable "MC Bridge".
+
+**Option B — SSH / Composer**:
 
 ```bash
 cd /path/to/flarum
 composer config repositories.mc-bridge vcs https://github.com/StalirMC/mc-flarum-bridge
 composer require stalirmc/mc-flarum-bridge:dev-main
 php flarum migrate
-php flarum extension:enable stalirmc-mc-bridge   # 用 php flarum extension:list 核对确切 ID
+php flarum extension:enable stalirmc-mc-bridge   # check the exact ID with php flarum extension:list
 php flarum cache:clear
 ```
 
-**方式 C — 不上 GitHub**：把**本目录**（`flarum-extension/`）上传到
-`<flarum>/packages/mc-bridge/`，加 `path` 仓库后安装 `stalirmc/mc-bridge:dev-main`。
+**Option C — without GitHub**: upload **this directory** (`flarum-extension/`) to
+`<flarum>/packages/mc-bridge/`, add a `path` repository, then install `stalirmc/mc-bridge:dev-main`.
 
-装好后：
+Once installed:
 
 ```bash
-php flarum mc-bridge:secret                    # 生成插件要用的共享密钥
-php flarum mc-bridge:selftest --url=https://forum.kxkl2024.cn   # 全链路自检
+php flarum mc-bridge:secret                    # generate the shared secret the extension uses
+php flarum mc-bridge:selftest --url=https://forum.kxkl2024.cn   # end-to-end self-test
 ```
 
-完整步骤见 [`../docs/README.md`](../docs/README.zh-CN.md)。
+The complete procedure is in [`../docs/README.md`](../docs/README.md).
 
-## 为什么仓库根目录有 composer.json
+## Why the repository root has a composer.json
 
-因为它用 Flarum 2.x 的 `extra.flarum-subextensions` 把本目录声明为扩展，使
-**整个 monorepo 能作为一个 Composer 包安装**：
+Because it uses Flarum 2.x's `extra.flarum-subextensions` to declare this directory as an extension, so that
+**the whole monorepo can be installed as a single Composer package**:
 
 ```json
 {
@@ -52,95 +56,95 @@ php flarum mc-bridge:selftest --url=https://forum.kxkl2024.cn   # 全链路自�
 }
 ```
 
-`ExtensionManager::subExtensionConfsFromJson()` 会读取该字段。autoload 必须写在
-根 `composer.json` 里——Composer 不处理子包自己的 `autoload`，Flarum 也不会替
-扩展注册命名空间。
+`ExtensionManager::subExtensionConfsFromJson()` reads that field. The autoload must be declared in the
+root `composer.json` — Composer does not process a subpackage's own `autoload`, and Flarum will not register a namespace
+for the extension either.
 
-## 组成
+## Structure
 
 ```
-extend.php                      路由 / 事件 / 控制台命令注册
-migrations/                     5 张表的建表迁移
-src/Service/BridgeCrypto.php    HMAC 签名与路径规范化
-src/Service/BridgeMessages.php  语言解析与翻译包装（默认中文）
-locale/                         语言文件：zh-Hans（默认）、en
-src/Api/Controller/             8 个控制器（1 个抽象基类 + 7 个端点控制器，共 10 条路由）
-extend.php                      路由 / CSRF 豁免 / 事件 / 语言 / 控制台命令注册
-src/Model/                      Eloquent 模型
-src/Listener/QueueAnnouncement.php   新帖 → outbox 队列
+extend.php                      route / event / console command registration
+migrations/                     migrations creating 5 tables
+src/Service/BridgeCrypto.php    HMAC signature and path normalisation
+src/Service/BridgeMessages.php  locale resolution and translation wrapper (Chinese by default)
+locale/                         locale files: zh-Hans (default), en
+src/Api/Controller/             8 controllers (1 abstract base class + 7 endpoint controllers, 10 routes in total)
+extend.php                      route / CSRF exemption / event / locale / console command registration
+src/Model/                      Eloquent models
+src/Listener/QueueAnnouncement.php   new post → outbox queue
 src/Console/SecretCommand.php   php flarum mc-bridge:secret
 src/Console/ConfigCommand.php   php flarum mc-bridge:config --tags=1,3
 src/Console/SelfTestCommand.php php flarum mc-bridge:selftest
 ```
 
-## 端点
+## Endpoints
 
-机器接口（HMAC）：`heartbeat`、`events`、`outbox`、`bind/start`、`bind/status`、`broadcast`。
-论坛接口（会话）：`status`（公开）、`link`（POST/DELETE）。
+Machine interface (HMAC): `heartbeat`, `events`, `outbox`, `bind/start`, `bind/status`, `broadcast`.
+Forum interface (session): `status` (public), `link` (POST/DELETE).
 
-字段与时序见 [`../docs/API.md`](../docs/API.zh-CN.md)。
+For fields and timing see [`../docs/API.md`](../docs/API.md).
 
-## 多语言
+## Localisation
 
-语言文件在 `locale/`，随扩展附带：
+The locale files are in `locale/` and ship with the extension:
 
-| 文件 | 语言 |
+| File | Language |
 |------|------|
-| `locale/zh-Hans.yml` | 简体中文（默认，110 个键） |
+| `locale/zh-Hans.yml` | Simplified Chinese (default, 110 keys) |
 | `locale/en.yml` | English |
 
-**必须在 `extend.php` 里显式注册**，Flarum 不会自动扫描扩展的 locale 目录：
+**They must be registered explicitly in `extend.php`**; Flarum does not scan an extension's locale directory automatically:
 
 ```php
 new Extend\Locales(__DIR__.'/locale'),
 ```
 
-切换语言（控制台命令与接口错误的语言）：
+Switching locale (the locale of console commands and API errors):
 
 ```bash
-php flarum mc-bridge:config --locale=en      # 或 --locale=zh-Hans
-php flarum mc-bridge:config --show           # 查看当前语言
+php flarum mc-bridge:config --locale=en      # or --locale=zh-Hans
+php flarum mc-bridge:config --show           # show the current locale
 ```
 
-`mc-bridge.locale` 的默认值是 `zh-Hans`，与论坛自身的 `default_locale`
-**无关** —— 所以即使论坛默认是英文，扩展的输出默认仍是中文。
+The default value of `mc-bridge.locale` is `zh-Hans`, **independent of** the forum's own
+`default_locale` — so even if the forum defaults to English, the extension's output is still Chinese by default.
 
-新增语言：把 `locale/zh-Hans.yml` 复制为 `locale/ja.yml` 并翻译，然后用
-`--locale=ja` 切换。缺键会回退到 Flarum 的 fallback（`en`），因此建议保持
-各语言键集一致（校验脚本会检查这一点）。
+Adding a locale: copy `locale/zh-Hans.yml` to `locale/ja.yml`, translate it, and then
+switch with `--locale=ja`. Missing keys fall back to Flarum's fallback (`en`), so it is advisable to keep
+the key sets of all locales identical (the verification script checks this).
 
-## 设置项
+## Settings
 
-| 键 | 默认 | 说明 |
+| Key | Default | Description |
 |----|------|------|
-| `mc-bridge.secret` | 空 | 共享密钥，由控制台命令写入 |
-| `mc-bridge.locale` | `zh-Hans` | 输出语言，见上文「多语言」 |
-| `mc-bridge.announcement_tag_ids` | 空 | 逗号分隔的标签 ID；空表示同步所有新讨论 |
-| `mc-bridge.sync_replies` | `0` | 设为 `1` 时连回复也推送到游戏 |
-| `mc-bridge.max_announcement_age_days` | `30` | 预留：outbox 清理窗口 |
+| `mc-bridge.secret` | empty | shared secret, written by the console command |
+| `mc-bridge.locale` | `zh-Hans` | output locale, see "Localisation" above |
+| `mc-bridge.announcement_tag_ids` | empty | comma-separated tag IDs; empty means sync all new discussions |
+| `mc-bridge.sync_replies` | `0` | when set to `1`, replies are pushed to the game as well |
+| `mc-bridge.max_announcement_age_days` | `30` | reserved: outbox cleanup window |
 
-用 `php flarum mc-bridge:config` 查看与修改这些设置，无需手写 tinker 代码。
+Use `php flarum mc-bridge:config` to view and change these settings, with no need to write tinker code by hand.
 
-## 数据表
+## Database tables
 
-`mc_servers`、`mc_events`、`mc_outbox`、`mc_bindings`、`mc_bind_codes`。
+`mc_servers`, `mc_events`, `mc_outbox`, `mc_bindings`, `mc_bind_codes`.
 
-## 权限与安全
+## Permissions and security
 
-- 所有机器接口都要求合法签名；未配置密钥时返回 `503` 而不是放行。
-- nonce 单次有效（缓存 600 秒），时间戳允许 ±300 秒偏差。
-- 绑定码一次性、10 分钟过期，字符集去掉了易混淆字符。
-- `broadcast` 端点对会话调用方要求管理员身份。
-- 公开的 `status` 端点只暴露聚合数据与在线玩家名，不含密钥。
+- All machine endpoints require a valid signature; when no secret is configured they return `503` instead of letting the request through.
+- A nonce is valid only once (cached for 600 seconds), and timestamps are allowed a ±300 second skew.
+- Binding codes are single-use, expire after 10 minutes, and their character set omits easily confused characters.
+- The `broadcast` endpoint requires admin identity for session callers.
+- The public `status` endpoint exposes only aggregate data and online player names, never the secret.
 
-## 开发
+## Development
 
 ```bash
-# 语法检查（需要本机有 PHP）
+# syntax check (requires PHP on the machine)
 find . -name '*.php' -not -path './vendor/*' -exec php -l {} \;
 ```
 
-本仓库还提供了一个不依赖 PHP 的静态一致性校验脚本：
+This repository also provides a static consistency check script that does not depend on PHP:
 
 ```bash
 node ../tools/verify.mjs

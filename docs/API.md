@@ -4,7 +4,7 @@
 
 Base URL: `https://<forum>`; all endpoints live under the `/api/mc-bridge` prefix.
 
-Authentication is described in [`../protocol/README.md` (currently in Simplified Chinese)](../protocol/README.md). Endpoints marked **HMAC** require
+Authentication is described in [`../protocol/README.md`](../protocol/README.md). Endpoints marked **HMAC** require
 the three request headers `X-MC-Timestamp` / `X-MC-Nonce` / `X-MC-Signature`; endpoints marked **session**
 require a Flarum login cookie.
 
