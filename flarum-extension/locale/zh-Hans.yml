@@ -73,7 +73,7 @@ stalirmc-mc-bridge:
       all_passed: "全部检查通过。"
       next_step: "下一步：启动 Minecraft 服务器，观察心跳是否成功。"
       failed: "有 {count} 项检查未通过。"
-      troubleshoot: "排查方法见 docs/README.md 第 6 节。"
+      troubleshoot: "排查方法见 docs/README.zh-CN.md 第 6 节。"
       mark_ok: "  通过 "
       mark_fail: "  失败 "
       mark_note: "  注意 "

@@ -11,7 +11,7 @@
 
 > ⚠️ **Flarum 2.x 没有 `extensions/` 目录。** 它只从 Composer 的
 > `vendor/composer/installed.json` 发现扩展，所以扩展**必须经由 Composer 安装**。
-> 详见 [`../docs/README.md`](../docs/README.md) 第 1 节（含源码依据与三种方式）。
+> 详见 [`../docs/README.md`](../docs/README.zh-CN.md) 第 1 节（含源码依据与三种方式）。
 
 **方式 A — 后台安装（推荐）**：Extension Manager → 仓库 → 添加 `vcs` 仓库
 `https://github.com/StalirMC/mc-flarum-bridge` → 安装
@@ -38,7 +38,7 @@ php flarum mc-bridge:secret                    # 生成插件要用的共享密�
 php flarum mc-bridge:selftest --url=https://forum.kxkl2024.cn   # 全链路自检
 ```
 
-完整步骤见 [`../docs/README.md`](../docs/README.md)。
+完整步骤见 [`../docs/README.md`](../docs/README.zh-CN.md)。
 
 ## 为什么仓库根目录有 composer.json
 
@@ -78,7 +78,7 @@ src/Console/SelfTestCommand.php php flarum mc-bridge:selftest
 机器接口（HMAC）：`heartbeat`、`events`、`outbox`、`bind/start`、`bind/status`、`broadcast`。
 论坛接口（会话）：`status`（公开）、`link`（POST/DELETE）。
 
-字段与时序见 [`../docs/API.md`](../docs/API.md)。
+字段与时序见 [`../docs/API.md`](../docs/API.zh-CN.md)。
 
 ## 多语言
 

@@ -30,7 +30,7 @@
 >   后台端启动崩溃（2.x 用 `app.registry` 取代了 `app.extensionData`）、
 >   每次启动的无意义警告、**绑定后论坛仍显示「未绑定」（GET 路由漏注册）、
 >   版本号提升后打进 jar 的仍是旧版本**（`expand` 未声明为 task input）——
->   详见 [VERIFICATION.md](docs/VERIFICATION.md) 2.5 / 2.6 / 2.8 / 2.9
+>   详见 [VERIFICATION.md](docs/VERIFICATION.zh-CN.md) 2.5 / 2.6 / 2.8 / 2.9
 >
 > **尚未验证的部分**
 > - **只有 Paper 被真实加载过**：Folia 与 NeoForge 仍只到「编译 + 静态断言」为止，从未在真实服务端启动
@@ -52,7 +52,7 @@
 | `flarum-extension/` | Flarum 扩展：安全 REST API、数据存储、公告推送队列 | PHP 8.1+ / Flarum 2.x |
 | `mc-plugin/` | Minecraft 侧（**两个发行包**）：公告拉取、广播、账号绑定、举报 | Java 17 核心字节码 / Paper 1.21.x · Folia（`plugins/`）；NeoForge 21.1.x + Minecraft 1.21.1（`mods/`） |
 | `protocol/` | 双方共享的线上协议契约与 JSON Schema | Markdown / JSON Schema |
-| `docs/` | [部署指南](docs/README.md)、[API 参考](docs/API.md)、[验证报告](docs/VERIFICATION.md)、[发布流程](docs/RELEASING.md)（维护者） | Markdown |
+| `docs/` | [部署指南](docs/README.zh-CN.md)、[API 参考](docs/API.zh-CN.md)、[验证报告](docs/VERIFICATION.zh-CN.md)、[发布流程](docs/RELEASING.zh-CN.md)（维护者） | Markdown |
 | `tools/` | 静态一致性校验、模拟论坛、协议一致性测试 | Node.js |
 
 ## 功能
@@ -138,7 +138,7 @@ NeoForge   ：复制 neoforge/build/libs/McBridge-neoforge-<版本>.jar 到 serv
 只想要 Paper 插件时可以只跑：gradle :build
 
 
-详见 [`docs/README.md`](docs/README.md)，端点细节见 [`docs/API.md`](docs/API.md)。
+详见 [`docs/README.md`](docs/README.zh-CN.md)，端点细节见 [`docs/API.md`](docs/API.zh-CN.md)。
 
 ## 两个发行包
 
@@ -227,4 +227,4 @@ cd mc-plugin && gradle build                                # Java 编译（Pape
 发版由 tag 驱动：`git tag v0.0.6 && git push origin v0.0.6` 会触发
 [`release.yml`](.github/workflows/release.yml)，先校验 tag 与 `gradle.properties`
 中的版本一致，再构建并把**插件 jar 与模组 jar 两个文件**一起上传到 GitHub Release。
-完整步骤（含 Packagist 同步与改名注意事项）见 [发布流程](docs/RELEASING.md)（维护者）。
+完整步骤（含 Packagist 同步与改名注意事项）见 [发布流程](docs/RELEASING.zh-CN.md)（维护者）。

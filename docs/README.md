@@ -1,27 +1,30 @@
-# 部署指南
+# Deployment Guide
 
-> ⚠️ **本项目仍在施工阶段，可用性尚未验证，请勿直接用于生产环境。**
-> 详见根目录 [README](../README.zh-CN.md) 开头的说明。
+**English** · [简体中文](README.zh-CN.md)
 
-本文档描述从零把 MC ↔ Flarum 互通跑起来的完整步骤。
+> ⚠️ **This project is still under construction; its usability is not verified. Do not use it in a production environment directly.**
+> See the note at the beginning of the root [README](../README.zh-CN.md).
 
-## 0. 前置条件
+This document describes the complete steps to get MC ↔ Flarum interworking running from scratch.
 
-| 组件 | 要求 |
+## 0. Prerequisites
+
+| Component | Requirement |
 |------|------|
-| Flarum | 2.x（PHP 8.1+），已能正常运行 |
-| Minecraft 服务端 | Paper 1.21.x · Folia 1.21.x（同一个插件 jar）；NeoForge 21.1.x for 1.21.1（模组 jar） |
-| Java | 共享核心字节码目标 17；Paper/Folia 与 NeoForge 均需 Java 21 运行 |
-| 网络 | MC 服务端能访问论坛的 `https://<forum>/api/mc-bridge/*` |
+| Flarum | 2.x (PHP 8.1+), already running normally |
+| Minecraft server | Paper 1.21.x · Folia 1.21.x (the same plugin jar); NeoForge 21.1.x for 1.21.1 (mod jar) |
+| Java | Shared core bytecode target 17; both Paper/Folia and NeoForge require Java 21 at runtime |
+| Network | The MC server can reach the forum's `https://<forum>/api/mc-bridge/*` |
 
-> 若论坛在 Cloudflare 等 CDN 之后，请确认没有对 `/api/mc-bridge/*` 开启
-> “Under Attack” 或 WAF 规则拦截，否则插件会收到 403/1010。
+> If the forum is behind a CDN such as Cloudflare, make sure that
+> "Under Attack" mode or WAF rules are not blocking `/api/mc-bridge/*`;
+> otherwise the plugin will receive 403/1010.
 
-## 1. Flarum 侧：安装扩展
+## 1. Flarum side: install the extension
 
-### ⚠️ 先搞清楚：Flarum 2.x 没有 `extensions/` 目录
+### ⚠️ First, be clear about this: Flarum 2.x has no `extensions/` directory
 
-**Flarum 2.x 只从 Composer 的 `vendor/composer/installed.json` 发现扩展**，源码依据：
+**Flarum 2.x only discovers extensions from Composer's `vendor/composer/installed.json`**; the source evidence is:
 
 ```php
 // framework/core/src/Extension/ExtensionManager.php
@@ -33,12 +36,12 @@ if (Arr::get($package, 'type') === 'flarum-extension' && str_contains($name, '/'
 }
 ```
 
-也就是说**没有「把文件夹丢进某个目录就能装」的机制**——扩展必须经由 Composer
-安装，让它出现在 `installed.json` 里。（Flarum 仓库里那个 `extensions/` 目录只是
-官方 monorepo 自己的源码布局，不是运行期约定。）
+In other words, **there is no "drop a folder into some directory and it is installed" mechanism** — an extension
+must be installed through Composer so that it appears in `installed.json`. (That `extensions/` directory in the
+Flarum repository is merely the official monorepo's own source layout, not a runtime convention.)
 
-本仓库是 monorepo（扩展在 `flarum-extension/`、插件在 `mc-plugin/`）。根目录的
-`composer.json` 使用了 Flarum 2.x 的 **`extra.flarum-subextensions`** 机制：
+This repository is a monorepo (the extension is in `flarum-extension/`, the plugin in `mc-plugin/`). The root
+`composer.json` uses Flarum 2.x's **`extra.flarum-subextensions`** mechanism:
 
 ```json
 {
@@ -47,40 +50,42 @@ if (Arr::get($package, 'type') === 'flarum-extension' && str_contains($name, '/'
 }
 ```
 
-`ExtensionManager::subExtensionConfsFromJson()` 会读取这个字段，把子目录里的
-`composer.json` 识别为扩展。因此**整个仓库可以作为单个 Composer 包安装**，
-扩展 ID 是子目录里声明的 `stalirmc-mc-bridge`。
+`ExtensionManager::subExtensionConfsFromJson()` reads this field and recognises the `composer.json` in the
+subdirectory as an extension. Therefore **the whole repository can be installed as a single Composer package**,
+and the extension ID is the `stalirmc-mc-bridge` declared in the subdirectory.
 
-> 注意 autoload 必须写在根 `composer.json` 里：Composer 不会处理子包自己的
-> `autoload`，而 Flarum 也不会替扩展注册命名空间。
+> Note that autoload must be written in the root `composer.json`: Composer does not process a sub-package's own
+> `autoload`, and Flarum will not register a namespace on the extension's behalf.
 
 ---
 
-### 方式 A：后台安装（推荐，不需要 SSH）
+### Option A: install from the admin panel (recommended, no SSH needed)
 
-该扩展**已上架 Packagist**：<https://packagist.org/packages/stalirmc/mc-flarum-bridge>
+The extension **is already published on Packagist**: <https://packagist.org/packages/stalirmc/mc-flarum-bridge>
 
-1. 管理后台 → **Extension Manager** → **安装一个新的扩展程序** → 填：
+1. Admin panel → **Extension Manager** → **Install a new extension** → enter:
    ```
    stalirmc/mc-flarum-bridge
    ```
-   Packagist 是 Composer 的默认源，所以**不需要**再手动添加 `vcs` 仓库。
-2. 装好后到扩展列表**启用**「MC Bridge」
-3. 生成共享密钥（见 1.3）；如果后台没有终端，用方式 B 或在服务器上执行
+   Packagist is Composer's default source, so you do **not** need to add a `vcs` repository manually.
+2. Once installed, go to the extension list and **enable** "MC Bridge"
+3. Generate the shared secret (see 1.3); if the admin panel has no terminal, use Option B or run it on the server
 
-想跟最新开发版而不是稳定版时，填 `stalirmc/mc-flarum-bridge:dev-main`。
+If you want to follow the latest development version rather than the stable release, enter `stalirmc/mc-flarum-bridge:dev-main`.
 
-> 只有在 Packagist 尚未同步到某个提交、或要装尚未发布的版本时，才需要退回 `vcs` 方式：
-> 后台 → 仓库 → 添加仓库（类型 `vcs`，URL `https://github.com/StalirMC/mc-flarum-bridge`）。
+> Only when Packagist has not yet synced a given commit, or when you need to install a not-yet-released version,
+> do you need to fall back to the `vcs` approach:
+> Admin panel → Repositories → Add repository (type `vcs`, URL `https://github.com/StalirMC/mc-flarum-bridge`).
 
-### ⚠️ 从旧包名 `stalir/*` 迁移过来
+### ⚠️ Migrating from the old package name `stalir/*`
 
-包名改成了组织名（Composer 要求全小写，所以是 `stalirmc/*`），**扩展 ID 也随之从
-`stalir-mc-bridge` 变成 `stalirmc-mc-bridge`**。对已装过的论坛，替换一次即可：
+The package name has been changed to the organisation name (Composer requires all lowercase, hence `stalirmc/*`),
+and **the extension ID has likewise changed from `stalir-mc-bridge` to `stalirmc-mc-bridge`**. For a forum where
+it is already installed, replacing it once is enough:
 
 ```bash
 cd /path/to/flarum
-composer remove stalir/mc-flarum-bridge      # 若走方式 C 装的是 stalir/mc-bridge
+composer remove stalir/mc-flarum-bridge      # for an Option C install it is stalir/mc-bridge
 composer require stalirmc/mc-flarum-bridge
 php flarum migrate
 php flarum extension:enable stalirmc-mc-bridge
@@ -88,19 +93,20 @@ php flarum cache:clear
 php flarum assets:publish
 ```
 
-**数据与配置都会保留**，因为表名与设置键都没变：
+**Both data and configuration are preserved**, because the table names and setting keys are unchanged:
 
-| 内容 | 是否保留 | 原因 |
+| Item | Preserved | Reason |
 |------|----------|------|
-| 5 张数据表（服务器/事件/公告/绑定/绑定码） | ✅ 保留 | 迁移里有 `hasTable` 守卫，重跑不会重建也不会报错 |
-| 共享密钥（`mc-bridge.secret`）、语言、公告标签、同步开关 | ✅ 保留 | 设置键与包名无关 |
-| 扩展的启用状态 | ⚠️ 需重新启用 | Flarum 按扩展 ID 记录启用列表，ID 变了就是新扩展 |
+| 5 database tables (server/event/announcement/link/binding code) | ✅ Preserved | The migration has a `hasTable` guard, so re-running it neither recreates them nor errors |
+| Shared secret (`mc-bridge.secret`), language, announcement tag, sync switch | ✅ Preserved | The setting keys are unrelated to the package name |
+| The extension's enabled state | ⚠️ Must be re-enabled | Flarum records the enabled list by extension ID; once the ID changes it is a new extension |
 
-迁移是**必须**的：旧包名从来没有上架 Packagist，而仓库里的 `composer.json` 现在已经改名，
-所以 `stalir/mc-flarum-bridge` 无法再安装。如果 `composer remove` 之后论坛报「扩展不存在」，
-执行一次 `composer update stalirmc/mc-flarum-bridge` 让 Composer 重新解析即可。
+The migration is **mandatory**: the old package name was never published on Packagist, and the repository's
+`composer.json` has now been renamed, so `stalir/mc-flarum-bridge` can no longer be installed. If the forum
+reports 「扩展不存在」 ("extension does not exist") after `composer remove`, run
+`composer update stalirmc/mc-flarum-bridge` once to let Composer resolve it again.
 
-### 方式 B：SSH / Composer
+### Option B: SSH / Composer
 
 ```bash
 cd /path/to/flarum
@@ -108,18 +114,18 @@ cd /path/to/flarum
 composer require stalirmc/mc-flarum-bridge
 
 php flarum migrate
-php flarum extension:enable stalirmc-mc-bridge   # 用 php flarum extension:list 核对确切 ID
+php flarum extension:enable stalirmc-mc-bridge   # use php flarum extension:list to check the exact ID
 php flarum cache:clear
 php flarum assets:publish
 ```
 
-加 `:dev-main` 可以装开发版。**扩展更新后一定要跑 `assets:publish`**（前端 bundle 变了，
-不跑的话浏览器拿到的还是旧脚本，见 1.2.1）。
+Adding `:dev-main` installs the development version. **You must run `assets:publish` after updating the extension**
+(the frontend bundle changed; if you do not run it, the browser still gets the old script — see 1.2.1).
 
-### 方式 C：不经过 GitHub，直接用本地文件装
+### Option C: install directly from local files, without going through GitHub
 
-把 **`flarum-extension/` 整个目录**（不是仓库根目录）上传到服务器，例如
-`<flarum>/packages/mc-bridge/`，然后加一个 **path 仓库**：
+Upload the **entire `flarum-extension/` directory** (not the repository root) to the server, for example to
+`<flarum>/packages/mc-bridge/`, then add a **path repository**:
 
 ```json
 {
@@ -136,216 +142,221 @@ php flarum extension:enable stalirmc-mc-bridge
 php flarum cache:clear
 ```
 
-> 方式 C 指向的是 `flarum-extension/` 本身（它自带的 `composer.json` 已经是
-> `type: flarum-extension`），所以包名是 **`stalirmc/mc-bridge`**，与方式 A/B 的
-> `stalirmc/mc-flarum-bridge` 不同。走这条路**不需要** `flarum-subextensions`。
+> Option C points at `flarum-extension/` itself (its own `composer.json` is already
+> `type: flarum-extension`), so the package name is **`stalirmc/mc-bridge`**, different from
+> `stalirmc/mc-flarum-bridge` in Options A/B. This route does **not** require `flarum-subextensions`.
 
-### 1.2.1 更新到最新代码（前端资源必须重新发布）
+### 1.2.1 Update to the latest code (frontend assets must be republished)
 
-仓库仍在施工阶段，每次拉取新代码后**必须重新发布前端资源**，否则浏览器拿到的还是旧的
-`dist/forum.js`（表现为：代码改了、行为没变）：
+The repository is still under construction, so after pulling new code each time you **must republish the frontend
+assets**, otherwise the browser still gets the old `dist/forum.js` (the symptom being: the code changed but the
+behaviour did not):
 
 ```bash
 cd <flarum>
-composer update stalirmc/mc-flarum-bridge      # 走方式 C 安装的则是 stalirmc/mc-bridge
+composer update stalirmc/mc-flarum-bridge      # for an Option C install it is stalirmc/mc-bridge
 php flarum cache:clear
-php flarum assets:publish                    # 扩展的前端 JS 会复制进 public/assets
+php flarum assets:publish                    # the extension's frontend JS is copied into public/assets
 ```
 
-> 在管理后台点「清除缓存」会顺带执行 `assets:publish`——`ClearCacheController`
-> 内部直接调用 `AssetsPublishCommand`，所以两种做法等价。
-> 另外浏览器可能仍缓存旧脚本，建议 `Ctrl+F5` 强制刷新一次。
+> Clicking "Clear cache" in the admin panel also runs `assets:publish` — `ClearCacheController`
+> calls `AssetsPublishCommand` internally, so the two approaches are equivalent.
+> Also, the browser may still cache the old script; a `Ctrl+F5` hard refresh is recommended.
 
-### 1.3 生成共享密钥
+### 1.3 Generate the shared secret
 
 ```bash
 php flarum mc-bridge:secret
 ```
 
-命令会打印一个 64 位十六进制密钥。**这就是插件要填的 secret**，请妥善保存。
+The command prints a 64-digit hexadecimal secret. **This is the secret the plugin must be given**; keep it safe.
 
-随时可以用下面的命令查看当前密钥：
+At any time you can view the current secret with the following command:
 
 ```bash
 php flarum mc-bridge:secret --show
 ```
 
-### 1.4 可选：限定哪些讨论同步到游戏
+### 1.4 Optional: restrict which discussions are synced to the game
 
-默认所有新讨论都会推送到游戏。若只想同步「公告」类标签，先查出标签 ID：
+By default all new discussions are pushed to the game. If you only want to sync the "announcement" type of tag,
+first look up the tag ID:
 
 ```bash
 php flarum tinker --execute="echo \Flarum\Tags\Tag::pluck('id','name');"
 ```
 
-再用专用命令设置（不需要进 tinker）：
+Then set it with the dedicated command (no need to enter tinker):
 
 ```bash
-php flarum mc-bridge:config --tags=1,3     # 只同步标签 1 和 3
-php flarum mc-bridge:config --tags=        # 清空过滤，恢复同步全部
-php flarum mc-bridge:config --sync-replies=1   # 连回复也推送
-php flarum mc-bridge:config --show         # 查看当前设置
+php flarum mc-bridge:config --tags=1,3     # sync only tags 1 and 3
+php flarum mc-bridge:config --tags=        # clear the filter, resume syncing everything
+php flarum mc-bridge:config --sync-replies=1   # push replies as well
+php flarum mc-bridge:config --show         # view the current settings
 ```
 
-`sync-replies` 为 `1` 时，符合条件讨论的**每条回复**也会推送到游戏；默认 `0`，
-只在开新帖时推送，避免刷屏。
+When `sync-replies` is `1`, **every reply** to a matching discussion is also pushed to the game; the default is
+`0`, pushing only when a new post is created, to avoid flooding.
 
-### 1.5 语言（可选）
+### 1.5 Language (optional)
 
-两边都支持多语言，**默认都是简体中文**，互不影响：
+Both sides support multiple languages, and **both default to Simplified Chinese**; they do not affect each other:
 
 ```bash
-# 论坛侧：控制台命令输出 + 接口错误消息
-php flarum mc-bridge:config --locale=en        # 切换为英文
-php flarum mc-bridge:config --locale=zh-Hans   # 切回中文（默认）
-php flarum mc-bridge:config --show             # 查看当前语言
+# forum side: console command output + API error messages
+php flarum mc-bridge:config --locale=en        # switch to English
+php flarum mc-bridge:config --locale=zh-Hans   # switch back to Chinese (the default)
+php flarum mc-bridge:config --show             # view the current language
 ```
 
-游戏侧改 `plugins/McBridge/config.yml`：
+On the game side, change `plugins/McBridge/config.yml`:
 
 ```yaml
-language: zh_CN     # 或 en
+language: zh_CN     # or en
 ```
 
-然后 `/mcbridge reload`。
+Then `/mcbridge reload`.
 
-**新增语言**：
+**Adding a new language**:
 
-| 位置 | 做法 |
+| Location | How to |
 |------|------|
-| 论坛侧 | 复制 `locale/zh-Hans.yml` 为 `locale/<新语言>.yml` 并翻译，`extend.php` 里的 `Extend\Locales` 会自动注册整个目录 |
-| 游戏侧 | 复制 `lang/zh_CN.yml` 为 `lang/<新语言>.yml` 并翻译，把 `language` 指向它 |
+| Forum side | Copy `locale/zh-Hans.yml` to `locale/<new language>.yml` and translate it; `Extend\Locales` in `extend.php` automatically registers the whole directory |
+| Game side | Copy `lang/zh_CN.yml` to `lang/<new language>.yml`, translate it, and point `language` at it |
 
-两边都会在缺键时**回退到中文**，不会把原始键名显示给玩家。校验脚本会检查各
-语言的键集是否一致。
+Both sides **fall back to Chinese** when a key is missing, and never display the raw key name to players. A
+validation script checks whether the key sets of each language are identical.
 
-> ⚠️ 改语言后论坛侧需要清一次缓存：`php flarum cache:clear`
+> ⚠️ After changing the language, the forum side needs one cache clear: `php flarum cache:clear`
 
-## 2. Minecraft 侧：构建并安装
+## 2. Minecraft side: build and install
 
-> **两个发行包。** Paper 插件 jar 根放 `plugin.yml`（Paper/Folia 读）；NeoForge 模组
-> jar 放 `META-INF/neoforge.mods.toml`（NeoForge 读）。两者由同一份共享核心源码编译，
-> 各自独立、互不依赖。构建时各自的 `verifyJar` 会校验描述符、入口类与随包资源都在，
-> 且共享层不含任何平台类引用。**不再支持 Velocity。**
+> **Two artifacts.** The Paper plugin jar has `plugin.yml` at its root (read by Paper/Folia); the NeoForge mod
+> jar has `META-INF/neoforge.mods.toml` (read by NeoForge). Both are compiled from the same shared core source,
+> each independent and not depending on the other. During the build, each one's `verifyJar` checks that the
+> descriptor, the entry class and the bundled resources are all present, and that the shared layer contains no
+> platform class references. **Velocity is no longer supported.**
 
-### 2.1 构建
+### 2.1 Build
 
-仓库不含 Gradle wrapper 的二进制，用系统 Gradle 8.10+：
+The repository does not include the Gradle wrapper binary; use a system Gradle 8.10+:
 
 ```bash
 cd mc-plugin
-gradle build              # 两个工程都构建
-gradle :build             # 只要 Paper/Folia 插件（跳过耗时的 NeoForge 工具链）
+gradle build              # build both projects
+gradle :build             # only the Paper/Folia plugin (skips the time-consuming NeoForge toolchain)
 ```
 
-需要 **JDK 21**（工具链）；共享核心的字节码目标为 Java 17，Paper 与 NeoForge 模块为 21。
+**JDK 21** is required (toolchain); the shared core's bytecode target is Java 17, while the Paper and NeoForge
+modules are 21.
 
-首次构建 NeoForge 模组时，ModDevGradle 会下载 Minecraft 1.21.1 与 NeoForge 21.1.100，
-并跑一遍 NeoForm（反编译 → 打补丁 → 重编译 5364 个源文件），**约 5-10 分钟**且需要网络；
-之后 Gradle 缓存会复用，增量构建只需十几秒。
+On the first build of the NeoForge mod, ModDevGradle downloads Minecraft 1.21.1 and NeoForge 21.1.100 and runs
+NeoForm once (decompile → patch → recompile 5364 source files), which takes **about 5-10 minutes** and needs
+network access; afterwards the Gradle cache is reused, and an incremental build takes only a dozen seconds or so.
 
-产物：
+Artifacts:
 
 ```
-build/libs/McBridge-<版本>.jar
-neoforge/build/libs/McBridge-neoforge-<版本>.jar
+build/libs/McBridge-<version>.jar
+neoforge/build/libs/McBridge-neoforge-<version>.jar
 ```
 
-如果服务器不是 1.21.1，可覆盖 Paper API 版本：
+If your server is not 1.21.1, you can override the Paper API version:
 
 ```bash
 gradle build -PpaperApiVersion=1.21.4-R0.1-SNAPSHOT
 ```
 
-### 2.2 安装
+### 2.2 Install
 
-| 平台 | 放置位置 | 配置目录 |
+| Platform | Location | Configuration directory |
 |------|----------|----------|
 | Paper / Folia | `<server>/plugins/` | `plugins/McBridge/` |
 | NeoForge | `<server>/mods/` | `config/mc-bridge/` |
 
 ```bash
 # Paper / Folia
-cp build/libs/McBridge-<版本>.jar <server>/plugins/
+cp build/libs/McBridge-<version>.jar <server>/plugins/
 
-# NeoForge（另一个文件）
-cp neoforge/build/libs/McBridge-neoforge-<版本>.jar <server>/mods/
+# NeoForge (a different file)
+cp neoforge/build/libs/McBridge-neoforge-<version>.jar <server>/mods/
 ```
 
-Folia 无需额外步骤：`plugin.yml` 已声明 `folia-supported: true`，插件会自动检测
-regionised 服务端并改用 Folia 的 `AsyncScheduler` / `GlobalRegionScheduler`。
+Folia needs no extra steps: `plugin.yml` already declares `folia-supported: true`, and the plugin automatically
+detects a regionised server and switches to Folia's `AsyncScheduler` / `GlobalRegionScheduler`.
 
-NeoForge 模组声明了 `side = "SERVER"`，**只需装在服务端**，客户端不需要安装。
-它的命令用权限等级代替 Bukkit 权限节点：`/mcbridge news` 所有人可用，
-其余子命令需要 OP（等级 2）。
+The NeoForge mod declares `side = "SERVER"`, so it **only needs to be installed on the server**; the client does
+not need it. Its commands use permission levels instead of Bukkit permission nodes: `/mcbridge news` is
+available to everyone, and the remaining subcommands require OP (level 2).
 
-启动一次服务器生成配置，或直接把仓库里的 `src/main/resources/config.yml`
-复制到 `plugins/McBridge/config.yml`（NeoForge 为 `config/mc-bridge/config.yml`）。
+Start the server once to generate the configuration, or copy the repository's `src/main/resources/config.yml`
+straight to `plugins/McBridge/config.yml` (for NeoForge, `config/mc-bridge/config.yml`).
 
-> **多台后端一起装？** 可以，但请给它们**不同的 `server.key`**（例如 `survival`
-> 与 `creative`），否则它们会在论坛上互相覆盖同一条服务器记录。
+> **Installing on several backends at once?** That works, but give them **different `server.key` values**
+> (for example `survival` and `creative`), otherwise they will overwrite each other's single server record on
+> the forum.
 
-### 2.3 填写配置
+### 2.3 Fill in the configuration
 
 ```yaml
 forum:
-  url: "https://forum.kxkl2024.cn"     # 不要以 / 结尾
+  url: "https://forum.kxkl2024.cn"     # do not end with /
   api-prefix: "/api/mc-bridge"
 
 server:
-  key: "survival"                       # 多服时每台不同
+  key: "survival"                       # different for each server when there are several
   name: "Stalir 生存服"
 
 security:
-  secret: "<第 1.3 步生成的密钥>"
+  secret: "<the secret generated in step 1.3>"
 
 game:
-  # 公告展示形式。可多选，逗号分隔：chat / actionbar / title / bossbar
-  # 例："chat,bossbar" 会同时发聊天行与顶部血条。
+  # announcement display channel. Multiple allowed, comma-separated: chat / actionbar / title / bossbar
+  # e.g. "chat,bossbar" sends both a chat line and a top boss bar.
   announce-display: "chat"
-  title-seconds: 5                      # 大标题停留秒数
-  bossbar-seconds: 10                   # 血条停留秒数
-  prompt-unbound: true                  # 未绑定玩家进服时提示一次怎么绑定
+  title-seconds: 5                      # seconds the title stays
+  bossbar-seconds: 10                   # seconds the boss bar stays
+  prompt-unbound: true                  # prompt an unbound player once on join about how to link
 ```
 
-> 若 Flarum 装在子目录（如 `https://example.com/forum`），把 `url` 写全即可，
-> 签名算法会自动忽略子目录差异。
+> If Flarum is installed in a subdirectory (such as `https://example.com/forum`), just write the full `url`;
+> the signature algorithm automatically ignores subdirectory differences.
 
-### 2.4 生效
+### 2.4 Apply
 
 ```
 /mcbridge reload
 ```
 
-看到 `McBridge enabled on paper as server 'survival' -> ...`（NeoForge 上为
-`on neoforge`）即表示配置已被读取、插件已注册到论坛。`/mcbridge stats` 的第一行会显示
-当前运行平台。
+Seeing `McBridge enabled on paper as server 'survival' -> ...` (on NeoForge it is
+`on neoforge`) means the configuration has been read and the plugin has registered itself with the forum. The
+first line of `/mcbridge stats` shows the current running platform.
 
-## 3. 验证互通
+## 3. Verifying interoperability
 
-**先跑论坛侧自检**，它能一次性覆盖密钥、签名、表结构、查询与路由：
+**Run the forum-side self-test first** — it covers the secret, signatures, table structure, queries and routes in one pass:
 
 ```bash
 php flarum mc-bridge:selftest --url=https://forum.kxkl2024.cn
 ```
 
-全部显示 `OK` 说明论坛侧完全就绪（该命令会发一次真实的带签名回环请求，并在
-结束后删除探针产生的临时服务器记录）。
+If everything shows `OK`, the forum side is fully ready (the command sends one real signed loopback request and deletes the temporary server record created by the probe afterwards).
 
-### 3.1 公告推送
+### 3.1 Announcement push
 
-在论坛发一个新讨论（或在限定标签下发帖），几秒内游戏内应出现：
+Create a new discussion on the forum (or post under the restricted tag); within a few seconds the game should show:
 
 ```
-[论坛] <讨论标题>
-<正文摘要>
+[论坛] <discussion title>
+<body excerpt>
 /d/123
 ```
 
-### 3.1.1 游戏内查公告
+("[Forum] <discussion title>" / "<body excerpt>" / the discussion link)
 
-玩家在游戏内输入 `/mcbridge news`（或 `/mcb news`）可查看论坛最新 5 条公告。
-该命令**不需要管理员权限**，所有玩家均可使用。
+### 3.1.1 Checking announcements in game
+
+Players can type `/mcbridge news` (or `/mcb news`) in game to view the latest 5 announcements from the forum. This command **requires no administrator permission** and is available to all players.
 
 ```
 -------- 论坛公告 -------- (最近 3 条)
@@ -355,28 +366,30 @@ php flarum mc-bridge:selftest --url=https://forum.kxkl2024.cn
 本周六下午 2 点举行建筑大赛，欢迎参加！
 ```
 
-### 3.2 账号绑定
+("-------- Forum announcements -------- (latest 3)" / "Server maintenance notice" / "Tonight at 23:00 there will be routine maintenance, expected to last 30 minutes." / "Weekend event preview" / "A building contest is being held this Saturday at 2 pm — everyone is welcome!")
 
-**玩家侧（正常流程）**
+("-------- Forum announcements -------- (latest 3)" / "Server maintenance notice" / "Routine maintenance tonight at 23:00, expected to last 30 minutes." / "Weekend event preview" / "A building contest will be held this Saturday at 2 p.m. — welcome to join!")
 
-1. 在游戏内执行 `/bind`，聊天栏出现 8 位绑定码（10 分钟内有效）。
-2. 打开论坛 → **右上角点击头像 → 设置** → 往下翻到「Minecraft 账号」区块，
-   把绑定码填进去提交即可。绑定后该区块会显示已绑定的游戏昵称，
-   个人资料页与帖子作者名旁也会出现 MC 徽章。
-3. 再次 `/bind` 会提示已绑定，并显示论坛用户名。
-4. 解除绑定：在同一区块点「解除绑定」。
+### 3.2 Account linking
 
-> 首次进服且未绑定的玩家会被提示一次该流程（`game.prompt-unbound`，默认开启）。
+**Player side (normal flow)**
 
-> **唯一映射**：一个论坛账号只能绑定**一个** Minecraft 账号（`user_id` 唯一）。
-> 多服务器场景下（生存服 + 创造服），该绑定**跨服共享** —— 玩家在任意一台服务器
-> 绑定后，所有服务器都会识别为同一论坛账号。若玩家想在另一台服务器绑定不同的
-> Minecraft 账号，必须先解除当前绑定。
+1. Run `/bind` in game; an 8-character binding code appears in the chat bar (valid for 10 minutes).
+2. Open the forum → **click your avatar in the top-right corner → Settings** → scroll down to the 「Minecraft 账号」 ("Minecraft account") section and submit the binding code there. Once linked, that section shows the linked game nickname, and an MC badge also appears next to the profile page and the post author name.
+3. Running `/bind` again reports that you are already linked and displays the forum username.
+4. To unlink: click 「解除绑定」 ("Unlink") in the same section.
 
-**接口侧（自动化脚本或自建表单）**
+> Players who join for the first time without a linked account are prompted once about this flow (`game.prompt-unbound`, enabled by default).
 
-这是**会话**端点，除 Cookie 外还需带 `X-CSRF-Token`（详见
-[`API.md` 的 CSRF 一节](API.md#csrf-行为重要)）：
+> **Unique mapping**: one forum account can be linked to exactly **one** Minecraft account (`user_id` unique).
+> In a multi-server setup (survival server + creative server) that link is **shared across servers** — once a player
+> links on any one server, every server recognises it as the same forum account. If a player wants to link a different
+> Minecraft account on another server, they must unlink the current one first.
+
+**API side (automation scripts or self-built forms)**
+
+This is a **session** endpoint; besides cookies it also needs `X-CSRF-Token` (see
+[the CSRF section of `API.md`](API.md#csrf-behaviour-important)):
 
 ```bash
 TOKEN=$(curl -s -c jar.txt https://forum.kxkl2024.cn/ -o /dev/null; \
@@ -387,104 +400,110 @@ curl -s -X POST https://forum.kxkl2024.cn/api/mc-bridge/link \
   -d '{"code":"ABCD2345"}'
 ```
 
-解绑同样是接口调用：`DELETE /api/mc-bridge/link`（需要一个已登录的会话）。
+Unlinking is likewise an API call: `DELETE /api/mc-bridge/link` (requires a signed-in session).
 
-> 扩展仍保留一个免构建的绑定页面 `/mc-bridge/link`（登录后直接访问），
-> 适合把链接发给找不到设置页的玩家；正常流程用上面的「头像 → 设置」即可。
+> The extension also keeps a build-free linking page at `/mc-bridge/link` (visit it directly after signing in),
+> handy for sending the link to players who cannot find the settings page; the normal flow is the
+> "avatar → Settings" path above.
 
-### 3.3 游戏内举报
+### 3.3 Reporting in game
 
-玩家在游戏内输入 `/report <玩家名> <原因>` 可举报其他玩家：
+Players can type `/report <player> <reason>` in game to report other players:
 
 ```
 /report Steve 他在出生点恶意破坏
 ```
 
-举报需要 `mcbridge.report` 权限（默认所有玩家都有）。提交成功后玩家会收到确认消息：
+(the reason argument is free text, e.g. "he is deliberately griefing at the spawn point")
+
+Reporting requires the `mcbridge.report` permission (by default all players have it). After a successful submission the player receives a confirmation message:
 
 ```
 已举报玩家 Steve，论坛管理员会尽快处理。
 ```
 
-**管理员在论坛处理，不在数据库里处理。** 一条举报会产生两样东西：
+("Reported player Steve; the forum administrators will handle it as soon as possible.")
 
-1. `mc_reports` 表里的一行记录（状态 `pending`，用于留档）；
-2. **论坛里的一条讨论**，挂上举报标签（**可以挂多个**），标题如 `[举报] Steve（由 Alex 提交）`，
-   正文写明被举报人、举报人、服务器、时间、记录编号与举报原因。
+**Administrators handle reports in the forum, not in the database.** One report produces two things:
 
-所以管理员只要打开举报标签就能看到全部待处理举报，不需要查库。
+1. A row in the `mc_reports` table (status `pending`, kept for the record);
+2. **A discussion in the forum**, carrying the report tag (**multiple tags are allowed**), titled e.g. `[举报] Steve（由 Alex 提交）`
+   ("[Report] Steve (submitted by Alex)"), with a body stating the reported player, the reporter, the server, the time, the record number and the report reason.
 
-标题、标签、发布账号都可以自定义，而且**两侧都能配**：游戏侧 `config.yml` 的值优先，
-留空时用论坛侧设置兜底。
+So administrators only need to open the report tag to see every pending report; no database queries are needed.
 
-**游戏侧**（`plugins/McBridge/config.yml`，改完 `/mcbridge reload`）：
+The title, the tags and the posting account can all be customised, and **both sides can configure them**: values from the game side `config.yml` take priority, and when left empty the forum-side settings are used as fallback.
+
+**Game side** (`plugins/McBridge/config.yml`, run `/mcbridge reload` after changes):
 
 ```yaml
 report:
-  # {target} {reporter} {reason} {server} 由插件填充；%...% 交给 PlaceholderAPI
-  title-format: "[举报] {target}（由 {reporter} 提交）"
-  # 逗号分隔，每项是 slug 或标签 ID
+  # {target} {reporter} {reason} {server} are filled in by the plugin; %...% is left to PlaceholderAPI
+  title-format: "[举报] {target}（由 {reporter} 提交）"   # "[Report] {target} (submitted by {reporter})"
+  # Comma-separated; each item is a slug or a tag ID
   tags: "reports,pending"
-  actor: ""            # 用户名或用户 ID
-  # 附带被举报玩家本人最近 N 条公开聊天（0 = 关闭，默认 10）
+  actor: ""            # Username or user ID
+  # Attach the reported player's own most recent N public chat messages (0 = off, default 10)
   chat-context-lines: 10
 ```
 
-> **关于聊天上下文**：只采集**公开聊天**，私聊（`/msg`）与命令（`/...`）从不进入缓冲区；
-> 缓冲区每名玩家最多留 `report.chat-context-lines` 条、最多跟踪 500 名玩家，
-> 且这份记录**只在被举报时**随举报发给论坛，绝不会被广播回游戏。
-> 论坛端把它渲染成讨论正文里的一段代码块，只有能看到举报标签的管理员读得到。
+> **About the chat context**: only **public chat** is collected; private messages (`/msg`) and commands (`/...`) never enter the buffer;
+> the buffer keeps at most `report.chat-context-lines` entries per player and tracks at most 500 players,
+> and this record is sent to the forum **only when the player is reported** — it is never broadcast back into the game.
+> The forum side renders it as a code block in the discussion body, readable only by administrators who can see the report tag.
 >
-> 采集用的是 Paper 的 `AsyncChatEvent`（LOWEST 优先级，**不跳过被取消的事件**）与
-> NeoForge 的 `ServerChatEvent`。不跳过取消是有意的：很多聊天格式插件会取消原事件、
-> 再自己广播一份，只记录「未被取消」的事件在那种服上会一条都记不到。
+> Collection uses Paper's `AsyncChatEvent` (LOWEST priority, **does not skip cancelled events**) and
+> NeoForge's `ServerChatEvent`. Not skipping cancellations is intentional: many chat-format plugins cancel the original
+> event and then broadcast their own copy, so recording only "non-cancelled" events would record nothing at all on such servers.
 >
-> **看不到上下文时怎么排查** —— 三种情况现在各有明确信号：
+> **How to diagnose a missing chat context** — the three situations now each have a clear signal:
 >
-> | 现象 | 含义 |
+> | Symptom | Meaning |
 > |------|------|
-> | 正文写着「未附带聊天记录：游戏服务器上的开关是开着的……」 | 开关开着，但该玩家在被举报前确实没在公开频道说过话 |
-> | 正文里**完全没有**这一节 | 开关是关的（`chat-context-lines: 0`），或游戏侧插件还是旧版本 |
-> | `/mcbridge stats` 的「聊天缓冲」显示 `0 名玩家 / 0 条` | 采集根本没工作（旧版插件，或该服还没人说过话） |
-> | 启动日志里的 `McBridge 已启用（平台 … ，版本 …）` | 直接确认服务端实际加载的是哪个版本 |
-> | 每次举报在服务端日志里输出一行「已附带 N 条聊天上下文」或未附带的原因 | 这一次到底带了什么，日志里就有 |
+> | The body says 「未附带聊天记录：游戏服务器上的开关是开着的……」 ("no chat transcript attached: the switch on the game server is on…") | The switch is on, but the player genuinely had not spoken in a public channel before being reported |
+> | That section is **completely absent** from the body | The switch is off (`chat-context-lines: 0`), or the game-side plugin is still an old version |
+> | `/mcbridge stats` shows `0 名玩家 / 0 条` ("0 players / 0 entries") for 「聊天缓冲」 ("chat buffer") | Collection is not working at all (old plugin version, or nobody on that server has spoken yet) |
+> | `McBridge 已启用（平台 … ，版本 …）` ("McBridge enabled (platform …, version …)") in the startup log | Directly confirms which version the server actually loaded |
+> | Each report writes one line to the server log: 「已附带 N 条聊天上下文」 ("attached N chat context entries") or the reason it was not attached | The log tells you exactly what was included that time |
 
-> **PlaceholderAPI**：装了 PlaceholderAPI 与对应扩展时，`title-format` 里的 `%...%`
-> 会以**举报人**的身份展开（如 `%player_name%`）；没装则原样保留。
-> 标题是在**游戏内**渲染好再随举报发给论坛的 —— 论坛端拿不到游戏占位符。
-> `/report` 在两个发行包上都存在：Paper/Folia 用 Bukkit 权限节点，NeoForge 用 OP 等级。
+> **PlaceholderAPI**: when PlaceholderAPI and the corresponding expansion are installed, `%...%` in `title-format`
+> is expanded **as the reporter** (e.g. `%player_name%`); when not installed it is kept as-is.
+> The title is rendered **in game** and then sent to the forum with the report — the forum side cannot access game placeholders.
+> `/report` exists on both artifacts: Paper/Folia uses Bukkit permission nodes, NeoForge uses OP levels.
 
-**论坛侧**（`php flarum mc-bridge:config ...`）：
+**Forum side** (`php flarum mc-bridge:config ...`):
 
-| 设置 | 默认行为 | 修改方式 |
+| Setting | Default behaviour | How to change |
 |------|---------|---------|
-| 举报标签 | 先读设置；否则按 slug `reports` / 名称 `举报` 查找；装了 `flarum/tags` 但一个都没有时**自动创建一个次级标签** | `--report-tags=4,14` |
-| 发布账号 | **最早的管理员**（普通成员未必有在举报标签下发帖的权限；用举报人自己的账号还会把举报人身份公开） | `--report-actor=3` |
-| 标题模板 | `[举报] {target}（由 {reporter} 提交）`，仅在游戏侧没有发来标题时使用 | `--report-title="[举报] {target}"` |
-| 恢复自动 | 传空值即可回到自动识别 | `--report-tags= --report-actor= --report-title=` |
+| Report tags | Reads the setting first; otherwise looks up by slug `reports` / name `举报` ("report"); when `flarum/tags` is installed but no such tag exists, **automatically creates a secondary tag** | `--report-tags=4,14` |
+| Posting account | The **earliest administrator** (ordinary members may not have permission to post under the report tag; using the reporter's own account would also make the reporter's identity public) | `--report-actor=3` |
+| Title template | `[举报] {target}（由 {reporter} 提交）` ("[Report] {target} (submitted by {reporter})"), used only when the game side has not sent a title | `--report-title="[举报] {target}"` |
+| Restore automatic | Pass empty values to return to automatic detection | `--report-tags= --report-actor= --report-title=` |
 
-首次举报时解析到的账号与标签会**写回设置**，因此 `php flarum mc-bridge:config --show`
-显示的就是真实生效值 —— 这一步也是必需的：公告同步正是靠它识别举报讨论（见下）。
+The account and tags resolved on the first report are **written back to the settings**, so `php flarum mc-bridge:config --show`
+displays the values actually in effect — this step is also necessary: announcement sync relies on it to identify report
+discussions (see below).
 
-> **多标签的注意点**：`flarum/tags` 限制一条讨论能挂多少个主标签 / 次标签
-> （后台 → 标签 → 设置）。超出限制时创建会失败，失败原因写进 Flarum 日志；
-> 要么少挂一个，要么给发布账号 `bypassTagCounts` 权限。
+> **A note on multiple tags**: `flarum/tags` limits how many primary / secondary tags a discussion can carry
+> (admin panel → Tags → Settings). Creation fails when the limit is exceeded, and the failure reason is written to the Flarum log;
+> either attach one fewer tag or give the posting account the `bypassTagCounts` permission.
 
-> **举报不会被广播进游戏。** 举报讨论含有举报人身份，因此插件在同步公告时会跳过
-> 带**任一**举报标签的讨论，以及由举报发布账号发起的讨论 —— 这两条是独立的兜底，任一条生效即可。
+> **Reports are never broadcast into the game.** Report discussions contain the reporter's identity, so when syncing
+> announcements the plugin skips discussions carrying **any** report tag, as well as discussions started by the report
+> posting account — these two are independent fallbacks, and either one is enough.
 >
-> 讨论创建是**尽力而为**：举报已经入库，论坛侧若出错（标签超限、没人有权限发帖等），
-> 玩家的 `/report` 仍然返回成功，`discussion_id` 为 `null`。
+> Discussion creation is **best-effort**: the report is already stored, and if the forum side errors out (tag limit
+> exceeded, nobody has permission to post, etc.), the player's `/report` still returns success with `discussion_id` as `null`.
 
-### 3.4 举报进度与处理回执
+### 3.4 Report progress and report outcomes
 
-玩家可以随时查看自己提交过的举报：
+Players can check the reports they have submitted at any time:
 
 ```
 /report status
 ```
 
-输出形如：
+The output looks like:
 
 ```
 -------- 我的举报 -------- (最近 3 条)
@@ -493,43 +512,52 @@ report:
 #39 → Steve · 已驳回 · 2026-09-23 09:02
 ```
 
-接口按**举报人 UUID + 服务器**过滤，玩家只能读到自己提交的举报，看不到别人举报过谁。
+("-------- My reports -------- (latest 3)" / resolved / pending / rejected)
 
-**管理员怎么标记处理结果**，两种方式任选：
+("-------- My reports -------- (latest 3)" / "#42 → Steve · resolved · 2026-09-25 13:01" / "#41 → Herobrine · pending · 2026-09-24 20:15" / "#39 → Steve · rejected · 2026-09-23 09:02")
 
-| 方式 | 操作 | 适用 |
+The API filters by **reporter UUID + server**, so players can only read the reports they submitted themselves and cannot see whom others have reported.
+
+**How administrators mark the outcome** — either of two ways:
+
+| Method | Action | When to use |
 |------|------|------|
-| 改标签（自动） | 把举报讨论移进「已处理」/「已驳回」标签 | 日常处理，贴合在论坛界面里的自然操作 |
-| 控制台命令 | `php flarum mc-bridge:report 42 --status=resolved` | 批量或脚本化；`--list` 列出最近举报，`--note="..."` 带一句备注，`--silent` 只改状态不通知 |
+| Changing tags (automatic) | Move the report discussion into the 「已处理」/「已驳回」 ("resolved" / "rejected") tags | Day-to-day handling; matches the natural action inside the forum UI |
+| Console command | `php flarum mc-bridge:report 42 --status=resolved` | Batch or scripted use; `--list` lists recent reports, `--note="..."` adds a note, `--silent` only changes the status without notifying |
 
-自动那一路需要先告诉扩展哪两个标签代表这两个结果（**默认关闭**，因为标签名与 ID 因论坛而异）：
+The automatic path requires telling the extension which two tags represent these two outcomes (**disabled by default**, because tag names and IDs differ per forum):
 
 ```bash
-php flarum mc-bridge:report --list                              # 先看有哪些举报
+php flarum mc-bridge:report --list                              # First see which reports exist
 php flarum mc-bridge:config --report-resolved-tags=15 --report-rejected-tags=16
-php flarum mc-bridge:config --show                              # 核对
+php flarum mc-bridge:config --show                              # Verify
 ```
 
-两种方式都会让**举报人在游戏内收到通知**：
+Both methods make **the reporter receive an in-game notification**:
 
 ```
 [MCBridge] 你提交的举报已被处理：Steve
            管理员备注：已警告该玩家
 ```
 
-实现上两者共用同一个 `Service\ReportOutcome`，所以**重复打标签或重复执行命令只会通知一次**
-（状态没有变化就不发消息），把举报重新打开回 `pending` 也不会通知。
-通知走 `mc_outbox` 定向投递：`target_uuid` 是举报人，且只投给提交这条举报的那台服务器。
+("[MCBridge] Your report has been handled: Steve" / "Administrator note: the player has been warned")
 
-> 标签自动那一路监听的是 `Flarum\Tags\Event\DiscussionWasTagged`。该事件由 JSON:API
-> 管线在**保存之后**派发，所以监听器读到的是**新**标签 —— 框架自己的
-> `CreatePostWhenTagsAreChanged` 依赖的是同一套时序。
+("[MCBridge] The report you submitted has been handled: Steve" / "Administrator note: the player has been warned")
 
-## 4. 从 Flarum 推送到游戏
+Internally both share the same `Service\ReportOutcome`, so **tagging repeatedly or running the command repeatedly notifies only
+once** (no message is sent when the status has not changed), and reopening a report back to `pending` does not notify either.
+Notifications use targeted delivery via `mc_outbox`: `target_uuid` is the reporter, and delivery goes only to the server that
+submitted this report.
 
-### 4.1 广播
+> The automatic tag path listens to `Flarum\Tags\Event\DiscussionWasTagged`. That event is dispatched by the JSON:API
+> pipeline **after saving**, so the listener reads the **new** tags — the framework's own
+> `CreatePostWhenTagsAreChanged` relies on the same timing.
 
-在后台用一个已登录且为管理员的会话（会话端点需带 `X-CSRF-Token`）：
+## 4. Pushing from Flarum to the game
+
+### 4.1 Broadcast
+
+In the admin panel, use a signed-in session that is an administrator (session endpoints require `X-CSRF-Token`):
 
 ```bash
 TOKEN=$(curl -s -c jar.txt https://forum.kxkl2024.cn/ -o /dev/null; \
@@ -540,32 +568,32 @@ curl -s -X POST https://forum.kxkl2024.cn/api/mc-bridge/broadcast \
   -d '{"title":"维护通知","body":"今晚 23:00 重启","type":"broadcast"}'
 ```
 
-也可以改用带签名的机器调用（不需要 Cookie / CSRF），签名方式见
-[`../protocol/README.md`](../protocol/README.md) 第 5 节。
+Alternatively you can use a signed machine call (no cookies / CSRF needed); for the signing method see
+section 5 of [`../protocol/README.md` (currently in Simplified Chinese)](../protocol/README.md).
 
-游戏在下一次 outbox 轮询（默认 20 秒）后全员显示。
+The game shows the message to everyone after the next outbox poll (20 seconds by default).
 
-## 5. 多服务器
+## 5. Multi-server
 
-每台服务器用不同的 `server.key`（同一个 secret 即可）。消息的
-`server_key` 为 `null` 时投递给所有服务器；指定 `server_key` 时只投递给那台。
+Each server uses a different `server.key` (the same secret is fine). When a message's
+`server_key` is `null` it is delivered to all servers; when `server_key` is specified, only to that one.
 
-## 6. 故障排查
+## 6. Troubleshooting
 
-| 现象 | 排查方向 |
+| Symptom | Diagnostic direction |
 |------|---------|
-| `composer require` 报 *is fixed to … (lock file version) by a partial update but that version is rejected by your minimum-stability* | 与扩展无关：论坛 lock 里锁着 `fof/*`、`ianm/*` 等 **beta 版本**，而 `minimum-stability` 不允许，于是**任何**新包的部分更新都会被拒。见下方专条 |
-| `503 The MC Bridge secret is not configured` | 论坛侧还没执行 `mc-bridge:secret` |
-| `401 Signature verification failed` | 两端 secret 不一致，或 `api-prefix` 被改过 |
-| `401 Request timestamp is outside the allowed window` | 服务器时间不同步，配置 NTP |
-| `401 Duplicate nonce detected` | 通常意味着请求被重放或代理重复发送 |
-| `403` + Cloudflare 页面 | 关闭该路径的 WAF/挑战 |
-| 游戏内无公告 | 用 `/mcbridge outbox` 看队列；确认 `announcement_tag_ids` 包含该标签 |
-| 游戏内偶尔提示「论坛没有及时回应，举报**可能**已经提交」 | 客户端超时但服务端很可能已处理完。插件已在同一个 `report_uid` 下重试过一次，重复提交也不会产生第二条记录，所以按提示**不要再举报一次**即可。频繁出现时查论坛的 PHP-FPM 是否被占满 / CDN 是否在拖慢 `/api/mc-bridge/*` |
+| `composer require` reports *is fixed to … (lock file version) by a partial update but that version is rejected by your minimum-stability* | Unrelated to the extension: the forum lock file pins **beta versions** such as `fof/*`, `ianm/*`, and `minimum-stability` does not allow them, so a partial update of **any** new package is rejected. See the dedicated section below |
+| `503 The MC Bridge secret is not configured` | The forum side has not run `mc-bridge:secret` yet |
+| `401 Signature verification failed` | The secrets on the two ends differ, or `api-prefix` has been changed |
+| `401 Request timestamp is outside the allowed window` | The server clock is out of sync; configure NTP |
+| `401 Duplicate nonce detected` | Usually means the request was replayed or sent twice by a proxy |
+| `403` + Cloudflare page | Disable the WAF/challenge for that path |
+| No announcements in game | Use `/mcbridge outbox` to inspect the queue; confirm that `announcement_tag_ids` includes that tag |
+| The game occasionally shows 「论坛没有及时回应，举报**可能**已经提交」 ("the forum did not respond in time; the report **may** have been submitted") | The client timed out but the server has most likely finished processing. The plugin has already retried once under the same `report_uid`, and a duplicate submission does not create a second record, so just follow the prompt and **do not report again**. If it happens frequently, check whether the forum's PHP-FPM is saturated / whether a CDN is slowing down `/api/mc-bridge/*` |
 
-### 6.1 `composer update` 被 minimum-stability 拒绝
+### 6.1 `composer update` rejected by minimum-stability
 
-完整报错形如：
+The full error looks like:
 
 ```
 Package x/y is fixed to 1.2.3-beta.1 (lock file version) by a partial update
@@ -574,19 +602,19 @@ Make sure you list it as an argument for the update command. Use the option
 --with-all-dependencies (-W) ...
 ```
 
-**与 MC Bridge 无关**：论坛的锁文件里锁着 `fof/*`、`ianm/*` 等 **beta 版本**，
-而根 `composer.json` 的 `minimum-stability` 是默认的 `stable`，于是任何「部分更新」
-在重新解析依赖时都会被这些已锁定的 beta 包卡住。
+**Unrelated to MC Bridge**: the forum lock file pins **beta versions** such as `fof/*`, `ianm/*`,
+while the `minimum-stability` of the root `composer.json` is the default `stable`, so any "partial update"
+gets stuck on these pinned beta packages when dependencies are re-resolved.
 
-按报错提示照做即可 —— **把要更新的包名写进命令**，并加 `-W`：
+Just do what the error message says — **put the name of the package you want to update into the command** and add `-W`:
 
 ```bash
 composer update stalirmc/mc-flarum-bridge -W
 ```
 
-`-W`（`--with-all-dependencies`）允许 Composer 顺带升降级那些被锁定的依赖，这正是它缺的能力。
+`-W` (`--with-all-dependencies`) lets Composer upgrade or downgrade those pinned dependencies along the way, which is exactly the capability it was missing.
 
-仍然不行时，临时放宽稳定性、更新、再改回来：
+If it still does not work, temporarily relax stability, update, then change it back:
 
 ```bash
 composer config minimum-stability beta
@@ -596,6 +624,5 @@ composer config minimum-stability stable
 php flarum cache:clear
 ```
 
-> 报错里点名的包不一定是 MC Bridge：被拒的是**锁文件里那个 beta 包**。
-> 只要按提示把**你真正要更新的包**列为参数并加 `-W` 即可。
-
+> The package named in the error is not necessarily MC Bridge: what is rejected is **that beta package in the lock file**.
+> Just list **the package you actually want to update** as an argument and add `-W`, as the message suggests.

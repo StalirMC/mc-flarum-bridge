@@ -1,95 +1,112 @@
-# 发布流程（维护者）
+# Release Process (maintainers)
 
-这份文档是给**发布者**看的。安装者在 [`README.md`](README.md)（部署指南）里只需要
-`composer require stalirmc/mc-flarum-bridge`，不需要知道 Packagist 是怎么同步的。
+**English** · [简体中文](RELEASING.zh-CN.md)
 
-## 1. 一次发版的完整步骤
+This document is for **release managers**. From [`README.md`](README.md) (the deployment guide),
+installers only need `composer require stalirmc/mc-flarum-bridge`; they do not need to know how
+Packagist syncs.
+
+## 1. Complete steps for a single release
 
 ```bash
-# 1) 改版本号（两处必须一致，verify.mjs 会校验）
+# 1) Bump the version number (the two places must agree; verify.mjs checks this)
 #    mc-plugin/gradle.properties      version=X.Y.Z
 #    mc-plugin/src/main/java/cn/stalir/mcbridge/Version.java   VERSION = "X.Y.Z"
 
-# 2) 本地校验（两个工程编译 + 77 项构建自测 + verifyJar + 384 项静态检查 + 46 项协议测试）
+# 2) Local verification (both projects compile + 77 in-JVM self-test checks + verifyJar + 384 static consistency checks + 46 protocol conformance tests)
 cd mc-plugin && gradle build && cd ..
 node tools/verify.mjs
 node tools/protocol-test.mjs
 
-# 3) 提交并打 tag —— tag 必须等于 v + gradle.properties 里的版本
+# 3) Commit and tag — the tag must equal v plus the version in gradle.properties
 git add -A && git commit -m "chore: release X.Y.Z"
 git tag -a vX.Y.Z -m "McBridge X.Y.Z"
 git push origin main && git push origin vX.Y.Z
 ```
 
-推 tag 会触发 `.github/workflows/release.yml`，它会：
+Pushing the tag triggers `.github/workflows/release.yml`, which will:
 
-1. 校验 tag 与 `gradle.properties` 的版本一致（不一致直接失败，不会发错版本）
-2. 在 JDK 21 下 `gradle build`（含两个工程各自 `verifyJar` 的内容断言：插件 jar 与模组 jar）
-3. 把 `McBridge-X.Y.Z.jar` 作为 GitHub Release 附件上传
+1. Verify that the tag matches the version in `gradle.properties` (a mismatch fails immediately,
+   so the wrong version is never released)
+2. Run `gradle build` under JDK 21 (including the content assertions of `verifyJar` for each of the
+   two projects: the plugin jar and the mod jar)
+3. Upload `McBridge-X.Y.Z.jar` as a GitHub Release asset
 
-CI（`.github/workflows/ci.yml`）同时会在 `main` 上跑静态检查、协议测试与 PHP lint。
+CI (`.github/workflows/ci.yml`) also runs the static consistency checks, the protocol conformance
+tests and PHP lint on `main`.
 
-## 2. 版本号的三个来源
+## 2. The three sources of the version number
 
-| 位置 | 谁在用 |
+| Location | Who uses it |
 |------|--------|
-| `mc-plugin/gradle.properties` 的 `version` | Gradle 注入 `plugin.yml`、决定 jar 名 |
-| `Version.java` 的 `VERSION` | HTTP User-Agent（编译期常量；`plugin.yml` 与模组描述符的版本则由 Gradle 注入） |
-| git tag `vX.Y.Z` | 触发发版、决定 Release 标题 |
-| `flarum-extension/composer.json` 的 `version` | **Flarum 管理页显示的版本号**（见下方说明） |
+| `version` in `mc-plugin/gradle.properties` | Gradle injects it into `plugin.yml` and it determines the jar name |
+| `VERSION` in `Version.java` | HTTP User-Agent (a compile-time constant; the versions in `plugin.yml` and in the mod descriptor are injected by Gradle) |
+| the git tag `vX.Y.Z` | triggers the release and determines the Release title |
+| `version` in `flarum-extension/composer.json` | **the version number shown on the Flarum admin page** (see the note below) |
 
-`tools/verify.mjs` 第 17 节校验这几处一致，`release.yml` 校验它们与 tag 一致。
+Section 17 of `tools/verify.mjs` checks that these places agree, and `release.yml` checks that they
+agree with the tag.
 
-> **为什么子包也要写 `version`**：Flarum 对 `flarum-subextensions` 读的是**子扩展自己的**
-> `composer.json`（`ExtensionManager::extensionFromJson` →
-> `Arr::get($package, 'version', '0.0')`）。这个字段缺失时管理页会显示一个写死的 **`0.0`**，
-> 与真实版本无关。这个文件不会单独发到 Packagist，所以在这里写 `version` 没有副作用，
-> 但**升版本时必须一起改**（verify.mjs 会拦住不一致）。
+> **Why the sub-package also needs a `version`**: for `flarum-subextensions`, Flarum reads the
+> **sub-extension's own** `composer.json` (`ExtensionManager::extensionFromJson` →
+> `Arr::get($package, 'version', '0.0')`). When this field is missing, the admin page shows a
+> hard-coded **`0.0`** that has nothing to do with the real version. This file is not published to
+> Packagist on its own, so writing `version` here has no side effects, but **it must be changed
+> together when the version is bumped** (verify.mjs blocks a mismatch).
 >
-> 同一个文件的 `authors[].homepage` 决定管理页里作者名的链接：它的取值顺序是
-> `homepage` → `email` → **空串**，空串会被浏览器解析成当前页面，于是点「StalirMC」只会
-> 回到 `/admin`。所以每个 author 都要有 `homepage` 或 `email`（verify.mjs 也会校验）。
+> `authors[].homepage` in the same file determines the link on the author name in the admin page:
+> the order in which it takes values is `homepage` → `email` → **empty string**, and an empty
+> string is resolved by the browser to the current page, so clicking "StalirMC" only returns to
+> `/admin`. Every author therefore needs a `homepage` or an `email` (verify.mjs checks this too).
 
-> 注意：`processPaperResources` 的 `expand(version: …)` 已声明为 task input，否则改了版本号
-> Gradle 仍会判定该任务 UP-TO-DATE，把旧版本号打进 jar（0.0.2 发版时踩过）。
+> Note: `expand(version: …)` of `processPaperResources` is already declared as a task input;
+> otherwise Gradle still judges the task UP-TO-DATE after a version bump and bakes the old version
+> number into the jar (this bit us during the 0.0.2 release).
 
 ## 3. Packagist
 
-包地址：<https://packagist.org/packages/stalirmc/mc-flarum-bridge>
+Package URL: <https://packagist.org/packages/stalirmc/mc-flarum-bridge>
 
-**新 tag 推上去后，Packagist 需要被触发一次才会抓取。** 实测（见
-[`VERIFICATION.md`](VERIFICATION.md) 2.13）：仓库没有配置 webhook，推完 commit 几分钟后
-Packagist 仍停在旧提交、抓取时间没变，所以**默认不会自动同步**。
+**After a new tag is pushed, Packagist has to be triggered once before it fetches.** Measured (see
+[`VERIFICATION.md`](VERIFICATION.md) 2.13): the repository has no webhook configured, and several
+minutes after the commit was pushed Packagist was still on the old commit with an unchanged fetch
+time, so **by default it does not sync automatically**.
 
-两种做法，任选其一：
+Two approaches, pick either one:
 
-- **手动**：去上面的页面点一次 **Update**（最省事，改完就能 `composer require` 到新版本）
-- **自动**：在 Packagist 页面按它给出的 URL，到 GitHub 仓库 → Settings → Webhooks 配一个 webhook
+- **Manual**: go to the page above and click **Update** once (the least effort; once that is done
+  you can `composer require` the new version)
+- **Automatic**: use the URL Packagist gives you on its page and configure a webhook in the GitHub
+  repository under Settings → Webhooks
 
-> 曾在 `release.yml` 里加过一步「发布后调 Packagist update API」（读两个 secret 触发），
-> **已按维护者要求移除**：发版流程保持简单，同步交给 Packagist 页面那一次点击。
-> 想省这一步就在 Packagist 侧配 webhook，不需要再改本仓库。
+> A step "call the Packagist update API after publishing" (triggered by reading two secrets) was
+> once added to `release.yml` and **has been removed at the maintainers' request**: the release
+> process stays simple, and syncing is left to that one click on the Packagist page. If you want to
+> save this step, configure a webhook on the Packagist side; this repository does not need to
+> change again.
 
-## 4. 包名与扩展 ID（改名要三思）
+## 4. Package name and extension ID (think twice before renaming)
 
-Flarum 的**扩展 ID 由子包名推导**：`stalirmc/mc-bridge` → `stalirmc-mc-bridge`。它出现在
-翻译域、`locale/*.yml` 根键、前端 initializer 与全部翻译键里，改包名必须一起改。
+Flarum **derives the extension ID from the sub-package name**: `stalirmc/mc-bridge` →
+`stalirmc-mc-bridge`. It appears in the translation domain, in the root key of `locale/*.yml`, in
+the front-end initializer and in all translation keys, so a package rename must change them
+together.
 
-改名的代价（0.0.6 做过一次）：
+The cost of a rename (done once in 0.0.6):
 
-| 影响 | 说明 |
+| Impact | Explanation |
 |------|------|
-| 已装论坛必须重装 | `composer remove <旧包>` → `composer require <新包>` → `php flarum extension:enable <新 ID>` |
-| 扩展启用状态丢失 | Flarum 按扩展 ID 记录启用列表 |
-| 数据与设置**保留** | 表名与设置键都与包名无关；迁移里有 `hasTable` 守卫，重跑安全 |
-| 旧包名无法再安装 | Packagist 上只有新名，VCS 读的是仓库当前 `composer.json` |
+| Forums that already have it installed must reinstall | `composer remove <old package>` → `composer require <new package>` → `php flarum extension:enable <new ID>` |
+| The extension's enabled state is lost | Flarum records the enabled list by extension ID |
+| Data and settings are **preserved** | Table names and setting keys have nothing to do with the package name; the migration has a `hasTable` guard, so re-running is safe |
+| The old package name can no longer be installed | Only the new name exists on Packagist, and VCS reads the repository's current `composer.json` |
 
-## 5. 发布前的检查清单
+## 5. Pre-release checklist
 
-- [ ] 扩展前端有改动 → 提醒安装者（及自己的测试站）跑 `php flarum assets:publish`，否则浏览器还是旧脚本
-- [ ] 改过 `flarum-extension/` 的 PHP → CI 的 PHP lint 通过
-- [ ] 改过 `mc-plugin/` 的 Java → `verifyJar` 通过（两份描述符、两个入口类、共享层零平台引用）
-- [ ] 新加/改了 Flarum API 调用 → **对照部署的那个 release** 核对，而不是本地 framework 副本
-      （0.0.3 用了一个 rc.8 不存在的 `isRegistered()`，把整个论坛打成 500，见 VERIFICATION.md 2.11）
-- [ ] 新加/改了前端读的字段或翻译键 → `verify.mjs` 第 18 节会比对 PHP 声明与 locale
-- [ ] 新加/改了前端调用的接口 → `verify.mjs` 会比对 `extend.php` 里注册的方法+路径
+- [ ] The extension front end changed → remind installers (and your own test site) to run `php flarum assets:publish`, otherwise browsers still load the old scripts
+- [ ] PHP under `flarum-extension/` changed → CI's PHP lint passes
+- [ ] Java under `mc-plugin/` changed → `verifyJar` passes (two descriptors, two entry-point classes, zero platform references in the shared layer)
+- [ ] A Flarum API call was added or changed → verify against **the release that is deployed**, not against a local framework copy
+      (0.0.3 used an `isRegistered()` that does not exist in rc.8 and turned the whole forum into a 500, see VERIFICATION.md 2.11)
+- [ ] A field or translation key read by the front end was added or changed → section 18 of `verify.mjs` compares the PHP declarations with the locale
+- [ ] An endpoint called by the front end was added or changed → `verify.mjs` compares the methods + paths registered in `extend.php`
