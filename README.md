@@ -24,7 +24,7 @@ An open-source bridge that connects a Minecraft server and a [Flarum](https://fl
 > - Fixed one by one along the way: the CSRF exemption (`Extend\Csrf`), the HMAC signing chain, request-body reading, mass assignment, a forum-side boot crash (the settings page is a lazily loaded chunk and has to be extended by module path), an admin-side boot crash (2.x replaced `app.extensionData` with `app.registry`), a pointless warning on every boot, **"the forum still shows 'not linked' after linking"** (a missing GET route), and **"the jar still shipped the old version after a version bump"** (`expand` was not declared as a task input) — see [VERIFICATION.md](docs/VERIFICATION.md) sections 2.5 / 2.6 / 2.8 / 2.9
 >
 > **What has not been verified**
-> - **Only Paper has actually been loaded**: Folia and NeoForge remain at "compiles + static assertions" and have never started on a real server
+> - **NeoForge has still never started on a real server**: Paper and Folia both load and enable on real servers - a local run on Paper 1.21.1 and Folia 1.21.8, now repeated automatically by the CI smoke job on every push - while the NeoForge mod still only reaches "compiles + static assertions"
 > - **Announcement push and broadcast are not verified end to end** (the plugin enables, but no data has been observed actually arriving on the forum); account linking was invisible before because of defect 2 and needs re-testing after the 0.0.2 fix
 > - The front-end settings block (`js/dist`) **has not been confirmed working in a browser**: the root cause of the boot crash is located and fixed, but the binding-code input still needs to be checked on a live forum page
 > - Long-term stability, concurrency and multi-server setups are all unverified
@@ -34,17 +34,19 @@ An open-source bridge that connects a Minecraft server and a [Flarum](https://fl
 ---
 
 > **Repository**: https://github.com/StalirMC/mc-flarum-bridge
-> **Latest CI**: [all three jobs (static + protocol / PHP lint / Gradle build) pass](https://github.com/StalirMC/mc-flarum-bridge/actions)
+> **Latest CI**: [all four jobs (static + protocol / PHP lint / Gradle build / real-server smoke test) pass](https://github.com/StalirMC/mc-flarum-bridge/actions)
 
 | Directory | Component | Stack |
 |-----------|-----------|-------|
 | `flarum-extension/` | Flarum extension: secured REST API, data storage, the announcement delivery queue | PHP 8.1+ / Flarum 2.x |
 | `mc-plugin/` | Minecraft side (**two artifacts**): announcement polling, broadcasting, account linking, reporting | Java 17 core bytecode / Paper 1.21.x · Folia (`plugins/`); NeoForge 21.1.x + Minecraft 1.21.1 (`mods/`) |
 | `protocol/` | The wire contract and JSON Schema shared by both sides | Markdown / JSON Schema |
-| `docs/` | [Deployment guide](docs/README.md), [API reference](docs/API.md), [Verification report](docs/VERIFICATION.md), [Release process](docs/RELEASING.md) (maintainers) | Markdown |
-| `tools/` | Static consistency checker, mock forum, protocol conformance test | Node.js |
+| `docs/` | [Deployment guide](docs/README.md), [API reference](docs/API.md), [Verification report](docs/VERIFICATION.md), [Real-server smoke test](docs/SMOKE-TEST.md), [Release process](docs/RELEASING.md) (maintainers) | Markdown |
+| `tools/` | Static consistency checker, mock forum, protocol conformance test, real-server smoke runner | Node.js |
 
-> **Documentation language**: an unsuffixed file is English and the matching `*.zh-CN.md` is Simplified Chinese — this applies to every document in `docs/` as well as to this README and the per-component READMEs. The one exception is [`protocol/README.md`](protocol/README.md), which is English only.
+> **Documentation language**: an unsuffixed file is English and the matching `*.zh-CN.md` is Simplified Chinese — this applies to every document in `docs/` as well as to this README and the per-component READMEs. English only by design: [`protocol/README.md`](protocol/README.md) (a wire contract keeps one normative text) and [`CHANGELOG.md`](CHANGELOG.md) (a translated running log would drift).
+>
+> **Contributing and security**: [CONTRIBUTING.md](CONTRIBUTING.md) lists the gates, the version discipline and the invariants CI enforces; [SECURITY.md](SECURITY.md) explains how to report a vulnerability privately and where the trust boundary is.
 
 ## Features
 
@@ -189,8 +191,8 @@ cd mc-plugin && gradle build                                # Java build (Paper 
 
 | Platform | Status | Notes |
 |----------|--------|-------|
-| **Paper** 1.21.x | ✅ Full functionality | The primary target, already enabled on a real server |
-| **Folia** 1.21.x | ✅ Compiles + asserted | Scheduled through Folia's `AsyncScheduler` / `GlobalRegionScheduler`, with `folia-supported: true` in `plugin.yml`; it has not yet been started on real Folia |
+| **Paper** 1.21.x | ✅ Full functionality | The primary target, already enabled on a real server; the CI smoke job loads the jar on Paper 1.21.1 on every push |
+| **Folia** 1.21.x | ✅ Loads and enables | Scheduled through Folia's `AsyncScheduler` / `GlobalRegionScheduler`, with `folia-supported: true` in `plugin.yml`; the CI smoke job loads the jar on Folia 1.21.8 (Folia publishes no 1.21.1 build). Announcement and report delivery still need a real forum |
 | **NeoForge** 21.1.x (Minecraft 1.21.1) | ✅ Compiles + asserted | A separate mod jar with a `@Mod("mc_bridge")` entry point, Brigadier commands and `META-INF/neoforge.mods.toml`; the server side only (`side = SERVER`), clients do not need it |
 
 - Minecraft: Paper / Folia 1.21.x (override with `-PpaperApiVersion=`), NeoForge 21.1.x for 1.21.1

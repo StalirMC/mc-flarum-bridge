@@ -9,14 +9,16 @@ Packagist syncs.
 ## 1. Complete steps for a single release
 
 ```bash
-# 1) Bump the version number (the two places must agree; verify.mjs checks this)
-#    mc-plugin/gradle.properties      version=X.Y.Z
+# 1) Bump the version number (all three places must agree; verify.mjs checks this)
+#    mc-plugin/gradle.properties        version=X.Y.Z
 #    mc-plugin/src/main/java/cn/stalir/mcbridge/Version.java   VERSION = "X.Y.Z"
+#    flarum-extension/composer.json     "version": "X.Y.Z"
 
-# 2) Local verification (both projects compile + 77 in-JVM self-test checks + verifyJar + 384 static consistency checks + 46 protocol conformance tests)
+# 2) Local verification (both projects compile + 77 in-JVM self-test checks + verifyJar + 386 static consistency checks + 46 protocol conformance tests + a real server loads the jar)
 cd mc-plugin && gradle build && cd ..
 node tools/verify.mjs
 node tools/protocol-test.mjs
+node tools/smoke-server.mjs --jar mc-plugin/build/libs/McBridge-X.Y.Z.jar --project paper --version 1.21.1
 
 # 3) Commit and tag — the tag must equal v plus the version in gradle.properties
 git add -A && git commit -m "chore: release X.Y.Z"
@@ -30,10 +32,12 @@ Pushing the tag triggers `.github/workflows/release.yml`, which will:
    so the wrong version is never released)
 2. Run `gradle build` under JDK 21 (including the content assertions of `verifyJar` for each of the
    two projects: the plugin jar and the mod jar)
-3. Upload `McBridge-X.Y.Z.jar` as a GitHub Release asset
+3. Upload `McBridge-X.Y.Z.jar`, `McBridge-neoforge-X.Y.Z.jar` and `SHA256SUMS`, which is what an
+   installer runs `sha256sum -c` against
 
 CI (`.github/workflows/ci.yml`) also runs the static consistency checks, the protocol conformance
-tests and PHP lint on `main`.
+tests, PHP lint and the `smoke` job - which loads the built jar on a real Paper 1.21.1 and Folia
+1.21.8 server - on `main`.
 
 ## 2. The three sources of the version number
 
@@ -110,3 +114,5 @@ The cost of a rename (done once in 0.0.6):
       (0.0.3 used an `isRegistered()` that does not exist in rc.8 and turned the whole forum into a 500, see VERIFICATION.md 2.11)
 - [ ] A field or translation key read by the front end was added or changed → section 18 of `verify.mjs` compares the PHP declarations with the locale
 - [ ] An endpoint called by the front end was added or changed → `verify.mjs` compares the methods + paths registered in `extend.php`
+- [ ] CI is green, including the `smoke` job → it loads the built jar on real Paper and Folia, so a jar no server can load does not reach a release
+- [ ] The release page lists both jars plus `SHA256SUMS` (the workflow generates the file; check it is attached)

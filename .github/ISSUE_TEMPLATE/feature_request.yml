@@ -1,0 +1,59 @@
+name: Feature request
+description: Suggest something the bridge should do
+title: '[Feature] '
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A note on sequencing: this project is still work in progress, and verification
+        currently has priority over new features - the game-side delivery paths have not been
+        observed end to end yet. Requests that describe the **problem** are more useful than
+        requests that only name a solution.
+
+  - type: dropdown
+    id: side
+    attributes:
+      label: Where should it live?
+      options:
+        - The game side (plugin / mod)
+        - The forum side (the Flarum extension)
+        - Both sides / the wire protocol
+        - Documentation or tooling
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the situation on a real server or forum, and what you have to do today because the bridge does not do it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like it to do
+      description: Concrete behaviour helps - a command, a config key, what the player sees.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do instead today
+      description: An existing workaround, another plugin, or nothing.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked the README, the deployment guide and the open issues, and this is not already there.
+          required: true
+        - label: This does not require weakening the authentication between the two sides.
+          required: false

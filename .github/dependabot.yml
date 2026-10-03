@@ -1,0 +1,46 @@
+# Dependency updates.
+#
+# Deliberately not included: the Gradle ecosystem. The Minecraft-adjacent versions
+# in mc-plugin/gradle.properties (paperApiVersion, neoforgeVersion,
+# modDevGradleVersion) are pinned on purpose and have to move together with the
+# Minecraft version the mod targets, so they are bumped by hand and validated by the
+# build - an automatic pull request for them would mostly be noise.
+version: 2
+updates:
+  # The actions used by .github/workflows/.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci
+
+  # flarum-extension/composer.json - the extension's own requirements.
+  - package-ecosystem: composer
+    directory: /flarum-extension
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+
+  # The root composer.json that Flarum installs through flarum-subextensions.
+  - package-ecosystem: composer
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+
+  # The frontend build tooling (webpack and flarum-webpack-config). The built
+  # bundles in js/dist are committed, so a bump here should be followed by
+  # `npm run build`.
+  - package-ecosystem: npm
+    directory: /flarum-extension/js
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore

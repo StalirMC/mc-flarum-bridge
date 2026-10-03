@@ -1670,8 +1670,10 @@ section('14. CI workflow sanity');
       }
     }
 
-    // The three expected jobs must be present.
-    for (const job of ['static-and-protocol', 'php', 'java']) {
+    // The expected jobs must be present. `smoke` is on the list deliberately: it is
+    // the only check that loads the jar on a real server, and it is exactly the kind
+    // of job that gets dropped when a workflow is tidied up.
+    for (const job of ['static-and-protocol', 'php', 'java', 'smoke']) {
       if (new RegExp(`^\\s{2}${job}:`, 'm').test(workflow)) {
         pass(`CI job ${job} declared`);
       } else {

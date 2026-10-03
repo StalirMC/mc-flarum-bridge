@@ -1,0 +1,26 @@
+# EditorConfig — https://editorconfig.org
+#
+# The conventions this repository already follows. .gitattributes normalises line
+# endings on checkout; this file keeps an editor from making the diff noisy in ways
+# the checks do not look at.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+# Java, PHP, JavaScript, Gradle and JSON.
+indent_size = 4
+
+[*.{yml,yaml}]
+indent_size = 2
+
+# The Node suites under tools/.
+[*.mjs]
+indent_size = 2
+
+# Windows-only helpers keep CRLF, matching .gitattributes.
+[*.{bat,cmd}]
+end_of_line = crlf

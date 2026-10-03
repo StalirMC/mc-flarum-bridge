@@ -10,14 +10,15 @@ name: CI
 on:
   push:
     branches: [main, master]
-    # A commit that only touches documentation does not need a full run. The
-    # suite checks code, and the few documentation claims it does verify - the
-    # route tables in docs/API.md - change together with the code, not on their
-    # own. Pull requests are deliberately not filtered: opening one is a
-    # deliberate act, so it always gets validated.
+    # A commit that only touches documentation does not need a full run. One
+    # markdown file is not documentation-only, though: docs/API.md carries the
+    # route tables that tools/verify.mjs asserts against the registered routes,
+    # so it is re-included below and must stay listed there. Pull requests are
+    # deliberately not filtered: opening one is a deliberate act, so it always
+    # gets validated.
     paths-ignore:
       - '**/*.md'
-      - 'docs/**'
+      - '!docs/API.md'
       - 'LICENSE'
       - '.gitignore'
   pull_request:
@@ -268,3 +269,70 @@ jobs:
           name: McBridge-neoforge
           path: mc-plugin/neoforge/build/libs/*.jar
           if-no-files-found: error
+
+  # Everything above proves the jar is well formed. None of it proves a real
+  # server accepts it: a missing class, a descriptor field the server rejects or
+  # an API mismatch only appear at runtime. This job downloads the jar the java
+  # job just built, starts a real server with it and asserts the plugin enables
+  # and that the server stops cleanly.
+  #
+  # Folia is pinned to 1.21.8 because Folia publishes no 1.21.1 build; its 1.21.x
+  # line starts at 1.21.4, and 1.21.8 is the STABLE one. The plugin declares
+  # api-version 1.21 and folia-supported: true, so a newer 1.21.x server is the
+  # correct thing to load it on.
+  smoke:
+    name: Load on a real ${{ matrix.project }} server
+    needs: java
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: paper
+            version: '1.21.1'
+          - project: folia
+            version: '1.21.8'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: McBridge-plugin
+          path: artifacts
+
+      - name: Start the server with the plugin
+        env:
+          WORKDIR: ${{ runner.temp }}/mcbridge-smoke-${{ matrix.project }}
+        run: |
+          set -euo pipefail
+          # find rather than `ls | grep | head`: a pipe that closes early can make
+          # the pipeline fail under `set -euo pipefail`.
+          jar=$(find artifacts -name '*.jar' ! -name '*sources*' -print -quit)
+          test -n "$jar"
+          echo "testing $jar on ${{ matrix.project }} ${{ matrix.version }}"
+          node tools/smoke-server.mjs \
+            --jar "$jar" \
+            --project ${{ matrix.project }} \
+            --version ${{ matrix.version }} \
+            --workdir "$WORKDIR" \
+            --timeout 300
+
+      # The server log is the only record of why it failed, and it does not
+      # survive the runner otherwise.
+      - name: Upload the server log when it fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-log-${{ matrix.project }}
+          path: ${{ runner.temp }}/mcbridge-smoke-${{ matrix.project }}/server.log
+          if-no-files-found: ignore

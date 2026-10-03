@@ -50,7 +50,7 @@ The 15 categories of invariants covered:
 | 11 | The 5 tables created by the migrations correspond one-to-one to the `$table` of the 5 models | querying a table that does not exist |
 | 12 | All 10 registered routes are documented in `docs/API.md` | documentation drifting away from the implementation |
 | 13 | **Flarum 2.x framework contracts**: migrations must return `['up'=>fn(Builder $schema), ...]`, models must explicitly enable `$timestamps`, machine routes must be exempted with `Extend\Csrf` and **session routes must not be exempted**, console commands must extend `AbstractBridgeCommand` and implement `fire()`, **the locale directory must be registered with `Extend\Locales`**, placeholders must use ICU `{name}` syntax, `BridgeMessages.DEFAULT_LOCALE` must match the bundled languages, and the key sets of the individual languages must be identical | these are real defects found during review and live testing, now frozen into automated regression protection |
-| 14 | **CI workflow self-check**: `working-directory` paths exist, the referenced `tools/*.mjs` exist, the three jobs are declared, artifact paths match Gradle's default output | avoids going red on the very first push because of a mistyped path |
+| 14 | **CI workflow self-check**: `working-directory` paths exist, the referenced `tools/*.mjs` exist, the four jobs are declared, artifact paths match Gradle's default output | avoids going red on the very first push because of a mistyped path |
 | 15 | **Java compilation hazards**: the JDK/third-party simple names in use must already be imported (comments stripped first), and scheduler calls must not pass method references directly without an explicit `(Runnable)` cast | these two classes of problem were the real cause of the first CI compilation failure, and can now be intercepted without a compiler |
 
 Item 10 is the most critical contract of this bridge: the two sides implement the same signature
@@ -1077,7 +1077,8 @@ real machine.
 ## 3. Things that cannot be verified on this machine (now covered by CI)
 
 > This machine has no PHP / JDK, and these checks **have all been executed automatically and passed in
-> CI, in a real environment with PHP 8.3 / JDK 21** (see 2.4). The table below is kept as reference
+> CI, in a real environment with PHP 8.3 / JDK 21** (see 2.4). The real-server rows are executed by the
+> smoke job documented in [SMOKE-TEST.md](SMOKE-TEST.md). The table below is kept as reference
 > commands for "manual re-checking on any machine".
 
 | Item | Command | Expected | CI status |
@@ -1087,8 +1088,8 @@ real machine.
 | Flarum installation | `composer require stalirmc/mc-flarum-bridge` | the extension appears in the admin panel | ⬜ needs to be run on a real forum (CI does not install Flarum) |
 | Migration execution | `php flarum migrate` | 6 tables created | ⬜ needs a real database (CI only validates the migration contract by reflection) |
 | **Bridge self-test** | `php flarum mc-bridge:selftest --url=https://your.forum` | all `OK` | ⬜ needs to be run on a real forum |
-| Plugin load (Paper) | put the jar in place and start the server | the log shows `McBridge enabled on paper as server ...` | ⬜ needs to be run on a real server |
-| Plugin load (Folia) | put the same plugin jar into Folia's `plugins/` | the log shows `on folia`, and there is no `UnsupportedOperationException` | ⬜ needs a real Folia server |
+| Plugin load (Paper) | put the jar in place and start the server | the log shows `McBridge enabled on paper as server ...` | ✅ the CI smoke job loads the jar on Paper 1.21.1 on every push; the fully configured startup line still needs a real forum |
+| Plugin load (Folia) | put the same plugin jar into Folia's `plugins/` | the log shows `on folia`, and there is no `UnsupportedOperationException` | ✅ the CI smoke job loads the jar on Folia 1.21.8 (Folia publishes no 1.21.1 build); the fully configured startup line still needs a real forum |
 | Mod load (NeoForge 1.21.1) | put `McBridge-neoforge-<version>.jar` into the server's `mods/` | the server log shows `MC Bridge loaded` and `McBridge enabled on neoforge as server ...`, and the platform line of `/mcbridge stats` shows `neoforge` | ⬜ needs a real NeoForge server |
 | Announcement delivery | post an announcement on the forum; `[论坛] <title>` ("[Forum] <title>") appears in game within 20 seconds | the announcement is visible to players | ⬜ needs to be run on a real server |
 
@@ -1167,7 +1168,7 @@ An honest statement of the boundaries:
 - Static validation can prove that the **structure is correct, the contracts are consistent and references resolve**; it cannot replace a compiler.
 - The protocol tests can prove that **the protocol specification is self-consistent and implementable**, but they cannot prove that the concrete PHP/Java implementation is free of runtime errors (for example, that an API's signature does not differ on the target version).
 - **The compilation link has been filled in by CI**: the real run in section 2.4 proves that the plugin compiles into a jar under JDK 21 + Paper API and that all PHP files pass `php -l`. And this path really does pay off — its first run caught 4 real defects that could not be found on this machine.
-- What is still **not** verified is "runtime behaviour": CI only compiles; it does not start Flarum, does not start a Minecraft server and does not connect to a database. Therefore:
+- What is still **not** verified end to end is "runtime behaviour": CI compiles the code and now also starts a real Minecraft server (Paper 1.21.1 and Folia 1.21.8) with the built jar, but it does not start Flarum, does not connect the two sides together and does not connect to a database. Therefore:
   - for the Flarum-side endpoints/migrations/linking flow, running `mc-bridge:selftest` once is still recommended;
   - the plugin-side real heartbeat and announcement delivery need to be observed by installing it on a server.
 - The final verdict still requires running section 4 once on a real server. `mc-bridge:selftest` has already compressed this forum-side step down to a single command.

@@ -33,7 +33,7 @@
 >   详见 [VERIFICATION.md](docs/VERIFICATION.zh-CN.md) 2.5 / 2.6 / 2.8 / 2.9
 >
 > **尚未验证的部分**
-> - **只有 Paper 被真实加载过**：Folia 与 NeoForge 仍只到「编译 + 静态断言」为止，从未在真实服务端启动
+> - **NeoForge 仍从未在真实服务端启动过**：Paper 与 Folia 都已在真实服务端加载并正常启用（本机实跑 Paper 1.21.1 与 Folia 1.21.8，现由 CI 冒烟任务在每次提交时自动复现），而 NeoForge 模组仍只到「编译 + 静态断言」为止
 > - **公告推送、广播的端到端效果未验证**（插件能启用，但没有观察到数据真正
 >   出现在论坛上）；账号绑定此前因缺陷 2 不可见，0.0.2 修复后需重新实测
 > - 前端设置页区块（`js/dist`）**尚未在浏览器里确认可用**：导致启动崩溃的根因已定位并修复，
@@ -45,17 +45,19 @@
 ---
 
 > **仓库**：https://github.com/StalirMC/mc-flarum-bridge
-> **最新 CI**：[三个 job（静态+协议 / PHP lint / Gradle 编译）全部通过](https://github.com/StalirMC/mc-flarum-bridge/actions)
+> **最新 CI**：[四个 job（静态+协议 / PHP lint / Gradle 编译 / 真实服务端冒烟测试）全部通过](https://github.com/StalirMC/mc-flarum-bridge/actions)
 
 | 目录 | 组件 | 技术栈 |
 |------|------|--------|
 | `flarum-extension/` | Flarum 扩展：安全 REST API、数据存储、公告推送队列 | PHP 8.1+ / Flarum 2.x |
 | `mc-plugin/` | Minecraft 侧（**两个发行包**）：公告拉取、广播、账号绑定、举报 | Java 17 核心字节码 / Paper 1.21.x · Folia（`plugins/`）；NeoForge 21.1.x + Minecraft 1.21.1（`mods/`） |
 | `protocol/` | 双方共享的线上协议契约与 JSON Schema | Markdown / JSON Schema |
-| `docs/` | [部署指南](docs/README.zh-CN.md)、[API 参考](docs/API.zh-CN.md)、[验证报告](docs/VERIFICATION.zh-CN.md)、[发布流程](docs/RELEASING.zh-CN.md)（维护者） | Markdown |
-| `tools/` | 静态一致性校验、模拟论坛、协议一致性测试 | Node.js |
+| `docs/` | [部署指南](docs/README.zh-CN.md)、[API 参考](docs/API.zh-CN.md)、[验证报告](docs/VERIFICATION.zh-CN.md)、[真实服务端冒烟测试](docs/SMOKE-TEST.zh-CN.md)、[发布流程](docs/RELEASING.zh-CN.md)（维护者） | Markdown |
+| `tools/` | 静态一致性校验、模拟论坛、协议一致性测试、真实服务端冒烟运行器 | Node.js |
 
-> **文档语言约定**：无后缀的是英文版，同名的 `*.zh-CN.md` 是简体中文版 —— `docs/` 下的每一份文档、本 README 以及各组件 README 都遵循这一约定。唯一的例外是 [`protocol/README.md`](protocol/README.md)，它目前只有英文版。
+> **文档语言约定**：无后缀的是英文版，同名的 `*.zh-CN.md` 是简体中文版 —— `docs/` 下的每一份文档、本 README 以及各组件 README 都遵循这一约定。按设计只保留英文的有两份：[`protocol/README.md`](protocol/README.md)（协议契约只保留一份权威文本）与 [`CHANGELOG.md`](CHANGELOG.md)（逐条记录一旦翻译就会过期）。
+>
+> **参与开发与安全**：[CONTRIBUTING.md](CONTRIBUTING.zh-CN.md) 列出各项检查、版本号纪律以及 CI 强制的约束；[SECURITY.md](SECURITY.zh-CN.md) 说明如何私下报告漏洞，以及信任边界在哪里。
 
 ## 功能
 
@@ -217,8 +219,8 @@ cd mc-plugin && gradle build                                # Java 编译（Pape
 
 | 平台 | 支持情况 | 说明 |
 |------|----------|------|
-| **Paper** 1.21.x | ✅ 完整功能 | 主目标平台，已在真实服务端启用 |
-| **Folia** 1.21.x | ✅ 编译 + 断言 | 用 Folia 的 `AsyncScheduler` / `GlobalRegionScheduler` 调度，`plugin.yml` 声明 `folia-supported: true`；尚未在真实 Folia 上启动过 |
+| **Paper** 1.21.x | ✅ 完整功能 | 主目标平台，已在真实服务端启用；CI 冒烟任务每次提交都会在 Paper 1.21.1 上加载该 jar |
+| **Folia** 1.21.x | ✅ 可加载并启用 | 用 Folia 的 `AsyncScheduler` / `GlobalRegionScheduler` 调度，`plugin.yml` 声明 `folia-supported: true`；CI 冒烟任务已在 Folia 1.21.8 上加载该 jar（Folia 没有 1.21.1 版本）。公告与举报的投递仍需真实论坛配合验证 |
 | **NeoForge** 21.1.x（Minecraft 1.21.1） | ✅ 编译 + 断言 | 独立模组 jar，`@Mod("mc_bridge")` 入口、Brigadier 命令、`META-INF/neoforge.mods.toml`；仅服务端需要（`side = SERVER`），客户端不必安装 |
 
 - Minecraft：Paper / Folia 1.21.x（`-PpaperApiVersion=` 可覆盖）、NeoForge 21.1.x for 1.21.1

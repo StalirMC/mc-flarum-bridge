@@ -74,6 +74,16 @@ jobs:
           cp "$plugin" "$mod" dist/
           ls -l dist
 
+      # Anyone downloading a jar from a release should be able to check they got
+      # the file CI built. The checksums are generated here rather than by hand so
+      # they cannot drift from the uploaded artifacts.
+      - name: Write the checksums
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          sha256sum ./*.jar > SHA256SUMS
+          cat SHA256SUMS
+
       - name: Publish the release
         uses: softprops/action-gh-release@v2
         with:
@@ -112,5 +122,13 @@ jobs:
             ```
 
             Still work in progress: see the warning at the top of README.md.
-          files: dist/*.jar
+
+            `SHA256SUMS` covers both jars:
+
+            ```bash
+            sha256sum -c SHA256SUMS
+            ```
+          files: |
+            dist/*.jar
+            dist/SHA256SUMS
           fail_on_unmatched_files: true

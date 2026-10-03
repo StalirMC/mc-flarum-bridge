@@ -1,0 +1,15 @@
+# The templates below ask for the details that every report so far has needed:
+# which platform, which version on each side, and the actual log lines. Blank
+# issues are disabled so nothing arrives without them.
+blank_issues_enabled: false
+
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/StalirMC/mc-flarum-bridge/security/advisories/new
+    about: Report it privately here instead of opening an issue - see SECURITY.md.
+  - name: Deployment guide and troubleshooting
+    url: https://github.com/StalirMC/mc-flarum-bridge/blob/main/docs/README.md
+    about: Installation, configuration, and the problems that already have answers.
+  - name: Verification status - what is proven and what is not
+    url: https://github.com/StalirMC/mc-flarum-bridge/blob/main/docs/VERIFICATION.md
+    about: Check here first - some behaviour is known-unverified rather than broken.

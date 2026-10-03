@@ -49,7 +49,7 @@ node tools/verify.mjs
 | 11 | 迁移创建的 5 张表与 5 个模型的 `$table` 一一对应 | 查询不存在的表 |
 | 12 | 10 条注册路由全部在 `docs/API.md` 中有文档 | 文档与实现漂移 |
 | 13 | **Flarum 2.x 框架契约**：迁移必须返回 `['up'=>fn(Builder $schema), ...]`、模型必须显式开启 `$timestamps`、机器路由必须用 `Extend\Csrf` 豁免且**会话路由不得被豁免**、控制台命令必须继承 `AbstractBridgeCommand` 并实现 `fire()`、**必须用 `Extend\Locales` 注册语言目录**、占位符必须是 ICU `{name}` 语法、`BridgeMessages.DEFAULT_LOCALE` 与随包语言一致、各语言键集一致 | 这些是审查与实测中查出的真实缺陷，已固化为自动回归防护 |
-| 14 | **CI 工作流自检**：`working-directory` 路径存在、引用的 `tools/*.mjs` 存在、三个 job 已声明、产物路径与 Gradle 默认输出一致 | 避免首次推送就因路径拼错而红 |
+| 14 | **CI 工作流自检**：`working-directory` 路径存在、引用的 `tools/*.mjs` 存在、四个 job 已声明、产物路径与 Gradle 默认输出一致 | 避免首次推送就因路径拼错而红 |
 | 15 | **Java 编译隐患**：用到的 JDK/第三方简单名必须已 import（先剥离注释）、调度器调用不得直接传未加 `(Runnable)` 强转的方法引用 | 这两类正是首次 CI 编译失败的真实原因，现无需编译器即可拦截 |
 
 第 10 项是这套桥接最关键的契约：两端分别用 PHP 和 Java 独立实现了同一套签名
@@ -1057,7 +1057,8 @@ NeoForge 侧 `ServerChatEvent` 是否在 1.21.1 的签名聊天管线上如实�
 ## 3. 无法在本机验证的内容（现由 CI 覆盖）
 
 > 本机没有 PHP / JDK，这些检查**已全部由 CI 在带 PHP 8.3 / JDK 21 的真实环境中
-> 自动执行并通过**（见 2.4）。下表保留为「在任何机器上手动复核」的参考命令。
+> 自动执行并通过**（见 2.4）。其中「真实服务端」几行由 [SMOKE-TEST.md](SMOKE-TEST.zh-CN.md)
+> 描述的冒烟任务执行。下表保留为「在任何机器上手动复核」的参考命令。
 
 | 项目 | 命令 | 期望 | CI 状态 |
 |------|------|------|---------|
@@ -1066,8 +1067,8 @@ NeoForge 侧 `ServerChatEvent` 是否在 1.21.1 的签名聊天管线上如实�
 | Flarum 安装 | `composer require stalirmc/mc-flarum-bridge` | 扩展出现在管理后台 | ⬜ 需在真实论坛执行（CI 不安装 Flarum） |
 | 迁移执行 | `php flarum migrate` | 6 张表建立 | ⬜ 需真实数据库（CI 仅反射校验迁移契约） |
 | **桥接自检** | `php flarum mc-bridge:selftest --url=https://你的域名` | 全部 `OK` | ⬜ 需在真实论坛执行 |
-| 插件加载（Paper） | 放入 jar 后启动服务器 | 日志出现 `McBridge enabled on paper as server ...` | ⬜ 需在真实服务器执行 |
-| 插件加载（Folia） | 同一个插件 jar 放入 Folia 的 `plugins/` | 日志出现 `on folia`，且无 `UnsupportedOperationException` | ⬜ 需真实 Folia 服务端 |
+| 插件加载（Paper） | 放入 jar 后启动服务器 | 日志出现 `McBridge enabled on paper as server ...` | ✅ CI 冒烟任务每次提交都会在 Paper 1.21.1 上加载该 jar；填好配置后的完整启动行仍需真实论坛 |
+| 插件加载（Folia） | 同一个插件 jar 放入 Folia 的 `plugins/` | 日志出现 `on folia`，且无 `UnsupportedOperationException` | ✅ CI 冒烟任务已在 Folia 1.21.8 上加载该 jar（Folia 没有 1.21.1 版本）；填好配置后的完整启动行仍需真实论坛 |
 | 模组加载（NeoForge 1.21.1） | `McBridge-neoforge-<版本>.jar` 放入服务端 `mods/` | 服务器日志出现 `MC Bridge loaded` 与 `McBridge enabled on neoforge as server ...`，`/mcbridge stats` 平台行为 `neoforge` | ⬜ 需真实 NeoForge 服务端 |
 | 公告投递 | 论坛发一条公告，20 秒内游戏内出现 `[论坛] <标题>` | 玩家可见公告 | ⬜ 需在真实服务器执行 |
 
@@ -1148,8 +1149,8 @@ php flarum mc-bridge:config --report-resolved-tags=15
 - **编译这一环已由 CI 补上**：第 2.4 节的真实运行证明插件能在 JDK 21 + Paper API
   下编译出 jar、全部 PHP 文件能通过 `php -l`。而且这条路径确实有价值——首次运行
   就抓出了 4 个本机无法发现的真实缺陷。
-- 仍然**没有**验证的是「运行时行为」：CI 只编译，不启动 Flarum、不启动 Minecraft
-  服务器、不连数据库。因此：
+- 仍然**没有**端到端验证的是「运行时行为」：CI 现在除编译之外，还会用编译出的 jar 启动真实的
+  Minecraft 服务端（Paper 1.21.1 与 Folia 1.21.8），但不会启动 Flarum、不会把两侧联通、也不连数据库。因此：
   - Flarum 侧的接口/迁移/绑定流程，仍建议跑一次 `mc-bridge:selftest`；
   - 插件侧的真实心跳与公告投递，需装到服务器上观察。
 - 最终判定仍需第 4 节在真实服务器上跑一次。`mc-bridge:selftest` 已把论坛侧这一步

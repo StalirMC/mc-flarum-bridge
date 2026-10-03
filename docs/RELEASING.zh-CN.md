@@ -8,14 +8,16 @@
 ## 1. 一次发版的完整步骤
 
 ```bash
-# 1) 改版本号（两处必须一致，verify.mjs 会校验）
-#    mc-plugin/gradle.properties      version=X.Y.Z
+# 1) 改版本号（三处必须一致，verify.mjs 会校验）
+#    mc-plugin/gradle.properties        version=X.Y.Z
 #    mc-plugin/src/main/java/cn/stalir/mcbridge/Version.java   VERSION = "X.Y.Z"
+#    flarum-extension/composer.json     "version": "X.Y.Z"
 
-# 2) 本地校验（两个工程编译 + 77 项构建自测 + verifyJar + 384 项静态检查 + 46 项协议测试）
+# 2) 本地校验（两个工程编译 + 77 项构建自测 + verifyJar + 386 项静态检查 + 46 项协议测试 + 真实服务端能加载该 jar）
 cd mc-plugin && gradle build && cd ..
 node tools/verify.mjs
 node tools/protocol-test.mjs
+node tools/smoke-server.mjs --jar mc-plugin/build/libs/McBridge-X.Y.Z.jar --project paper --version 1.21.1
 
 # 3) 提交并打 tag —— tag 必须等于 v + gradle.properties 里的版本
 git add -A && git commit -m "chore: release X.Y.Z"
@@ -27,9 +29,11 @@ git push origin main && git push origin vX.Y.Z
 
 1. 校验 tag 与 `gradle.properties` 的版本一致（不一致直接失败，不会发错版本）
 2. 在 JDK 21 下 `gradle build`（含两个工程各自 `verifyJar` 的内容断言：插件 jar 与模组 jar）
-3. 把 `McBridge-X.Y.Z.jar` 作为 GitHub Release 附件上传
+3. 上传 `McBridge-X.Y.Z.jar`、`McBridge-neoforge-X.Y.Z.jar` 与 `SHA256SUMS` 作为 GitHub Release
+   附件，安装者用 `sha256sum -c` 校验下载到的文件
 
-CI（`.github/workflows/ci.yml`）同时会在 `main` 上跑静态检查、协议测试与 PHP lint。
+CI（`.github/workflows/ci.yml`）同时会在 `main` 上跑静态检查、协议测试、PHP lint 与 `smoke`
+任务 —— 后者会在真实的 Paper 1.21.1 与 Folia 1.21.8 服务端上加载编译出的 jar。
 
 ## 2. 版本号的三个来源
 
@@ -95,3 +99,5 @@ Flarum 的**扩展 ID 由子包名推导**：`stalirmc/mc-bridge` → `stalirmc-
       （0.0.3 用了一个 rc.8 不存在的 `isRegistered()`，把整个论坛打成 500，见 VERIFICATION.zh-CN.md 2.11）
 - [ ] 新加/改了前端读的字段或翻译键 → `verify.mjs` 第 18 节会比对 PHP 声明与 locale
 - [ ] 新加/改了前端调用的接口 → `verify.mjs` 会比对 `extend.php` 里注册的方法+路径
+- [ ] CI 全绿，包括 `smoke` 任务 → 它会在真实的 Paper 与 Folia 上加载编译出的 jar，避免发出一个谁也加载不了的 jar
+- [ ] Release 页面同时列出了两个 jar 与 `SHA256SUMS`（该文件由工作流生成，确认它确实被上传）

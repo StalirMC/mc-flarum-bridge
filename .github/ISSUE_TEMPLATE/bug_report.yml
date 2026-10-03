@@ -1,0 +1,95 @@
+name: Bug report
+description: Something behaves differently from what the documentation says
+title: '[Bug] '
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please read [what is proven and what is not](https://github.com/StalirMC/mc-flarum-bridge/blob/main/docs/VERIFICATION.md)
+        first - a fair amount of behaviour is known-unverified rather than broken.
+
+        Do **not** paste a working `security.secret`, player personal data or chat
+        transcripts. For a security problem, use the Security tab instead.
+
+  - type: dropdown
+    id: side
+    attributes:
+      label: Which side is affected?
+      options:
+        - The game side (plugin jar in plugins/)
+        - The game side (mod jar in mods/)
+        - The forum side (the Flarum extension)
+        - Both sides / the delivery between them
+        - The tools or CI
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: Platform and version
+      description: Which server software, and which version.
+      placeholder: 'Paper 1.21.1 / Folia 1.21.8 / NeoForge 21.1.100 for Minecraft 1.21.1'
+    validations:
+      required: true
+
+  - type: input
+    id: mcbridge-version
+    attributes:
+      label: McBridge version
+      description: '`/mcbridge stats` on the game server, or `composer show stalirmc/mc-flarum-bridge` on the forum. Both sides must be on the same version.'
+      placeholder: '0.0.21'
+    validations:
+      required: true
+
+  - type: input
+    id: flarum-version
+    attributes:
+      label: Flarum and PHP version
+      description: From the forum admin panel, or `php flarum info`. Write "not applicable" if the forum side is not involved.
+      placeholder: 'Flarum 2.0.0-rc.8, PHP 8.3'
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happens, and what you expected instead
+      description: If it involves a command, give the exact command and what the player saw.
+      placeholder: |
+        /report Steve cheating  ->  the player is told it was submitted, but no discussion appears on the forum.
+        Expected: a discussion tagged "report" in the staff category.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines
+      description: The game server log and/or `storage/logs/flarum-*.log`. Trim it to the lines around the problem.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant configuration
+      description: '`plugins/McBridge/config.yml` (or `config/mc-bridge/config.yml`) and the extension settings. Replace the value of `security.secret` and `forum.secret` with `REDACTED` before pasting.'
+      render: yaml
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before submitting
+      options:
+        - label: I am on the newest release, and the extension and the jar are on the same version.
+          required: true
+        - label: I removed the secret, player personal data and chat transcripts from everything above.
+          required: true
+        - label: '`/mcbridge stats` reports the configuration as normal (「正常」), or I have said what it reports instead.'
+          required: false
