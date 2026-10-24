@@ -3,7 +3,7 @@
     "name": "@stalirmc/mc-flarum-bridge",
     "version": "0.0.0",
     "devDependencies": {
-        "flarum-webpack-config": "^3.0.6",
+        "flarum-webpack-config": "^3.0.7",
         "webpack": "^5.111.1",
         "webpack-cli": "^7.2.3"
     },
